@@ -393,3 +393,19 @@
     inset: -1px;
   }
 }
+
+/* ─── Bookshelf & Guide Animations ─── */
+@keyframes bounce-slow {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-4px); }
+}
+.animate-bounce-slow { animation: bounce-slow 3s ease-in-out infinite; }
+
+@keyframes slide-up {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-slide-up { animation: slide-up 0.4s ease-out forwards; }
+
+/* Story page serif font */
+.story-prose { font-family: 'Crimson Pro', Georgia, serif; }

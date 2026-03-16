@@ -285,46 +285,21 @@ ${JSON.stringify(debugInfo, null, 2)}
   return (
     <div className={`h-full flex flex-col pb-20 ${className}`} data-testid="chat-interface">
       <Card className="flex-1 flex flex-col overflow-hidden">
-        <PageHeader
-          title="Your Story"
-          subtitle="Chat with your narrator and characters"
-        />
-
-        {/* Action buttons row */}
-        <div className="px-4 sm:px-6 pb-3 flex gap-2 border-b">
+        {/* Clean minimal header */}
+        <div className="px-4 py-2.5 border-b flex items-center justify-between">
+          <h2 className="font-semibold text-foreground text-sm">Your Story</h2>
           <Button
-            variant="outline"
-            size="sm"
-            onClick={handleCopyDebugInfo}
-            className="flex-1 sm:flex-none"
-          >
-            <Bug className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Copy Debug Info</span>
-            <span className="sm:hidden">Debug</span>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleReportIssue}
-            className="flex-1 sm:flex-none"
-          >
-            <AlertCircle className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Report Issue</span>
-            <span className="sm:hidden">Report</span>
-          </Button>
-          <Button
-            variant="destructive"
+            variant="ghost"
             size="sm"
             onClick={() => {
               console.log('[ChatInterface] End Story button clicked');
               analytics.buttonClicked('End Story', 'Chat Interface');
               onEndAdventure?.();
             }}
-            className="flex-1 sm:flex-none"
+            className="text-xs text-muted-foreground h-7 px-2"
           >
-            <XCircle className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">End Story</span>
-            <span className="sm:hidden">End</span>
+            <XCircle className="w-3.5 h-3.5 mr-1" />
+            End
           </Button>
         </div>
 
