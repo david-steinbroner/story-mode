@@ -1,4 +1,4 @@
-import { BookOpen, Plus, Star, ChevronRight, Users, Sparkles } from "lucide-react";
+import { Plus, Check } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import type { GameState } from "@shared/schema";
 
@@ -94,10 +94,10 @@ function BookSpine({
           )}
         </div>
 
-        {/* Complete star */}
+        {/* Complete indicator */}
         {isComplete && (
           <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 rounded-full flex items-center justify-center">
-            <Star size={10} className="text-white fill-white" />
+            <Check size={10} className="text-white" strokeWidth={3} />
           </div>
         )}
 
@@ -266,7 +266,6 @@ export default function Bookshelf({
               className="w-full mt-4 text-left bg-card border border-border rounded-lg p-4 hover:bg-accent/10 transition-colors active:scale-[0.98]"
             >
               <div className="flex items-center gap-3">
-                <BookOpen className="w-5 h-5 text-primary shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-foreground truncate">
                     Continue: {getStoryTitle(activeStories[0])}
@@ -285,7 +284,6 @@ export default function Bookshelf({
                     </span>
                   </div>
                 </div>
-                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
               </div>
             </button>
           )}
@@ -331,9 +329,8 @@ export default function Bookshelf({
 
           <button
             onClick={onNewStory}
-            className="w-full bg-primary text-primary-foreground rounded-lg p-4 font-semibold text-base flex items-center justify-center gap-2 hover:opacity-90 transition-opacity active:scale-[0.98]"
+            className="w-full bg-primary text-primary-foreground rounded-lg p-4 font-semibold text-base flex items-center justify-center hover:opacity-90 transition-opacity active:scale-[0.98]"
           >
-            <Sparkles className="w-5 h-5" />
             Start Your First Story
           </button>
         </div>
@@ -346,9 +343,6 @@ export default function Bookshelf({
           disabled
         >
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-300 to-green-300 flex items-center justify-center">
-              <Users size={20} className="text-white" />
-            </div>
             <div className="flex-1">
               <h3 className="text-sm font-semibold text-foreground">
                 Public Library
@@ -357,7 +351,6 @@ export default function Bookshelf({
                 Community stories coming soon
               </p>
             </div>
-            <ChevronRight size={16} className="text-muted-foreground" />
           </div>
         </button>
       </div>

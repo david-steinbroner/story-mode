@@ -92,7 +92,7 @@ export default function ColdStartLoader({ isLoading, error }: ColdStartLoaderPro
                       to save resources. First visit after sleep takes ~30 seconds to wake up.
                     </p>
                     <p className="mt-2">
-                      Subsequent requests will be instant! ⚡
+                      Subsequent requests will be instant!
                     </p>
                   </div>
                   <div className="flex items-center justify-center gap-2 text-sm">

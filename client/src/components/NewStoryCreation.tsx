@@ -6,13 +6,6 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
   ArrowLeft,
-  BookOpen,
-  Sparkles,
-  Skull,
-  Heart,
-  Rocket,
-  Search,
-  Wand2,
   Loader2,
 } from "lucide-react";
 
@@ -28,11 +21,11 @@ interface NewStoryCreationProps {
 }
 
 const GENRES = [
-  { id: "fantasy", label: "Fantasy", icon: Wand2, color: "text-purple-500", desc: "Magic, quests & mythical creatures" },
-  { id: "mystery", label: "Mystery", icon: Search, color: "text-amber-500", desc: "Clues, suspects & twists" },
-  { id: "scifi", label: "Sci-Fi", icon: Rocket, color: "text-blue-500", desc: "Space, tech & the future" },
-  { id: "romance", label: "Romance", icon: Heart, color: "text-rose-500", desc: "Love, drama & connection" },
-  { id: "horror", label: "Horror", icon: Skull, color: "text-red-600", desc: "Fear, tension & survival" },
+  { id: "fantasy", label: "Fantasy", color: "text-purple-500", desc: "Magic, quests & mythical creatures" },
+  { id: "mystery", label: "Mystery", color: "text-amber-500", desc: "Clues, suspects & twists" },
+  { id: "scifi", label: "Sci-Fi", color: "text-blue-500", desc: "Space, tech & the future" },
+  { id: "romance", label: "Romance", color: "text-rose-500", desc: "Love, drama & connection" },
+  { id: "horror", label: "Horror", color: "text-red-600", desc: "Fear, tension & survival" },
 ];
 
 const STORY_LENGTHS = [
@@ -75,11 +68,6 @@ export default function NewStoryCreation({
     >
       <Card className="w-full max-w-2xl">
         <CardHeader className="text-center space-y-2">
-          <div className="flex justify-center">
-            <div className="p-3 bg-primary/10 rounded-full">
-              <BookOpen className="w-8 h-8 text-primary" />
-            </div>
-          </div>
           <CardTitle className="text-3xl font-bold">New Story</CardTitle>
           <p className="text-muted-foreground text-base">
             {step === 1
@@ -111,7 +99,6 @@ export default function NewStoryCreation({
           {step === 1 && (
             <div className="grid grid-cols-1 gap-3">
               {GENRES.map((g) => {
-                const Icon = g.icon;
                 const isSelected = genre === g.id;
                 return (
                   <button
@@ -127,13 +114,6 @@ export default function NewStoryCreation({
                         : "border-border hover:border-primary/40 hover:bg-muted/50"
                     }`}
                   >
-                    <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                        isSelected ? "bg-primary/20" : "bg-muted"
-                      }`}
-                    >
-                      <Icon className={`w-5 h-5 ${g.color}`} />
-                    </div>
                     <div className="flex-1">
                       <p className="font-semibold text-base">{g.label}</p>
                       <p className="text-sm text-muted-foreground">{g.desc}</p>
@@ -155,9 +135,6 @@ export default function NewStoryCreation({
               {/* Show selected genre */}
               {selectedGenre && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <selectedGenre.icon
-                    className={`w-4 h-4 ${selectedGenre.color}`}
-                  />
                   <span>{selectedGenre.label} story</span>
                   <Button
                     variant="ghost"
@@ -207,12 +184,7 @@ export default function NewStoryCreation({
               {/* Show selections */}
               <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
                 {selectedGenre && (
-                  <div className="flex items-center gap-1">
-                    <selectedGenre.icon
-                      className={`w-4 h-4 ${selectedGenre.color}`}
-                    />
-                    <span>{selectedGenre.label}</span>
-                  </div>
+                  <span>{selectedGenre.label}</span>
                 )}
                 <span className="text-muted-foreground/50">/</span>
                 {selectedLength && (
@@ -269,13 +241,10 @@ export default function NewStoryCreation({
 
               {/* Info Box */}
               <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
-                <div className="flex items-start gap-2">
-                  <Sparkles className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    The Guide will craft your story around this character. The
-                    more detail you give, the richer your experience will be.
-                  </p>
-                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  The Guide will craft your story around this character. The
+                  more detail you give, the richer your experience will be.
+                </p>
               </div>
             </div>
           )}
@@ -310,10 +279,7 @@ export default function NewStoryCreation({
                     The Guide is writing...
                   </>
                 ) : (
-                  <>
-                    <BookOpen className="w-4 h-4 mr-2" />
-                    Begin Story
-                  </>
+                  "Begin Story"
                 )}
               </Button>
             )}

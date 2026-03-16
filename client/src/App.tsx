@@ -192,7 +192,7 @@ function GameApp() {
           });
 
           toast({
-            title: wasCompleted ? "Quest Complete! 🎉" : "Quest Updated",
+            title: wasCompleted ? "Quest Complete!" : "Quest Updated",
             description: quest.title,
             duration: 3000,
           });
