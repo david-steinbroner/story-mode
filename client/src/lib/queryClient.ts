@@ -5,6 +5,27 @@ function getSessionId(): string {
   return localStorage.getItem('sessionId') || '';
 }
 
+// Active story ID — set by App.tsx when entering a story
+let _activeStoryId: string | null = null;
+
+export function setActiveStoryId(storyId: string | null) {
+  _activeStoryId = storyId;
+}
+
+export function getActiveStoryId(): string | null {
+  return _activeStoryId;
+}
+
+function getHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    'x-session-id': getSessionId(),
+  };
+  if (_activeStoryId) {
+    headers['x-story-id'] = _activeStoryId;
+  }
+  return headers;
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
@@ -17,9 +38,7 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  const headers: Record<string, string> = {
-    'x-session-id': getSessionId(),
-  };
+  const headers = getHeaders();
 
   if (data) {
     headers['Content-Type'] = 'application/json';
@@ -44,9 +63,7 @@ export const getQueryFn: <T>(options: {
   async ({ queryKey }) => {
     const res = await fetch(queryKey.join("/") as string, {
       credentials: "include",
-      headers: {
-        'x-session-id': getSessionId(),
-      },
+      headers: getHeaders(),
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {

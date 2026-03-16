@@ -30,12 +30,12 @@ export interface IStorage {
 
   // Character management
   init(sessionId: string): Promise<void>;
-  getCharacter(sessionId: string): Promise<Character | undefined>;
+  getCharacter(sessionId: string, storyId?: string): Promise<Character | undefined>;
   createCharacter(character: InsertCharacter): Promise<Character>;
   updateCharacter(id: string, sessionId: string, updates: Partial<Character>): Promise<Character | null>;
 
   // Quest management
-  getQuests(sessionId: string): Promise<Quest[]>;
+  getQuests(sessionId: string, storyId?: string): Promise<Quest[]>;
   getQuest(id: string, sessionId: string): Promise<Quest | undefined>;
   createQuest(quest: InsertQuest): Promise<Quest>;
   updateQuest(id: string, sessionId: string, updates: Partial<Quest>): Promise<Quest | null>;
@@ -43,7 +43,7 @@ export interface IStorage {
   clearQuests(sessionId: string): Promise<void>;
 
   // Inventory management
-  getItems(sessionId: string): Promise<Item[]>;
+  getItems(sessionId: string, storyId?: string): Promise<Item[]>;
   getItem(id: string, sessionId: string): Promise<Item | undefined>;
   createItem(item: InsertItem): Promise<Item>;
   updateItem(id: string, sessionId: string, updates: Partial<Item>): Promise<Item | null>;
@@ -57,13 +57,13 @@ export interface IStorage {
   deleteEnemy(id: string): Promise<boolean>;
 
   // Message history for AI conversations
-  getMessages(sessionId: string): Promise<Message[]>;
-  getRecentMessages(sessionId: string, limit: number): Promise<Message[]>;
+  getMessages(sessionId: string, storyId?: string): Promise<Message[]>;
+  getRecentMessages(sessionId: string, limit: number, storyId?: string): Promise<Message[]>;
   createMessage(message: InsertMessage): Promise<Message>;
   clearMessages(sessionId: string): Promise<void>;
 
   // Clear all adventure data
-  clearAllAdventureData(sessionId: string): Promise<void>;
+  clearAllAdventureData(sessionId: string, storyId?: string): Promise<void>;
 
   // Campaign management
   getCampaigns(): Promise<Campaign[]>;
@@ -75,12 +75,13 @@ export interface IStorage {
   setActiveCampaign(id: string): Promise<Campaign | null>;
 
   // Game state management
-  getGameState(sessionId: string): Promise<GameState | undefined>;
+  getGameState(sessionId: string, storyId?: string): Promise<GameState | undefined>;
+  getStories(sessionId: string): Promise<GameState[]>;
   createGameState(state: InsertGameState): Promise<GameState>;
-  updateGameState(sessionId: string, updates: Partial<GameState>): Promise<GameState>;
+  updateGameState(sessionId: string, updates: Partial<GameState>, storyId?: string): Promise<GameState>;
 
   // Story summary management (AI memory)
-  getActiveSummary(sessionId: string): Promise<StorySummary | null>;
+  getActiveSummary(sessionId: string, storyId?: string): Promise<StorySummary | null>;
   createSummary(sessionId: string, summary: InsertStorySummary): Promise<StorySummary>;
   deactivateSummaries(sessionId: string): Promise<void>;
 }
@@ -186,7 +187,8 @@ export class MemStorage implements IStorage {
       this.gameState = {
         id: randomUUID(),
         sessionId: this.MEM_SESSION_ID,
-        campaignId: null, // Default campaign support
+        storyId: null,
+        campaignId: null,
         currentScene: 'Starting Village',
         inCombat: false,
         currentTurn: null,
@@ -210,6 +212,7 @@ export class MemStorage implements IStorage {
       this.messages.push({
         id: randomUUID(),
         sessionId: this.MEM_SESSION_ID,
+        storyId: null,
         content: `The morning sun breaks through the mist as you arrive at Millhaven, a bustling village nestled between ancient forests and rolling hills. The scent of fresh bread wafts from the bakery, mingling with the metallic tang of the blacksmith's forge. Weathered stone buildings line cobblestone streets, their thatched roofs still damp from last night's rain. Villagers bustle about their morning routines—merchants setting up market stalls, children chasing chickens, farmers hauling carts of vegetables—but you notice something peculiar: worried glances cast toward the shadowy forest edge, and hushed conversations that fall silent when strangers pass.
 
 You've traveled far to reach this place, drawn by rumors that have spread throughout the kingdom. Three villagers have vanished without a trace over the past fortnight, all last seen near the old forest road. Strange howls echo through the night—sounds unlike any natural wolf. The village elder, a weathered woman named Mirela with silver-streaked hair and knowing eyes, has posted notices seeking brave adventurers to investigate these dark omens. The local tavern, "The Sleeping Dragon," stands at the village square, its wooden sign creaking in the breeze. Smoke curls from the chimney, promising warmth, ale, and perhaps information from loose-tongued locals. The morning market sprawls nearby, where you might acquire supplies for the journey ahead. And there, at the far end of the main road, the forest looms—ancient, dark, and waiting.
@@ -255,6 +258,7 @@ You've traveled far to reach this place, drawn by rumors that have spread throug
     const newCharacter: Character = {
       id,
       sessionId: character.sessionId,
+      storyId: character.storyId ?? null,
       name: character.name,
       class: character.class,
       level: character.level ?? 1,
@@ -372,6 +376,7 @@ You've traveled far to reach this place, drawn by rumors that have spread throug
     const newQuest: Quest = {
       id,
       sessionId: quest.sessionId,
+      storyId: quest.storyId ?? null,
       title: quest.title,
       description: quest.description,
       status: quest.status,
@@ -464,6 +469,7 @@ You've traveled far to reach this place, drawn by rumors that have spread throug
     const newItem: Item = {
       id,
       sessionId: item.sessionId,
+      storyId: item.storyId ?? null,
       name: item.name,
       type: item.type,
       description: item.description ?? null,
@@ -515,6 +521,7 @@ You've traveled far to reach this place, drawn by rumors that have spread throug
     const newMessage: Message = {
       id,
       sessionId: message.sessionId,
+      storyId: message.storyId ?? null,
       content: message.content,
       sender: message.sender,
       senderName: message.senderName ?? null,
@@ -564,11 +571,16 @@ You've traveled far to reach this place, drawn by rumors that have spread throug
     return this.gameState;
   }
 
+  async getStories(sessionId: string): Promise<GameState[]> {
+    return this.gameState ? [this.gameState] : [];
+  }
+
   async createGameState(state: InsertGameState): Promise<GameState> {
     const id = randomUUID();
     const newGameState: GameState = {
       id,
       sessionId: state.sessionId,
+      storyId: state.storyId ?? null,
       campaignId: state.campaignId ?? null,
       currentScene: state.currentScene,
       inCombat: state.inCombat ?? false,

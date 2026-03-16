@@ -1,11 +1,10 @@
 import { BookOpen, Plus, Star, ChevronRight, Users, Sparkles } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-import type { GameState, Character } from "@shared/schema";
+import type { GameState } from "@shared/schema";
 
 interface BookshelfProps {
-  gameState?: GameState;
-  character?: Character;
-  onContinueStory: () => void;
+  stories: GameState[];
+  onContinueStory: (storyId: string) => void;
   onNewStory: () => void;
   className?: string;
 }
@@ -26,6 +25,11 @@ const GENRE_LABELS: Record<string, string> = {
   romance: "Romance",
   horror: "Horror",
 };
+
+function getStoryTitle(story: GameState): string {
+  const genreLabel = GENRE_LABELS[story.genre || ""] || "Story";
+  return `${genreLabel} Story`;
+}
 
 function BookSpine({
   title,
@@ -85,7 +89,7 @@ function BookSpine({
                   (title?.length || 0) > 12 ? "vertical-rl" : undefined,
               }}
             >
-              {title?.split("\n")[0] || "Story"}
+              {title || "Story"}
             </span>
           )}
         </div>
@@ -112,7 +116,7 @@ function BookSpine({
       {/* Label */}
       <div className="text-center w-full">
         <p className="text-[10px] font-medium text-[hsl(var(--muted-foreground))] leading-tight truncate">
-          {isNew ? "New Story" : title?.split("\n").join(" ") || "Untitled"}
+          {isNew ? "New Story" : title || "Untitled"}
         </p>
         {!isNew && totalPages && (
           <p className="text-[9px] text-[hsl(var(--muted-foreground))]/60 mt-0.5">
@@ -126,7 +130,22 @@ function BookSpine({
   );
 }
 
-// Guide avatar (from prototype)
+// Wooden shelf component
+function WoodenShelf() {
+  return (
+    <div
+      className="h-3 rounded-sm"
+      style={{
+        background:
+          "linear-gradient(180deg, #c4a882 0%, #b8986e 40%, #a88b5e 60%, #c4a882 100%)",
+        boxShadow:
+          "0 4px 8px rgba(0,0,0,0.3), inset 0 2px 4px rgba(255,255,255,0.2), inset 0 -2px 4px rgba(0,0,0,0.15)",
+      }}
+    />
+  );
+}
+
+// Guide avatar
 function GuideAvatar({ size = 44 }: { size?: number }) {
   return (
     <div className="animate-bounce-slow" style={{ width: size, height: size }}>
@@ -164,37 +183,30 @@ function GuideAvatar({ size = 44 }: { size?: number }) {
 }
 
 export default function Bookshelf({
-  gameState,
-  character,
+  stories,
   onContinueStory,
   onNewStory,
   className = "",
 }: BookshelfProps) {
-  const hasActiveStory =
-    gameState?.totalPages && gameState.totalPages > 0 && !gameState.storyComplete;
-  const hasCompletedStory = gameState?.storyComplete;
-  const storyTitle = character?.name
-    ? `${character.name}'s ${GENRE_LABELS[gameState?.genre || ""] || ""} Story`
-    : gameState?.genre
-      ? `${GENRE_LABELS[gameState.genre]} Story`
-      : "Your Story";
+  const activeStories = stories.filter(s => !s.storyComplete && s.totalPages && s.totalPages > 0);
+  const completedStories = stories.filter(s => s.storyComplete);
 
-  // Guide greeting
+  // Guide greeting based on library state
   const getGreeting = () => {
-    if (!gameState?.totalPages) {
+    if (stories.length === 0) {
       return "Welcome! Your shelf is empty — shall we start your first story?";
     }
-    if (gameState.storyComplete) {
-      return `You finished "${storyTitle}"! Ready for your next adventure?`;
+    if (activeStories.length > 0 && completedStories.length > 0) {
+      return `You have ${activeStories.length} story in progress and ${completedStories.length} finished. What next?`;
     }
-    const pct = (gameState.currentPage || 0) / (gameState.totalPages || 1);
-    if (pct < 0.3) {
-      return `Your story is just beginning. ${gameState.totalPages - (gameState.currentPage || 0)} pages left to explore.`;
+    if (activeStories.length > 0) {
+      const story = activeStories[0];
+      const pct = (story.currentPage || 0) / (story.totalPages || 1);
+      if (pct < 0.3) return "Your story is just beginning. Shall we continue?";
+      if (pct < 0.7) return "Things are getting interesting... pick up where you left off?";
+      return "You're nearing the end. The climax awaits!";
     }
-    if (pct < 0.7) {
-      return "Things are getting interesting... shall we continue where you left off?";
-    }
-    return "You're nearing the end of your story. The climax awaits!";
+    return `You've finished ${completedStories.length} ${completedStories.length === 1 ? "story" : "stories"}! Ready for your next adventure?`;
   };
 
   return (
@@ -222,7 +234,7 @@ export default function Bookshelf({
       </div>
 
       {/* Currently Reading shelf */}
-      {hasActiveStory && (
+      {activeStories.length > 0 && (
         <div className="mb-2">
           <div className="flex items-center justify-between mb-3 px-1">
             <h2 className="text-sm font-semibold text-muted-foreground">
@@ -230,62 +242,58 @@ export default function Bookshelf({
             </h2>
           </div>
           <div className="relative">
-            <div className="flex gap-4 px-3 pb-3 pt-1">
-              <BookSpine
-                title={storyTitle}
-                genre={gameState?.genre || "fantasy"}
-                currentPage={gameState?.currentPage || 0}
-                totalPages={gameState?.totalPages || 0}
-                isComplete={false}
-                onClick={onContinueStory}
-              />
+            <div className="flex gap-4 px-3 pb-3 pt-1 overflow-x-auto">
+              {activeStories.map(story => (
+                <BookSpine
+                  key={story.storyId}
+                  title={getStoryTitle(story)}
+                  genre={story.genre || "fantasy"}
+                  currentPage={story.currentPage || 0}
+                  totalPages={story.totalPages || 0}
+                  isComplete={false}
+                  onClick={() => onContinueStory(story.storyId!)}
+                />
+              ))}
               <BookSpine isNew onClick={onNewStory} />
             </div>
-            {/* Wooden shelf */}
-            <div
-              className="h-3 rounded-sm"
-              style={{
-                background:
-                  "linear-gradient(180deg, #c4a882 0%, #b8986e 40%, #a88b5e 60%, #c4a882 100%)",
-                boxShadow:
-                  "0 4px 8px rgba(0,0,0,0.3), inset 0 2px 4px rgba(255,255,255,0.2), inset 0 -2px 4px rgba(0,0,0,0.15)",
-              }}
-            />
+            <WoodenShelf />
           </div>
 
-          {/* Quick continue card */}
-          <button
-            onClick={onContinueStory}
-            className="w-full mt-4 text-left bg-card border border-border rounded-lg p-4 hover:bg-accent/10 transition-colors active:scale-[0.98]"
-          >
-            <div className="flex items-center gap-3">
-              <BookOpen className="w-5 h-5 text-primary shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground truncate">
-                  Continue: {storyTitle}
-                </p>
-                <div className="flex items-center gap-2 mt-1">
-                  <Progress
-                    value={
-                      ((gameState?.currentPage || 0) /
-                        (gameState?.totalPages || 1)) *
-                      100
-                    }
-                    className="h-1.5 flex-1"
-                  />
-                  <span className="text-xs text-muted-foreground shrink-0">
-                    {gameState?.currentPage}/{gameState?.totalPages}
-                  </span>
+          {/* Quick continue card for most recent active story */}
+          {activeStories[0] && (
+            <button
+              onClick={() => onContinueStory(activeStories[0].storyId!)}
+              className="w-full mt-4 text-left bg-card border border-border rounded-lg p-4 hover:bg-accent/10 transition-colors active:scale-[0.98]"
+            >
+              <div className="flex items-center gap-3">
+                <BookOpen className="w-5 h-5 text-primary shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-foreground truncate">
+                    Continue: {getStoryTitle(activeStories[0])}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Progress
+                      value={
+                        ((activeStories[0].currentPage || 0) /
+                          (activeStories[0].totalPages || 1)) *
+                        100
+                      }
+                      className="h-1.5 flex-1"
+                    />
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {activeStories[0].currentPage}/{activeStories[0].totalPages}
+                    </span>
+                  </div>
                 </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
               </div>
-              <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-            </div>
-          </button>
+            </button>
+          )}
         </div>
       )}
 
       {/* Completed shelf */}
-      {hasCompletedStory && (
+      {completedStories.length > 0 && (
         <div className="mb-2 mt-6">
           <div className="flex items-center justify-between mb-3 px-1">
             <h2 className="text-sm font-semibold text-muted-foreground">
@@ -293,46 +301,32 @@ export default function Bookshelf({
             </h2>
           </div>
           <div className="relative">
-            <div className="flex gap-4 px-3 pb-3 pt-1">
-              <BookSpine
-                title={storyTitle}
-                genre={gameState?.genre || "fantasy"}
-                currentPage={gameState?.totalPages || 0}
-                totalPages={gameState?.totalPages || 0}
-                isComplete={true}
-                onClick={onContinueStory}
-              />
-              <BookSpine isNew onClick={onNewStory} />
+            <div className="flex gap-4 px-3 pb-3 pt-1 overflow-x-auto">
+              {completedStories.map(story => (
+                <BookSpine
+                  key={story.storyId}
+                  title={getStoryTitle(story)}
+                  genre={story.genre || "fantasy"}
+                  currentPage={story.totalPages || 0}
+                  totalPages={story.totalPages || 0}
+                  isComplete={true}
+                  onClick={() => onContinueStory(story.storyId!)}
+                />
+              ))}
             </div>
-            <div
-              className="h-3 rounded-sm"
-              style={{
-                background:
-                  "linear-gradient(180deg, #c4a882 0%, #b8986e 40%, #a88b5e 60%, #c4a882 100%)",
-                boxShadow:
-                  "0 4px 8px rgba(0,0,0,0.3), inset 0 2px 4px rgba(255,255,255,0.2), inset 0 -2px 4px rgba(0,0,0,0.15)",
-              }}
-            />
+            <WoodenShelf />
           </div>
         </div>
       )}
 
-      {/* Empty state — no story yet */}
-      {!hasActiveStory && !hasCompletedStory && (
+      {/* Empty state — no stories yet */}
+      {stories.length === 0 && (
         <div className="mt-4">
           <div className="relative mb-6">
             <div className="flex gap-4 px-3 pb-3 pt-1 justify-center">
               <BookSpine isNew onClick={onNewStory} />
             </div>
-            <div
-              className="h-3 rounded-sm"
-              style={{
-                background:
-                  "linear-gradient(180deg, #c4a882 0%, #b8986e 40%, #a88b5e 60%, #c4a882 100%)",
-                boxShadow:
-                  "0 4px 8px rgba(0,0,0,0.3), inset 0 2px 4px rgba(255,255,255,0.2), inset 0 -2px 4px rgba(0,0,0,0.15)",
-              }}
-            />
+            <WoodenShelf />
           </div>
 
           <button

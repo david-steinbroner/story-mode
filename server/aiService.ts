@@ -984,6 +984,7 @@ Format as JSON:
 
         return {
           sessionId,
+          storyId: null,
           title: result.title,
           description: result.description,
           status: 'active',

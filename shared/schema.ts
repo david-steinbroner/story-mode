@@ -7,6 +7,7 @@ import { z } from "zod";
 export const characters = pgTable("characters", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   sessionId: varchar("session_id").notNull(),
+  storyId: varchar("story_id"),
   name: text("name").notNull(),
   class: text("class").notNull(),
   level: integer("level").default(1).notNull(),
@@ -36,6 +37,7 @@ export const characters = pgTable("characters", {
 export const quests = pgTable("quests", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   sessionId: varchar("session_id").notNull(),
+  storyId: varchar("story_id"),
   title: text("title").notNull(),
   description: text("description").notNull(),
   status: text("status").notNull(), // active, completed, failed
@@ -52,6 +54,7 @@ export const quests = pgTable("quests", {
 export const items = pgTable("items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   sessionId: varchar("session_id").notNull(),
+  storyId: varchar("story_id"),
   name: text("name").notNull(),
   type: text("type").notNull(), // weapon, armor, consumable, misc
   description: text("description"),
@@ -64,6 +67,7 @@ export const items = pgTable("items", {
 export const messages = pgTable("messages", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   sessionId: varchar("session_id").notNull(),
+  storyId: varchar("story_id"),
   content: text("content").notNull(),
   sender: text("sender").notNull(), // player, dm, npc
   senderName: text("sender_name"),
@@ -99,6 +103,7 @@ export const campaigns = pgTable("campaigns", {
 export const storySummaries = pgTable("story_summaries", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   sessionId: varchar("session_id").notNull(),
+  storyId: varchar("story_id"),
 
   // The actual summary content
   summaryText: text("summary_text").notNull(),
@@ -122,6 +127,7 @@ export const storySummaries = pgTable("story_summaries", {
 export const gameState = pgTable("game_state", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   sessionId: varchar("session_id").notNull(),
+  storyId: varchar("story_id"),
   campaignId: varchar("campaign_id"),
   currentScene: text("current_scene").notNull(),
   inCombat: boolean("in_combat").default(false).notNull(),

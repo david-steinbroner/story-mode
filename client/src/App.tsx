@@ -1,4 +1,4 @@
-import { queryClient, apiRequest } from "./lib/queryClient";
+import { queryClient, apiRequest, setActiveStoryId } from "./lib/queryClient";
 import { QueryClientProvider, useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/toaster";
@@ -25,8 +25,14 @@ type ViewType = "bookshelf" | "newStory" | "game";
 
 function GameApp() {
   const [currentView, setCurrentView] = useState<ViewType>("bookshelf");
+  const [activeStoryId, setActiveStory] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [isCreatingStory, setIsCreatingStory] = useState(false);
+
+  // Sync storyId to queryClient headers whenever it changes
+  useEffect(() => {
+    setActiveStoryId(activeStoryId);
+  }, [activeStoryId]);
 
   // Toast notifications
   const { toast } = useToast();
@@ -63,6 +69,11 @@ function GameApp() {
 
   const { data: quests = [] } = useQuery<Quest[]>({
     queryKey: ['/api/quests'],
+  });
+
+  // Fetch all stories for the bookshelf (not scoped by storyId)
+  const { data: stories = [] } = useQuery<GameState[]>({
+    queryKey: ['/api/stories'],
   });
 
   // Update Sentry context when character data changes
@@ -220,16 +231,31 @@ function GameApp() {
     }
   };
 
+  const navigateToBookshelf = () => {
+    setActiveStory(null);
+    // Invalidate story-scoped queries so bookshelf shows fresh data
+    queryClient.invalidateQueries({ queryKey: ['/api/stories'] });
+    setCurrentView("bookshelf");
+  };
+
+  const enterStory = (storyId: string) => {
+    setActiveStory(storyId);
+    // Invalidate queries so they refetch with the new storyId header
+    queryClient.invalidateQueries({ queryKey: ['/api/character'] });
+    queryClient.invalidateQueries({ queryKey: ['/api/game-state'] });
+    queryClient.invalidateQueries({ queryKey: ['/api/messages'] });
+    queryClient.invalidateQueries({ queryKey: ['/api/quests'] });
+    setCurrentView("game");
+  };
+
   const handleEndAdventure = async () => {
     try {
-      await apiRequest('POST', '/api/adventure/reset', {});
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['/api/game-state'] }),
-        queryClient.invalidateQueries({ queryKey: ['/api/quests'] }),
-        queryClient.invalidateQueries({ queryKey: ['/api/messages'] }),
-        queryClient.invalidateQueries({ queryKey: ['/api/character'] }),
-      ]);
-      setCurrentView("bookshelf");
+      if (activeStoryId) {
+        await apiRequest('DELETE', `/api/stories/${activeStoryId}`);
+      } else {
+        await apiRequest('POST', '/api/adventure/reset', {});
+      }
+      navigateToBookshelf();
       analytics.trackEvent("adventure_ended");
     } catch (error) {
       console.error('Failed to end adventure:', error);
@@ -240,11 +266,8 @@ function GameApp() {
   if (currentView === "bookshelf") {
     return (
       <Bookshelf
-        gameState={gameState}
-        character={character}
-        onContinueStory={() => {
-          setCurrentView("game");
-        }}
+        stories={stories}
+        onContinueStory={(storyId) => enterStory(storyId)}
         onNewStory={() => setCurrentView("newStory")}
       />
     );
@@ -262,16 +285,8 @@ function GameApp() {
             const data = await response.json();
             console.log('[App] New story created:', data);
 
-            // Invalidate all queries to load fresh story data
-            await Promise.all([
-              queryClient.invalidateQueries({ queryKey: ['/api/character'] }),
-              queryClient.invalidateQueries({ queryKey: ['/api/game-state'] }),
-              queryClient.invalidateQueries({ queryKey: ['/api/quests'] }),
-              queryClient.invalidateQueries({ queryKey: ['/api/items'] }),
-              queryClient.invalidateQueries({ queryKey: ['/api/messages'] }),
-            ]);
-
-            setCurrentView("game");
+            // Enter the newly created story
+            enterStory(data.storyId);
           } catch (error) {
             console.error('[App] Error creating story:', error);
             toast({
@@ -306,7 +321,7 @@ function GameApp() {
               onClick={() => {
                 console.log('[App] Return to bookshelf');
                 analytics.buttonClicked('Return to Bookshelf', 'Top Navigation');
-                setCurrentView("bookshelf");
+                navigateToBookshelf();
               }}
               className="text-muted-foreground min-h-[44px]"
               data-testid="button-return-menu"

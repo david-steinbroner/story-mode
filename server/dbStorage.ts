@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, and, desc, asc } from "drizzle-orm";
+import { eq, and, desc, asc, sql } from "drizzle-orm";
 import { type IStorage } from "./storage";
 import {
   type User,
@@ -68,12 +68,14 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getCharacter(sessionId: string): Promise<Character | undefined> {
+  async getCharacter(sessionId: string, storyId?: string): Promise<Character | undefined> {
     try {
+      const conditions = [eq(characters.sessionId, sessionId)];
+      if (storyId) conditions.push(eq(characters.storyId, storyId));
       const result = await db
         .select()
         .from(characters)
-        .where(eq(characters.sessionId, sessionId))
+        .where(and(...conditions))
         .limit(1);
       return result[0] || undefined;
     } catch (error) {
@@ -178,12 +180,14 @@ export class DbStorage implements IStorage {
   // QUEST MANAGEMENT
   // ============================================================
 
-  async getQuests(sessionId: string): Promise<Quest[]> {
+  async getQuests(sessionId: string, storyId?: string): Promise<Quest[]> {
     try {
+      const conditions = [eq(quests.sessionId, sessionId)];
+      if (storyId) conditions.push(eq(quests.storyId, storyId));
       const result = await db
         .select()
         .from(quests)
-        .where(eq(quests.sessionId, sessionId));
+        .where(and(...conditions));
 
       // Sort by priority (urgent > high > normal > low), then by status (active first)
       const priorityOrder: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
@@ -345,12 +349,14 @@ export class DbStorage implements IStorage {
   // INVENTORY MANAGEMENT
   // ============================================================
 
-  async getItems(sessionId: string): Promise<Item[]> {
+  async getItems(sessionId: string, storyId?: string): Promise<Item[]> {
     try {
+      const conditions = [eq(items.sessionId, sessionId)];
+      if (storyId) conditions.push(eq(items.storyId, storyId));
       const result = await db
         .select()
         .from(items)
-        .where(eq(items.sessionId, sessionId));
+        .where(and(...conditions));
 
       // Sort by equipped status first, then by rarity, then by type
       const rarityOrder: Record<string, number> = { legendary: 0, epic: 1, rare: 2, uncommon: 3, common: 4 };
@@ -449,12 +455,14 @@ export class DbStorage implements IStorage {
   // MESSAGE HISTORY
   // ============================================================
 
-  async getMessages(sessionId: string): Promise<Message[]> {
+  async getMessages(sessionId: string, storyId?: string): Promise<Message[]> {
     try {
+      const conditions = [eq(messages.sessionId, sessionId)];
+      if (storyId) conditions.push(eq(messages.storyId, storyId));
       const result = await db
         .select()
         .from(messages)
-        .where(eq(messages.sessionId, sessionId))
+        .where(and(...conditions))
         .orderBy(asc(messages.timestamp));
       return result;
     } catch (error) {
@@ -462,13 +470,14 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getRecentMessages(sessionId: string, limit: number): Promise<Message[]> {
+  async getRecentMessages(sessionId: string, limit: number, storyId?: string): Promise<Message[]> {
     try {
-      // Get the most recent N messages, ordered by id descending, then reverse for chronological order
+      const conditions = [eq(messages.sessionId, sessionId)];
+      if (storyId) conditions.push(eq(messages.storyId, storyId));
       const result = await db
         .select()
         .from(messages)
-        .where(eq(messages.sessionId, sessionId))
+        .where(and(...conditions))
         .orderBy(desc(messages.id))
         .limit(limit);
       return result.reverse();
@@ -503,16 +512,35 @@ export class DbStorage implements IStorage {
   // GAME STATE MANAGEMENT
   // ============================================================
 
-  async getGameState(sessionId: string): Promise<GameState | undefined> {
+  async getGameState(sessionId: string, storyId?: string): Promise<GameState | undefined> {
     try {
+      const conditions = [eq(gameState.sessionId, sessionId)];
+      if (storyId) conditions.push(eq(gameState.storyId, storyId));
       const result = await db
         .select()
         .from(gameState)
-        .where(eq(gameState.sessionId, sessionId))
+        .where(and(...conditions))
         .limit(1);
       return result[0] || undefined;
     } catch (error) {
       throw new Error(`Failed to get game state: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
+  async getStories(sessionId: string): Promise<GameState[]> {
+    try {
+      const result = await db
+        .select()
+        .from(gameState)
+        .where(and(
+          eq(gameState.sessionId, sessionId),
+          // Only return V2 stories (those with a storyId and totalPages)
+          sql`${gameState.storyId} IS NOT NULL`
+        ))
+        .orderBy(desc(gameState.id));
+      return result;
+    } catch (error) {
+      throw new Error(`Failed to get stories: ${error instanceof Error ? error.message : error}`);
     }
   }
 
@@ -528,15 +556,18 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async updateGameState(sessionId: string, updates: Partial<GameState>): Promise<GameState> {
+  async updateGameState(sessionId: string, updates: Partial<GameState>, storyId?: string): Promise<GameState> {
     try {
       // Remove id and sessionId from updates to avoid overwriting
-      const { id: _id, sessionId: _sessionId, ...safeUpdates } = updates;
+      const { id: _id, sessionId: _sessionId, storyId: _storyId, ...safeUpdates } = updates;
+
+      const conditions = [eq(gameState.sessionId, sessionId)];
+      if (storyId) conditions.push(eq(gameState.storyId, storyId));
 
       const result = await db
         .update(gameState)
         .set(safeUpdates)
-        .where(eq(gameState.sessionId, sessionId))
+        .where(and(...conditions))
         .returning();
 
       if (!result[0]) {
@@ -553,17 +584,17 @@ export class DbStorage implements IStorage {
   // STORY SUMMARY MANAGEMENT (AI Memory)
   // ============================================================
 
-  async getActiveSummary(sessionId: string): Promise<StorySummary | null> {
+  async getActiveSummary(sessionId: string, storyId?: string): Promise<StorySummary | null> {
     try {
+      const conditions = [
+        eq(storySummaries.sessionId, sessionId),
+        eq(storySummaries.isActive, true)
+      ];
+      if (storyId) conditions.push(eq(storySummaries.storyId, storyId));
       const result = await db
         .select()
         .from(storySummaries)
-        .where(
-          and(
-            eq(storySummaries.sessionId, sessionId),
-            eq(storySummaries.isActive, true)
-          )
-        )
+        .where(and(...conditions))
         .orderBy(desc(storySummaries.createdAt))
         .limit(1);
       return result[0] || null;
@@ -603,36 +634,45 @@ export class DbStorage implements IStorage {
   // UTILITY
   // ============================================================
 
-  async clearAllAdventureData(sessionId: string): Promise<void> {
+  async clearAllAdventureData(sessionId: string, storyId?: string): Promise<void> {
     try {
-      // Clear all game data for a fresh start
-      await db.delete(messages).where(eq(messages.sessionId, sessionId));
-      await db.delete(quests).where(eq(quests.sessionId, sessionId));
-      await db.delete(items).where(eq(items.sessionId, sessionId));
-      await db.delete(characters).where(eq(characters.sessionId, sessionId));
-      await db.delete(storySummaries).where(eq(storySummaries.sessionId, sessionId));
+      if (storyId) {
+        // Clear data for a specific story only
+        await db.delete(messages).where(and(eq(messages.sessionId, sessionId), eq(messages.storyId, storyId)));
+        await db.delete(quests).where(and(eq(quests.sessionId, sessionId), eq(quests.storyId, storyId)));
+        await db.delete(items).where(and(eq(items.sessionId, sessionId), eq(items.storyId, storyId)));
+        await db.delete(characters).where(and(eq(characters.sessionId, sessionId), eq(characters.storyId, storyId)));
+        await db.delete(storySummaries).where(and(eq(storySummaries.sessionId, sessionId), eq(storySummaries.storyId, storyId)));
+        await db.delete(gameState).where(and(eq(gameState.sessionId, sessionId), eq(gameState.storyId, storyId)));
+      } else {
+        // Legacy: clear all data for the session
+        await db.delete(messages).where(eq(messages.sessionId, sessionId));
+        await db.delete(quests).where(eq(quests.sessionId, sessionId));
+        await db.delete(items).where(eq(items.sessionId, sessionId));
+        await db.delete(characters).where(eq(characters.sessionId, sessionId));
+        await db.delete(storySummaries).where(eq(storySummaries.sessionId, sessionId));
 
-      // Reset game state
-      const existingState = await this.getGameState(sessionId);
-      if (existingState) {
-        await this.updateGameState(sessionId, {
-          currentScene: "A new adventure awaits...",
-          inCombat: false,
-          currentTurn: null,
-          turnCount: 0,
-          combatId: null,
-          worldSetting: null,
-          worldTheme: null,
-          worldDescription: null,
-          generatedFromCharacter: false,
-          // V2: Reset page structure
-          totalPages: null,
-          currentPage: 0,
-          storyLength: null,
-          genre: null,
-          characterDescription: null,
-          storyComplete: false,
-        });
+        // Reset game state
+        const existingState = await this.getGameState(sessionId);
+        if (existingState) {
+          await this.updateGameState(sessionId, {
+            currentScene: "A new adventure awaits...",
+            inCombat: false,
+            currentTurn: null,
+            turnCount: 0,
+            combatId: null,
+            worldSetting: null,
+            worldTheme: null,
+            worldDescription: null,
+            generatedFromCharacter: false,
+            totalPages: null,
+            currentPage: 0,
+            storyLength: null,
+            genre: null,
+            characterDescription: null,
+            storyComplete: false,
+          });
+        }
       }
     } catch (error) {
       throw new Error(`Failed to clear adventure data: ${error instanceof Error ? error.message : error}`);

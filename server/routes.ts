@@ -86,11 +86,13 @@ const updateQuestSchemaForAI = insertQuestSchema.partial().refine(
 async function applyAIResponse(
   sessionId: string,
   playerMessage: string,
-  aiResponseData: AIResponse
+  aiResponseData: AIResponse,
+  storyId?: string
 ): Promise<Message> {
   // Store the player message
   await storage.createMessage({
     sessionId,
+    storyId: storyId ?? null,
     content: playerMessage,
     sender: 'player',
     senderName: null,
@@ -100,6 +102,7 @@ async function applyAIResponse(
   // Store the AI response
   const aiMessage = await storage.createMessage({
     sessionId,
+    storyId: storyId ?? null,
     content: aiResponseData.content,
     sender: aiResponseData.sender,
     senderName: aiResponseData.senderName,
@@ -247,6 +250,10 @@ function getSessionId(req: Request): string {
   return sessionId;
 }
 
+function getStoryId(req: Request): string | undefined {
+  return req.headers['x-story-id'] as string | undefined;
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize storage with default data (system context, no user session)
   await storage.init('system');
@@ -254,9 +261,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/character", async (req, res) => {
     try {
       const sessionId = getSessionId(req);
-      const character = await storage.getCharacter(sessionId);
-      // Return null instead of 404 when no character exists
-      // This allows the UI to properly detect "no active game" state
+      const storyId = getStoryId(req);
+      const character = await storage.getCharacter(sessionId, storyId);
       res.json(character || null);
     } catch (error) {
       console.error('Error fetching character:', error);
@@ -419,6 +425,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     epic: 250,
   };
 
+  // List all stories for this session
+  app.get("/api/stories", async (req, res) => {
+    try {
+      const sessionId = getSessionId(req);
+      const stories = await storage.getStories(sessionId);
+      res.json(stories);
+    } catch (error) {
+      console.error('Error fetching stories:', error);
+      res.status(500).json({ error: "Failed to fetch stories" });
+    }
+  });
+
+  // Delete a specific story
+  app.delete("/api/stories/:storyId", async (req, res) => {
+    try {
+      const sessionId = getSessionId(req);
+      const { storyId } = req.params;
+      await storage.clearAllAdventureData(sessionId, storyId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error deleting story:', error);
+      res.status(500).json({ error: "Failed to delete story" });
+    }
+  });
+
   app.post("/api/story/new", aiLimiter, async (req, res) => {
     try {
       const sessionId = getSessionId(req);
@@ -430,14 +461,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { genre, storyLength, characterDescription } = result.data;
       const totalPages = STORY_LENGTH_PAGES[storyLength];
 
-      // Clear any existing adventure data for a fresh start
-      await storage.clearAllAdventureData(sessionId);
+      // Generate a unique storyId for this new story
+      const storyId = randomUUID();
 
       // Create a lightweight character from the description
       const character = await storage.createCharacter({
         sessionId,
-        name: 'Protagonist', // AI will establish the real name from description
-        class: genre, // Repurposing class field for genre (temporary until schema cleanup)
+        storyId,
+        name: 'Protagonist',
+        class: genre,
         level: 1,
         experience: 0,
         appearance: characterDescription,
@@ -451,6 +483,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create game state with page tracking
       const state = await storage.createGameState({
         sessionId,
+        storyId,
         currentScene: `Opening — a new ${genre} story begins`,
         inCombat: false,
         currentTurn: null,
@@ -479,10 +512,11 @@ Do NOT re-state the character description back to the reader. Instead, SHOW who 
       }
 
       // Save the AI's first page and apply any actions (quests, items, etc.)
-      const firstMessage = await applyAIResponse(sessionId, `[New story: ${genre}, ${storyLength}] ${characterDescription}`, aiResponse);
+      const firstMessage = await applyAIResponse(sessionId, `[New story: ${genre}, ${storyLength}] ${characterDescription}`, aiResponse, storyId);
 
       res.json({
         success: true,
+        storyId,
         story: {
           genre,
           storyLength,
@@ -492,7 +526,7 @@ Do NOT re-state the character description back to the reader. Instead, SHOW who 
         },
         firstPage: aiResponse.content,
         message: firstMessage,
-        gameState: await storage.getGameState(sessionId),
+        gameState: await storage.getGameState(sessionId, storyId),
       });
     } catch (error) {
       console.error('Error creating new story:', error);
@@ -897,7 +931,8 @@ Do NOT re-state the character description back to the reader. Instead, SHOW who 
   app.get("/api/quests", async (req, res) => {
     try {
       const sessionId = getSessionId(req);
-      const quests = await storage.getQuests(sessionId);
+      const storyId = getStoryId(req);
+      const quests = await storage.getQuests(sessionId, storyId);
       res.json(quests);
     } catch (error) {
       console.error('Error fetching quests:', error);
@@ -972,7 +1007,8 @@ Do NOT re-state the character description back to the reader. Instead, SHOW who 
   app.get("/api/items", async (req, res) => {
     try {
       const sessionId = getSessionId(req);
-      const items = await storage.getItems(sessionId);
+      const storyId = getStoryId(req);
+      const items = await storage.getItems(sessionId, storyId);
       res.json(items);
     } catch (error) {
       console.error('Error fetching items:', error);
@@ -1047,18 +1083,19 @@ Do NOT re-state the character description back to the reader. Instead, SHOW who 
   app.get("/api/messages", async (req, res) => {
     try {
       const sessionId = getSessionId(req);
+      const storyId = getStoryId(req);
       let limit: number | undefined;
       if (req.query.limit) {
         const parsed = parseInt(req.query.limit as string);
         if (isNaN(parsed) || parsed < 1) {
           return res.status(400).json({ error: "Invalid limit parameter" });
         }
-        limit = Math.min(parsed, 100); // Cap at 100 messages
+        limit = Math.min(parsed, 100);
       }
 
       const messages = limit ?
-        await storage.getRecentMessages(sessionId, limit) :
-        await storage.getMessages(sessionId);
+        await storage.getRecentMessages(sessionId, limit, storyId) :
+        await storage.getMessages(sessionId, storyId);
       res.json(messages);
     } catch (error) {
       console.error('Error fetching messages:', error);
@@ -1104,7 +1141,8 @@ Do NOT re-state the character description back to the reader. Instead, SHOW who 
   app.get("/api/game-state", async (req, res) => {
     try {
       const sessionId = getSessionId(req);
-      const gameState = await storage.getGameState(sessionId);
+      const storyId = getStoryId(req);
+      const gameState = await storage.getGameState(sessionId, storyId);
       res.json(gameState);
     } catch (error) {
       console.error('Error fetching game state:', error);
@@ -1143,6 +1181,7 @@ Do NOT re-state the character description back to the reader. Instead, SHOW who 
   app.post("/api/ai/chat", aiLimiter, async (req, res) => {
     try {
       const sessionId = getSessionId(req);
+      const storyId = getStoryId(req);
       const { message } = req.body;
       if (!message || typeof message !== 'string') {
         return res.status(400).json({ error: "Message is required" });
@@ -1161,7 +1200,7 @@ Do NOT re-state the character description back to the reader. Instead, SHOW who 
       spendTracker.trackRequest(sessionId, aiResponse.tokenUsage);
 
       // Apply AI response (store messages, apply actions, detect side quests)
-      const aiMessage = await applyAIResponse(sessionId, message, aiResponse);
+      const aiMessage = await applyAIResponse(sessionId, message, aiResponse, storyId);
 
       res.json({
         message: aiMessage,
