@@ -1,8 +1,9 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import EmptyState from "./EmptyState";
-import { MessageSquare, Loader2, XCircle, RefreshCw, Send } from "lucide-react";
+import { MessageSquare, Loader2, XCircle, RefreshCw, Send, Settings, Minus, Plus } from "lucide-react";
 import type { Message, Character, Quest, Item, GameState } from "@shared/schema";
 import { useState, useRef, useEffect } from "react";
 import { analytics } from "@/lib/posthog";
@@ -19,6 +20,26 @@ interface ChatInterfaceProps {
   quests?: Quest[];
   items?: Item[];
   gameState?: GameState;
+}
+
+const FONT_SIZES = [
+  { label: "Small", px: 14 },
+  { label: "Medium", px: 16 },
+  { label: "Large", px: 18 },
+  { label: "X-Large", px: 20 },
+] as const;
+
+const FONT_SIZE_STORAGE_KEY = "storymode-font-size";
+
+function getInitialFontSizeIndex(): number {
+  try {
+    const stored = localStorage.getItem(FONT_SIZE_STORAGE_KEY);
+    if (stored !== null) {
+      const idx = parseInt(stored, 10);
+      if (idx >= 0 && idx < FONT_SIZES.length) return idx;
+    }
+  } catch {}
+  return 1; // Default to Medium
 }
 
 // Helper function to parse message content and extract options
@@ -57,6 +78,7 @@ export default function ChatInterface({
 }: ChatInterfaceProps) {
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [inputText, setInputText] = useState("");
+  const [fontSizeIndex, setFontSizeIndex] = useState(getInitialFontSizeIndex);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -65,6 +87,16 @@ export default function ChatInterface({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  const currentFontSize = FONT_SIZES[fontSizeIndex];
+
+  const changeFontSize = (delta: number) => {
+    setFontSizeIndex((prev) => {
+      const next = Math.max(0, Math.min(FONT_SIZES.length - 1, prev + delta));
+      try { localStorage.setItem(FONT_SIZE_STORAGE_KEY, String(next)); } catch {}
+      return next;
+    });
+  };
 
   const handleCopyDebugInfo = () => {
     console.log('[ChatInterface] Copy Debug Info button clicked');
@@ -256,13 +288,50 @@ ${JSON.stringify(debugInfo, null, 2)}
         {/* Clean minimal header */}
         <div className="px-4 py-2.5 border-b flex items-center justify-between">
           <h2 className="font-semibold text-foreground text-sm">Your Story</h2>
-          {gameState?.totalPages && gameState.totalPages > 0 && (
-            <span className="text-xs text-muted-foreground">
-              {gameState.storyComplete
-                ? "Complete"
-                : `Page ${gameState.currentPage || 1} of ${gameState.totalPages}`}
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {gameState?.totalPages && gameState.totalPages > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {gameState.storyComplete
+                  ? "Complete"
+                  : `Page ${gameState.currentPage || 1} of ${gameState.totalPages}`}
+              </span>
+            )}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-muted-foreground h-7 px-2"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-48 p-3" align="center">
+                <p className="text-xs font-medium text-foreground mb-2">Text Size</p>
+                <div className="flex items-center justify-between">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => changeFontSize(-1)}
+                    disabled={fontSizeIndex === 0}
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </Button>
+                  <span className="text-sm text-foreground">{currentFontSize.label}</span>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => changeFontSize(1)}
+                    disabled={fontSizeIndex === FONT_SIZES.length - 1}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
           <Button
             variant="ghost"
             size="sm"
@@ -303,7 +372,7 @@ ${JSON.stringify(debugInfo, null, 2)}
                           ? "bg-primary/10 border-l-4 border-primary ml-2 sm:ml-4"
                           : "bg-muted/50"
                       }`}>
-                        <p className="text-sm leading-relaxed text-foreground whitespace-pre-line break-words">{text}</p>
+                        <p className="leading-relaxed text-foreground whitespace-pre-line break-words" style={{ fontSize: `${currentFontSize.px}px` }}>{text}</p>
 
                         {/* Render clickable options for DM/NPC messages */}
                         {!isPlayer && options.length > 0 && (
