@@ -2,9 +2,9 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import EmptyState from "./EmptyState";
-import { MessageSquare, Loader2, XCircle, RefreshCw } from "lucide-react";
+import { MessageSquare, Loader2, XCircle, RefreshCw, Send } from "lucide-react";
 import type { Message, Character, Quest, Item, GameState } from "@shared/schema";
-import { useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { analytics } from "@/lib/posthog";
 import { useToast } from "@/hooks/use-toast";
 import { captureError, addBreadcrumb } from "@/lib/sentry";
@@ -55,6 +55,8 @@ export default function ChatInterface({
   items = [],
   gameState
 }: ChatInterfaceProps) {
+  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [inputText, setInputText] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -321,6 +323,8 @@ ${JSON.stringify(debugInfo, null, 2)}
                                     option_preview: option.substring(0, 50)
                                   });
                                   analytics.messageSent('action');
+                                  setShowCustomInput(false);
+                                  setInputText("");
                                   onSendMessage?.(option);
                                 }}
                                 disabled={isLoading}
@@ -328,6 +332,54 @@ ${JSON.stringify(debugInfo, null, 2)}
                                 <span className="text-sm leading-snug break-words">{option}</span>
                               </Button>
                             ))}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full justify-start text-left h-auto py-2.5 px-3 min-h-[44px] whitespace-normal text-muted-foreground italic"
+                              onClick={() => {
+                                analytics.buttonClicked('Custom Input', 'Chat Interface');
+                                setShowCustomInput(true);
+                              }}
+                              disabled={isLoading}
+                            >
+                              <span className="text-sm leading-snug break-words">I have something else in mind...</span>
+                            </Button>
+                            {showCustomInput && (
+                              <div className="flex gap-2 mt-1">
+                                <input
+                                  type="text"
+                                  placeholder="What would you do?"
+                                  value={inputText}
+                                  onChange={(e) => setInputText(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && inputText.trim()) {
+                                      analytics.messageSent('chat');
+                                      onSendMessage?.(inputText);
+                                      setInputText("");
+                                      setShowCustomInput(false);
+                                    }
+                                  }}
+                                  autoFocus
+                                  className="flex-1 px-3 py-2.5 bg-muted rounded-md text-sm text-foreground placeholder:text-muted-foreground border border-input focus:outline-none focus:ring-2 focus:ring-primary min-h-[44px]"
+                                  disabled={isLoading}
+                                />
+                                <Button
+                                  size="icon"
+                                  onClick={() => {
+                                    if (inputText.trim()) {
+                                      analytics.messageSent('chat');
+                                      onSendMessage?.(inputText);
+                                      setInputText("");
+                                      setShowCustomInput(false);
+                                    }
+                                  }}
+                                  disabled={!inputText.trim() || isLoading}
+                                  className="h-11 w-11 shrink-0"
+                                >
+                                  <Send className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
