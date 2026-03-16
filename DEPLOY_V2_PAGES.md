@@ -100,7 +100,7 @@ After deploy, run the same SQL migration against your production Supabase databa
 
 ## How to test on your iPhone (production)
 
-Once deployed, just open https://aitavern.onrender.com on your iPhone.
+Once deployed, just open https://storymode.onrender.com on your iPhone.
 
 To test the new story flow, you'll need to hit the API directly for now (the frontend UI hasn't been updated to the bookshelf yet). Use the browser console on your phone, or test from your Mac and then continue the conversation on your phone using the same session ID.
 
