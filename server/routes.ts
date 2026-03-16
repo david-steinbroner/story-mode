@@ -414,7 +414,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============================================================
 
   const newStorySchema = z.object({
-    genre: z.enum(['fantasy', 'mystery', 'scifi', 'romance', 'horror']),
+    genre: z.enum(['fantasy', 'mystery', 'scifi', 'romance', 'horror', 'auto']),
     storyLength: z.enum(['short', 'novella', 'novel', 'epic']),
     characterDescription: z.string().min(5).max(1000),
   });
@@ -465,12 +465,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Generate a unique storyId for this new story
       const storyId = randomUUID();
 
+      // For "auto" genre, let the AI decide — use a generic label for storage
+      const genreLabel = genre === "auto" ? "auto" : genre;
+
       // Create a lightweight character from the description
       const character = await storage.createCharacter({
         sessionId,
         storyId,
         name: 'Protagonist',
-        class: genre,
+        class: genreLabel,
         level: 1,
         experience: 0,
         appearance: characterDescription,
@@ -485,7 +488,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const state = await storage.createGameState({
         sessionId,
         storyId,
-        currentScene: `Opening — a new ${genre} story begins`,
+        currentScene: genre === "auto" ? "Opening — a new story begins" : `Opening — a new ${genre} story begins`,
         inCombat: false,
         currentTurn: null,
         turnCount: 0,
@@ -499,7 +502,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Generate the first page via AI
-      const firstPagePrompt = `Begin a new ${totalPages}-page ${genre} story. The reader describes themselves as: "${characterDescription}"
+      const genreInstruction = genre === "auto"
+        ? "Based on the character description, determine the most fitting genre and tone for this story and write accordingly."
+        : `This is a ${genre} story.`;
+
+      const firstPagePrompt = `Begin a new ${totalPages}-page story. ${genreInstruction} The reader describes themselves as: "${characterDescription}"
 
 Your job: Create the opening page. Establish the world, introduce the reader's character within it, and end with the first set of choices. This is page 1 of ${totalPages} — focus on setup and atmosphere. Make the reader want to turn the page.
 
@@ -513,7 +520,7 @@ Do NOT re-state the character description back to the reader. Instead, SHOW who 
       }
 
       // Save the AI's first page and apply any actions (quests, items, etc.)
-      const firstMessage = await applyAIResponse(sessionId, `[New story: ${genre}, ${storyLength}] ${characterDescription}`, aiResponse, storyId);
+      const firstMessage = await applyAIResponse(sessionId, `[New story: ${genreLabel}, ${storyLength}] ${characterDescription}`, aiResponse, storyId);
 
       res.json({
         success: true,
@@ -565,11 +572,6 @@ Do NOT re-state the character description back to the reader. Instead, SHOW who 
   app.post("/api/story/surprise-me", aiLimiter, async (req, res) => {
     try {
       const sessionId = getSessionId(req);
-      const { genre } = req.body;
-
-      if (!genre || typeof genre !== "string") {
-        return res.status(400).json({ success: false, error: "genre is required" });
-      }
 
       // Check spend limits
       const spendCheck = spendTracker.canMakeRequest();
@@ -592,7 +594,7 @@ Do NOT re-state the character description back to the reader. Instead, SHOW who 
         messages: [
           {
             role: "user",
-            content: `Generate a brief, creative character description (2-3 sentences) for someone about to start a ${genre} story. Be imaginative and specific — give them a unique personality, background, or situation. Don't use generic fantasy tropes. Write in second person ("You are...").`,
+            content: `Generate a brief, creative character description (2-3 sentences) for an interactive story. Pick any genre — fantasy, mystery, sci-fi, romance, horror, or something unexpected. Be imaginative and specific — give them a unique personality, background, or situation. Don't use generic tropes. Write in second person ("You are...").`,
           },
         ],
       });

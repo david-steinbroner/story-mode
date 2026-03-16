@@ -3,8 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Info } from "lucide-react";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { apiRequest } from "@/lib/queryClient";
 
 interface NewStoryCreationProps {
@@ -17,14 +17,6 @@ interface NewStoryCreationProps {
   isLoading?: boolean;
   className?: string;
 }
-
-const GENRES = [
-  { id: "fantasy", label: "Fantasy", color: "text-purple-500", desc: "Magic, quests & mythical creatures" },
-  { id: "mystery", label: "Mystery", color: "text-amber-500", desc: "Clues, suspects & twists" },
-  { id: "scifi", label: "Sci-Fi", color: "text-blue-500", desc: "Space, tech & the future" },
-  { id: "romance", label: "Romance", color: "text-rose-500", desc: "Love, drama & connection" },
-  { id: "horror", label: "Horror", color: "text-red-600", desc: "Fear, tension & survival" },
-];
 
 const STORY_LENGTHS = [
   { id: "short", pages: 25, label: "Short Story", desc: "Quick adventure", time: "~15 min" },
@@ -39,26 +31,24 @@ export default function NewStoryCreation({
   isLoading = false,
   className = "",
 }: NewStoryCreationProps) {
-  const [genre, setGenre] = useState<string>("");
   const [storyLength, setStoryLength] = useState<string>("");
   const [characterDescription, setCharacterDescription] = useState("");
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2>(1);
   const [isSurprising, setIsSurprising] = useState(false);
 
   const isValid =
-    genre && storyLength && characterDescription.trim().length >= 5;
+    storyLength && characterDescription.trim().length >= 5;
 
   const handleSubmit = () => {
     if (isValid) {
       onStartStory({
-        genre,
+        genre: "auto",
         storyLength,
         characterDescription: characterDescription.trim(),
       });
     }
   };
 
-  const selectedGenre = GENRES.find((g) => g.id === genre);
   const selectedLength = STORY_LENGTHS.find((l) => l.id === storyLength);
 
   return (
@@ -70,15 +60,13 @@ export default function NewStoryCreation({
           <CardTitle className="text-3xl font-bold">New Story</CardTitle>
           <p className="text-muted-foreground text-base">
             {step === 1
-              ? "What kind of story do you want to live?"
-              : step === 2
-                ? "How long should your story be?"
-                : "Describe who you are in this story"}
+              ? "How long should your story be?"
+              : "Describe who you are in this story"}
           </p>
 
           {/* Step indicator */}
           <div className="flex items-center justify-center gap-2 pt-2">
-            {[1, 2, 3].map((s) => (
+            {[1, 2].map((s) => (
               <div
                 key={s}
                 className={`h-1.5 rounded-full transition-all ${
@@ -94,47 +82,47 @@ export default function NewStoryCreation({
         </CardHeader>
 
         <CardContent className="space-y-6 pt-4">
-          {/* Step 1: Genre Selection */}
+          {/* Step 1: Story Length */}
           {step === 1 && (
-            <div className="grid grid-cols-1 gap-3">
-              {GENRES.map((g) => {
-                const isSelected = genre === g.id;
+            <div className="grid grid-cols-2 gap-3">
+              {STORY_LENGTHS.map((l) => {
+                const isSelected = storyLength === l.id;
                 return (
                   <button
-                    key={g.id}
+                    key={l.id}
                     onClick={() => {
-                      setGenre(g.id);
-                      // Auto-advance after brief delay
+                      setStoryLength(l.id);
                       setTimeout(() => setStep(2), 300);
                     }}
-                    className={`flex items-center gap-4 p-4 rounded-lg border-2 transition-all text-left ${
+                    className={`p-4 rounded-lg border-2 transition-all text-center ${
                       isSelected
                         ? "border-primary bg-primary/5 shadow-sm"
                         : "border-border hover:border-primary/40 hover:bg-muted/50"
                     }`}
                   >
-                    <div className="flex-1">
-                      <p className="font-semibold text-base">{g.label}</p>
-                      <p className="text-sm text-muted-foreground">{g.desc}</p>
-                    </div>
-                    {isSelected && (
-                      <Badge variant="default" className="shrink-0">
-                        Selected
-                      </Badge>
-                    )}
+                    <p className="font-bold text-2xl text-primary">
+                      {l.pages}
+                    </p>
+                    <p className="text-xs text-muted-foreground">pages</p>
+                    <p className="font-semibold text-sm mt-2">{l.label}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {l.time}
+                    </p>
                   </button>
                 );
               })}
             </div>
           )}
 
-          {/* Step 2: Story Length */}
+          {/* Step 2: Character Description */}
           {step === 2 && (
             <div className="space-y-4">
-              {/* Show selected genre */}
-              {selectedGenre && (
+              {/* Show selected length */}
+              {selectedLength && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <span>{selectedGenre.label} story</span>
+                  <span>
+                    {selectedLength.pages} pages ({selectedLength.label})
+                  </span>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -146,81 +134,32 @@ export default function NewStoryCreation({
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
-                {STORY_LENGTHS.map((l) => {
-                  const isSelected = storyLength === l.id;
-                  return (
-                    <button
-                      key={l.id}
-                      onClick={() => {
-                        setStoryLength(l.id);
-                        setTimeout(() => setStep(3), 300);
-                      }}
-                      className={`p-4 rounded-lg border-2 transition-all text-center ${
-                        isSelected
-                          ? "border-primary bg-primary/5 shadow-sm"
-                          : "border-border hover:border-primary/40 hover:bg-muted/50"
-                      }`}
-                    >
-                      <p className="font-bold text-2xl text-primary">
-                        {l.pages}
-                      </p>
-                      <p className="text-xs text-muted-foreground">pages</p>
-                      <p className="font-semibold text-sm mt-2">{l.label}</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {l.time}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: Character Description */}
-          {step === 3 && (
-            <div className="space-y-4">
-              {/* Show selections */}
-              <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
-                {selectedGenre && (
-                  <span>{selectedGenre.label}</span>
-                )}
-                <span className="text-muted-foreground/50">/</span>
-                {selectedLength && (
-                  <span>
-                    {selectedLength.pages} pages ({selectedLength.label})
-                  </span>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs"
-                  onClick={() => setStep(1)}
-                >
-                  Change
-                </Button>
-              </div>
-
               <div className="space-y-2">
-                <Label
-                  htmlFor="character-desc"
-                  className="text-base font-semibold"
-                >
-                  Your Character
-                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Label
+                    htmlFor="character-desc"
+                    className="text-base font-semibold"
+                  >
+                    Your Character
+                  </Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                        aria-label="More info"
+                      >
+                        <Info className="w-4 h-4" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="text-sm text-muted-foreground leading-relaxed" side="top" align="start">
+                      The Guide will craft your story around this character. The more detail you give, the richer your experience will be.
+                    </PopoverContent>
+                  </Popover>
+                </div>
                 <Textarea
                   id="character-desc"
-                  placeholder={
-                    genre === "fantasy"
-                      ? "e.g., A retired cartographer who discovers her old maps can create real places..."
-                      : genre === "mystery"
-                        ? "e.g., A jazz musician in 1940s Chicago who keeps finding coded messages in sheet music..."
-                        : genre === "scifi"
-                          ? "e.g., A maintenance worker on a generation ship who discovers a hidden deck..."
-                          : genre === "romance"
-                            ? "e.g., A bookshop owner who starts receiving love letters hidden in returned books..."
-                            : "e.g., A night shift radio host who starts receiving calls from listeners who shouldn't exist..."
-                  }
+                  placeholder="e.g., A curious inventor who discovers a hidden door in their workshop that leads somewhere impossible..."
                   value={characterDescription}
                   onChange={(e) => setCharacterDescription(e.target.value)}
                   className="text-base min-h-[140px] resize-none"
@@ -235,7 +174,7 @@ export default function NewStoryCreation({
                     onClick={async () => {
                       setIsSurprising(true);
                       try {
-                        const response = await apiRequest("POST", "/api/story/surprise-me", { genre });
+                        const response = await apiRequest("POST", "/api/story/surprise-me", {});
                         const data = await response.json();
                         if (data.success && data.description) {
                           setCharacterDescription(data.description);
@@ -266,13 +205,6 @@ export default function NewStoryCreation({
                 </div>
               </div>
 
-              {/* Info Box */}
-              <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  The Guide will craft your story around this character. The
-                  more detail you give, the richer your experience will be.
-                </p>
-              </div>
             </div>
           )}
 
@@ -282,7 +214,7 @@ export default function NewStoryCreation({
               variant="outline"
               onClick={() => {
                 if (step > 1) {
-                  setStep((s) => (s - 1) as 1 | 2 | 3);
+                  setStep(1);
                 } else {
                   onBack();
                 }
@@ -294,7 +226,7 @@ export default function NewStoryCreation({
               Back
             </Button>
 
-            {step === 3 && (
+            {step === 2 && (
               <Button
                 onClick={handleSubmit}
                 disabled={!isValid || isLoading}
