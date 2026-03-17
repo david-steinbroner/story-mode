@@ -217,6 +217,7 @@ function GameApp() {
   };
 
   const navigateToBookshelf = () => {
+    setActiveStoryId(null);
     setActiveStory(null);
     // Invalidate story-scoped queries so bookshelf shows fresh data
     queryClient.invalidateQueries({ queryKey: ['/api/stories'] });
@@ -224,6 +225,7 @@ function GameApp() {
   };
 
   const enterStory = (storyId: string) => {
+    setActiveStoryId(storyId);
     setActiveStory(storyId);
     // Invalidate queries so they refetch with the new storyId header
     // Query keys include storyId so each story has its own cache
