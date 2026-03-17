@@ -49,6 +49,50 @@ This project is managed using three AI tools with distinct roles. Understanding 
 
 You should never have to translate outputs into instructions yourself. If Cowork gives you something — a document, a plan, a code review — it will also tell you exactly what to do with it and which tool to use.
 
+### Prompt template for Claude Code handoffs
+
+When Cowork writes a prompt for Claude Code, use this format. It's what Claude Code processes most efficiently:
+
+```
+## Task
+One sentence: what to build/fix/change.
+
+## Why
+One sentence: the product reason this matters.
+
+## Files involved
+- `path/to/file.tsx` — what changes here
+- `path/to/other.ts` — what changes here
+
+## Acceptance criteria
+- [ ] Specific, testable outcome 1
+- [ ] Specific, testable outcome 2
+- [ ] Specific, testable outcome 3
+
+## Watch out for
+- Known gotcha or dependency
+- "Don't change X while you're in there"
+- Edge case to handle
+
+## Context (if needed)
+Any decision already made in Cowork that Claude Code shouldn't re-litigate.
+E.g., "We considered approach A but chose B because..."
+```
+
+**What helps Claude Code most:**
+- **File paths** — it can start immediately instead of searching
+- **Acceptance criteria as checkboxes** — it knows exactly when it's done
+- **"Watch out for"** — prevents breaking adjacent things
+- **Decisions already made** — stops it from proposing alternatives you've already rejected
+
+**What to skip:**
+- Don't explain *how* to code it (Claude Code figures out implementation)
+- Don't paste large code blocks for context (it reads files itself)
+- Don't give vague goals like "make it better" or "clean this up"
+- Don't re-explain architecture that's already in CLAUDE.md
+
+**The sweet spot:** Tell Claude Code *what* and *why* with specificity. Skip the *how* unless there's a non-obvious constraint.
+
 ---
 
 > **For Claude Code:** Read everything below this line at the start of every session before writing any code.
@@ -214,7 +258,7 @@ These are non-negotiable. Any code that touches the UI must follow these.
 
 ### Language
 Never use these words in UI copy, component names, variable names, or comments meant to be user-facing:
-- Dungeon Master / DM → use **Guide** or **Narrator**
+- Dungeon Master / DM / Narrator → use **Your Guide** (always "Your Guide" in user-facing UI, "Guide" in code/system prompts)
 - Campaign → use **Story** or **Adventure**
 - Session → use **Chapter**
 - Character Sheet → use **Your Character**
@@ -244,16 +288,16 @@ Lavender:          #C9B6E4  ← secondary actions
 
 ---
 
-## 9. Current Milestone
+## 9. Previous Milestone (Reference)
 
-**Milestone 5: Polish, Bugs & UX Overhaul** (mostly complete)
+**Milestone 5: Polish, Bugs & UX Overhaul** ✅ (complete)
 
-The core product pivot is complete — Story Mode is now a page-based interactive storytelling platform with a bookshelf, AI-inferred genre, and a Guide mascot. This milestone focused on fixing bugs, tightening the UX, and making the experience feel polished.
+The core product pivot is complete — Story Mode is now a page-based interactive storytelling platform with a bookshelf, AI-inferred genre, and a Guide mascot. This milestone fixed bugs, tightened the UX, and made the experience feel polished.
 
 ### Bugs fixed: ✅
 1. **Story isolation bug** ✅ — Threaded `storyId` through `generateResponse()`, `getGameContext()`, and `checkAndTriggerSummarization()` in `aiService.ts`.
 2. **"End" button** ✅ — Now calls `PATCH /api/game-state` with `storyComplete: true` instead of deleting the story. Includes AlertDialog confirmation.
-3. **Narrator fallback error on story creation** — Still open. Intermittent: first AI response on a new story fails with JSON parse failure. Regenerate works. Needs retry logic or better error recovery.
+3. **Narrator fallback error on story creation** ✅ — Added retry logic in `generateResponse()` (150ms delay + fresh context refetch on JSON parse failure) and a route-level retry in `/api/story/new` (200ms delay). Up to 3 total attempts before user sees the fallback.
 
 ### UX improvements completed: ✅
 4. **Story screen overhaul** ✅ — Complete redesign:
@@ -270,12 +314,9 @@ The core product pivot is complete — Story Mode is now a page-based interactiv
 7. **Genre step removed** ✅ — Story creation simplified from 3 steps to 2 (page count → character description). AI infers genre from the character description. Genre stored as "auto" in the database.
 8. **Info box → popover tooltip** ✅ — Replaced the character description info box with a small (i) icon popover.
 
-### Needs discussion (not yet scoped):
-9. **The Guide AI character** — Currently appears as a mascot on the bookshelf with a greeting bubble. Open questions:
-   - Should the top-right icon be a menu? Or open a chat with The Guide?
-   - Should The Guide be a real chatbot (delete account, explain how it works, resume old story, start new story)?
-   - Naming: "The Guide" vs "The Librarian" vs "The Historian" — which fits the bookshelf/story brand?
-   - This is a significant product decision that shapes the whole navigation model.
+### Decisions made (scoped into Milestone 6):
+9. **"Your Guide" naming** ✅ — All UI references to "narrator" renamed to "Your Guide." System prompts use "Guide." Badge in story view, loading state, error messages, toasts, and summary service all updated.
+10. **Guide chatbot** — Decision: YES, make the mascot a real chatbot. Scoped as Milestone 6 with a hybrid approach (canned responses for common actions, AI for open-ended questions). Reusable confirmation components (`GuideConfirmDialog`, `GuideStoryCard`) already built.
 
 ### Out of scope for this milestone:
 - RAG / vector search
@@ -285,7 +326,60 @@ The core product pivot is complete — Story Mode is now a page-based interactiv
 
 ---
 
-## 9a. Completed Milestones
+## 9b. Current Milestone
+
+**Milestone 6: Your Guide — Interactive Chatbot on the Bookshelf**
+
+**Goal:** Turn the static Guide mascot on the bookshelf into a real conversational character that helps users navigate the app and get inspired. Hybrid approach: canned responses for common actions (no AI cost), AI-powered responses for open-ended questions.
+
+**Foundation (already built):**
+- `GuideConfirmDialog.tsx` — Reusable modal dialog (cream background, pastel palette, min 44px tap targets). Props: title, description, children slot, confirm/cancel labels, callbacks.
+- `GuideStoryCard.tsx` — Presentational card showing story info (genre badge with color coding, page progress, character description, progress bar). Slots into GuideConfirmDialog.
+
+**Canned responses (no AI call, handled client-side):**
+
+Each canned response flows through a `GuideConfirmDialog` for confirmation before taking action.
+
+| Intent | Trigger phrases | Confirmation screen | Action |
+|---|---|---|---|
+| Resume story | "resume", "continue", "keep reading" | GuideConfirmDialog with GuideStoryCard showing the story | Navigate to story view |
+| Start new story | "new story", "start", "begin" | GuideConfirmDialog: "Start a new adventure?" | Navigate to story creation |
+| Delete a story | "delete", "remove" | GuideConfirmDialog with GuideStoryCard: "Remove this story?" | DELETE `/api/stories/:storyId`, refresh bookshelf |
+| How it works | "how does this work", "help", "what is this" | No confirmation needed — display canned explainer directly in chat | Show hardcoded explanation |
+| Clear all data | "delete my data", "reset everything", "start over" | GuideConfirmDialog: "This will remove all your stories. Are you sure?" | Clear session data |
+
+**AI-powered responses (one Haiku call each):**
+- "What kind of story should I write?" / open-ended creative prompts → AI generates personalized suggestions based on reading history
+- "Tell me about my stories" → AI summarizes their bookshelf
+- Any freeform message that doesn't match a canned intent
+
+**Architecture:**
+- New component: `GuideChat.tsx` — slide-up modal triggered by tapping the Guide mascot on the bookshelf
+- New API route: `POST /api/guide/chat` — lightweight endpoint with its own short system prompt (~200 tokens, "helpful librarian" persona)
+- Intent matching: client-side keyword matching first; if no canned match, forward to AI endpoint
+- Max 10 messages per conversation before auto-clearing (this is a helper, not a persistent chat)
+- The Guide only appears on the bookshelf for now (not during active stories)
+
+**Cost estimate:** ~$0.001-0.002 per AI-powered Guide interaction. Most interactions will be canned (free).
+
+**Task breakdown:**
+1. Build `GuideChat.tsx` — modal UI with message list, text input, Guide avatar
+2. Implement client-side intent matcher — keyword matching for canned intents
+3. Wire canned intents to confirmation dialogs using existing `GuideConfirmDialog` + `GuideStoryCard`
+4. Build `POST /api/guide/chat` endpoint with short Guide-specific system prompt
+5. Connect AI fallback for unmatched intents
+6. Wire GuideChat to the Guide mascot tap on Bookshelf
+7. Test all flows: resume, new story, delete, help, clear data, AI freeform
+
+**Out of scope:**
+- Guide appearing during active stories
+- Guide remembering past conversations across sessions
+- Voice or audio
+- Guide avatar customization
+
+---
+
+## 9c. Completed Milestones
 
 ### Milestone 1: Foundation — Real Persistence & Session Isolation ✅
 
@@ -327,6 +421,8 @@ Added act-based pacing guidance so the AI shapes the narrative arc across the fu
 | `client/src/components/Bookshelf.tsx` | Main landing screen. Virtual bookshelf with book spines, quick-continue card, GuideAvatar mascot. |
 | `client/src/components/NewStoryCreation.tsx` | 2-step story creation wizard: page count → character description. Includes "Surprise me" AI character generator. |
 | `client/src/components/ChatInterface.tsx` | Story reading screen. Sticky nav bar, message display, collapsible bottom drawer for choices, font size controls, End Story confirmation. |
+| `client/src/components/GuideConfirmDialog.tsx` | Reusable confirmation modal for Guide chatbot actions. Built on shadcn AlertDialog with brand palette. Props: title, description, children slot, confirm/cancel labels. |
+| `client/src/components/GuideStoryCard.tsx` | Presentational story info card (genre badge, page progress, character description). Slots into GuideConfirmDialog. Genre colors match bookshelf spines. |
 | `client/src/components/StoryProgress.tsx` | Page progress bar with pacing phase labels. Not currently rendered (removed from game view) but kept for future repurposing. |
 | `client/src/lib/queryClient.ts` | API request helpers. Adds `x-session-id` header to all requests. |
 | `client/src/components/AdminDashboard.tsx` | Internal admin UI at `/admin`. Shows spend metrics, session stats. Protected by admin key prompt. |
