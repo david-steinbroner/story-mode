@@ -599,11 +599,11 @@ Do NOT re-state the character description back to the reader. Instead, SHOW who 
 
       const response = await openai.chat.completions.create({
         model: "anthropic/claude-3.5-haiku",
-        max_tokens: 150,
+        max_tokens: 90,
         messages: [
           {
             role: "user",
-            content: `Generate a brief, creative character description (2-3 sentences) for an interactive story. Pick any genre — fantasy, mystery, sci-fi, romance, horror, or something unexpected. Be imaginative and specific — give them a unique personality, background, or situation. Don't use generic tropes. Write in second person ("You are...").`,
+            content: `Generate a punchy character description (1-2 sentences max) for an interactive story. Pick any genre. Be specific and vivid — unique personality, situation, or secret. No generic tropes. Write in second person ("You are...").`,
           },
         ],
       });

@@ -120,7 +120,6 @@ export default function ChatInterface({
     if (latestChoices.length > 0 && latestChoices !== prevChoicesRef.current) {
       const choicesChanged = latestChoices.join('|') !== prevChoicesRef.current.join('|');
       if (choicesChanged) {
-        setIsDrawerOpen(true);
         setShowCustomInput(false);
         setInputText("");
       }
@@ -372,8 +371,8 @@ ${JSON.stringify(debugInfo, null, 2)}
 
   return (
     <div className={`h-full flex flex-col relative ${className}`} data-testid="chat-interface">
-      {/* Sticky top nav bar */}
-      <div className="sticky top-0 z-30 border-b border-border shrink-0" style={{ backgroundColor: '#FFF9F0' }}>
+      {/* Fixed top nav bar — sits outside the scroll container */}
+      <div className="z-30 border-b border-border shrink-0" style={{ backgroundColor: '#FFF9F0' }}>
         <div className="flex items-center justify-between h-12 px-3">
           <span className="font-bold text-sm text-primary">Story Mode</span>
           <span className="text-xs text-muted-foreground">
