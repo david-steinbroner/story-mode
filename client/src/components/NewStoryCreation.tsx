@@ -241,7 +241,7 @@ export default function NewStoryCreation({
                 {isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    The Guide is writing...
+                    Starting your story...
                   </>
                 ) : (
                   "Begin Story"

@@ -588,7 +588,7 @@ export default function Bookshelf({
       </div>
 
       {/* Version */}
-      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v0.6.2</p>
+      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v0.6.3</p>
     </div>
   );
 }
