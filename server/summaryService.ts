@@ -66,7 +66,7 @@ export async function generateStorySummary(
     const formattedMessages = messages.map((msg) => {
       const speaker =
         msg.sender === "dm"
-          ? "Narrator"
+          ? "Guide"
           : msg.sender === "npc"
             ? msg.senderName || "NPC"
             : "Player";

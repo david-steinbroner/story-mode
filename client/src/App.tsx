@@ -143,7 +143,7 @@ function GameApp() {
           // Also show toast to user
           toast({
             title: "AI Response Issue",
-            description: "The narrator had trouble processing your request. Try rephrasing or use the Regenerate button.",
+            description: "Your Guide had trouble processing your request. Try rephrasing or use the Regenerate button.",
             variant: "destructive",
             duration: 5000,
           });

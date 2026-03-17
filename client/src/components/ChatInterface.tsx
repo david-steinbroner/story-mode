@@ -345,7 +345,7 @@ ${JSON.stringify(debugInfo, null, 2)}
 
       toast({
         title: "Regenerating response...",
-        description: "Asking the narrator for a different response.",
+        description: "Asking Your Guide for a different response.",
         duration: 2000,
       });
     } else {
@@ -362,7 +362,7 @@ ${JSON.stringify(debugInfo, null, 2)}
   const getSenderBadge = (sender: string, senderName?: string | null) => {
     switch (sender) {
       case "dm":
-        return <Badge variant="secondary" className="rounded-full">Narrator</Badge>;
+        return <Badge variant="secondary" className="rounded-full">Your Guide</Badge>;
       case "npc":
         return <Badge variant="secondary" className="rounded-full">{senderName || "Character"}</Badge>;
       default:
@@ -502,7 +502,7 @@ ${JSON.stringify(debugInfo, null, 2)}
             {isLoading && (
               <div className="flex items-center gap-2 p-2.5 sm:p-3 rounded-lg bg-muted/50 animate-pulse">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <p className="text-sm text-muted-foreground">Your narrator is thinking...</p>
+                <p className="text-sm text-muted-foreground">Your Guide is thinking...</p>
               </div>
             )}
 
