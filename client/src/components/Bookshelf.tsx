@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback } from "react";
-import { Plus, Check, Archive, ArchiveRestore, ChevronRight } from "lucide-react";
+import { Plus, Check, CheckCircle, Archive, ArchiveRestore, ChevronRight } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { queryClient } from "@/lib/queryClient";
 import type { GameState } from "@shared/schema";
 
 // --- Archive localStorage helpers ---
@@ -91,6 +92,7 @@ function BookSpine({
   onClick,
   onArchive,
   onUnarchive,
+  onEndStory,
   isArchived,
 }: {
   title?: string;
@@ -102,20 +104,21 @@ function BookSpine({
   onClick: () => void;
   onArchive?: () => void;
   onUnarchive?: () => void;
+  onEndStory?: () => void;
   isArchived?: boolean;
 }) {
   const spineGradient = genre ? GENRE_SPINES[genre] || GENRE_SPINES.fantasy : "";
   const [popoverOpen, setPopoverOpen] = useState(false);
 
   const longPress = useLongPress(() => {
-    if ((onArchive || onUnarchive) && !isNew) {
+    if ((onArchive || onUnarchive || onEndStory) && !isNew) {
       setPopoverOpen(true);
     }
   });
 
   const spineContent = (
     <div
-      className="group flex flex-col items-center gap-2 focus:outline-none"
+      className="group flex flex-col items-center gap-2 focus:outline-none select-none"
       style={{ width: 80 }}
     >
       {/* Book spine */}
@@ -198,8 +201,8 @@ function BookSpine({
     </div>
   );
 
-  // Finished stories with archive/unarchive get a long-press popover
-  if (onArchive || onUnarchive) {
+  // Stories with long-press actions get a popover
+  if (onArchive || onUnarchive || onEndStory) {
     return (
       <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
         <PopoverTrigger asChild>
@@ -231,27 +234,45 @@ function BookSpine({
           side="top"
           sideOffset={8}
         >
-          <button
-            onClick={() => {
-              if (onArchive) onArchive();
-              if (onUnarchive) onUnarchive();
-              setPopoverOpen(false);
-            }}
-            className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-[#6C7A89] hover:bg-[#C9B6E4]/15 transition-colors"
-            style={{ minHeight: 44, minWidth: 44 }}
-          >
-            {isArchived ? (
-              <>
-                <ArchiveRestore size={16} className="text-[#A8E6CF]" />
-                <span>Unarchive</span>
-              </>
-            ) : (
-              <>
-                <Archive size={16} className="text-[#C9B6E4]" />
-                <span>Archive</span>
-              </>
-            )}
-          </button>
+          {onEndStory && (
+            <button
+              onClick={() => {
+                onEndStory();
+                setPopoverOpen(false);
+              }}
+              className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-[#6C7A89] hover:bg-[#C9B6E4]/15 transition-colors w-full"
+              style={{ minHeight: 44, minWidth: 44 }}
+            >
+              <CheckCircle size={16} className="text-[#A8E6CF]" />
+              <span>End Story</span>
+            </button>
+          )}
+          {onArchive && (
+            <button
+              onClick={() => {
+                onArchive();
+                setPopoverOpen(false);
+              }}
+              className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-[#6C7A89] hover:bg-[#C9B6E4]/15 transition-colors w-full"
+              style={{ minHeight: 44, minWidth: 44 }}
+            >
+              <Archive size={16} className="text-[#C9B6E4]" />
+              <span>Archive</span>
+            </button>
+          )}
+          {onUnarchive && (
+            <button
+              onClick={() => {
+                onUnarchive();
+                setPopoverOpen(false);
+              }}
+              className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-[#6C7A89] hover:bg-[#C9B6E4]/15 transition-colors w-full"
+              style={{ minHeight: 44, minWidth: 44 }}
+            >
+              <ArchiveRestore size={16} className="text-[#A8E6CF]" />
+              <span>Unarchive</span>
+            </button>
+          )}
         </PopoverContent>
       </Popover>
     );
@@ -344,6 +365,26 @@ export default function Bookshelf({
     });
   }, []);
 
+  const endStory = useCallback(async (storyId: string) => {
+    try {
+      const sessionId = localStorage.getItem('sessionId') || '';
+      const res = await fetch('/api/game-state', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-id': sessionId,
+          'x-story-id': storyId,
+        },
+        body: JSON.stringify({ storyComplete: true }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`Failed to end story: ${res.status}`);
+      queryClient.invalidateQueries({ queryKey: ['/api/stories'] });
+    } catch (error) {
+      console.error('Failed to end story:', error);
+    }
+  }, []);
+
   const activeStories = stories.filter(s => !s.storyComplete && s.totalPages && s.totalPages > 0);
   const completedStories = stories.filter(s => s.storyComplete && !archivedIds.has(s.storyId!));
   const archivedStories = stories.filter(s => s.storyComplete && archivedIds.has(s.storyId!));
@@ -409,6 +450,8 @@ export default function Bookshelf({
                   totalPages={story.totalPages || 0}
                   isComplete={false}
                   onClick={() => onContinueStory(story.storyId!)}
+                  onEndStory={() => endStory(story.storyId!)}
+                  onArchive={() => archiveStory(story.storyId!)}
                 />
               ))}
               <BookSpine isNew onClick={onNewStory} />
@@ -588,7 +631,7 @@ export default function Bookshelf({
       </div>
 
       {/* Version */}
-      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v0.6.3</p>
+      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v0.6.4</p>
     </div>
   );
 }
