@@ -755,19 +755,19 @@ Example Quest Actions:
 
       if (error?.status === 429) {
         // Rate limit exceeded
-        fallbackContent = "The magical energies are overwhelmed at the moment. Let me provide guidance based on your current situation...";
+        fallbackContent = "Your Guide is taking a moment to gather their thoughts. Please try again shortly...";
         errorType = 'api_error';
       } else if (error?.status === 401) {
         // API key issue
-        fallbackContent = "The connection to the mystical realm is blocked. I'll guide you using my earthly knowledge...";
+        fallbackContent = "Your Guide is having trouble connecting. The story will continue shortly...";
         errorType = 'api_error';
       } else if (error?.code === 'ENOTFOUND' || error?.code === 'ECONNREFUSED') {
         // Network issues
-        fallbackContent = "The ethereal connection wavers... Let me consult the ancient texts...";
+        fallbackContent = "Your Guide lost the thread for a moment. Let's try that again...";
         errorType = 'network_error';
       } else {
         // Generic error
-        fallbackContent = "The DM senses disturbance in the magical weave but continues the adventure...";
+        fallbackContent = "Your Guide pauses, considering what comes next...";
         errorType = 'api_error';
       }
 
@@ -786,46 +786,42 @@ Example Quest Actions:
     // Analyze the player's message to provide contextual responses
     if (lowerMessage.includes('attack') || lowerMessage.includes('fight') || lowerMessage.includes('combat')) {
       return {
-        content: `${errorMessage} Your aggressive stance is noted. You prepare for combat, weapon at the ready.`,
+        content: `${errorMessage} The tension in your story builds...`,
         sender: 'dm',
         senderName: null,
-        error: errorType,
-        actions: {
-          updateGameState: { inCombat: true }
-        }
+        error: errorType
       };
     } else if (lowerMessage.includes('explore') || lowerMessage.includes('look') || lowerMessage.includes('search')) {
       return {
-        content: `${errorMessage} You carefully examine your surroundings, taking note of every detail.`,
+        content: `${errorMessage} You take in your surroundings, noticing new details...`,
         sender: 'dm',
         senderName: null,
         error: errorType
       };
     } else if (lowerMessage.includes('talk') || lowerMessage.includes('speak') || lowerMessage.includes('conversation')) {
       return {
-        content: `${errorMessage} The NPCs around you seem ready to engage in conversation.`,
+        content: `${errorMessage} The characters around you have more to say...`,
         sender: 'dm',
         senderName: null,
         error: errorType
       };
     } else if (lowerMessage.includes('quest') || lowerMessage.includes('mission') || lowerMessage.includes('task')) {
       return {
-        content: `${errorMessage} Your journal reminds you of your current objectives and the path ahead.`,
+        content: `${errorMessage} You reflect on what you need to do next...`,
         sender: 'dm',
         senderName: null,
         error: errorType
       };
     } else if (lowerMessage.includes('rest') || lowerMessage.includes('sleep') || lowerMessage.includes('heal')) {
       return {
-        content: `${errorMessage} You take a moment to rest and recover your strength.`,
+        content: `${errorMessage} You take a moment to catch your breath...`,
         sender: 'dm',
         senderName: null,
         error: errorType
       };
     } else {
-      // Generic helpful response
       return {
-        content: `${errorMessage} The adventure continues. What would you like to do next? You can explore, talk to NPCs, check your quests, or engage in combat.`,
+        content: `${errorMessage} The story continues. What would you like to do next?`,
         sender: 'dm',
         senderName: null,
         error: errorType
@@ -843,7 +839,7 @@ Example Quest Actions:
         messages: [
           {
             role: "system",
-            content: "You are a D&D Dungeon Master creating follow-up quests that continue story arcs."
+            content: "You are a storytelling Guide creating follow-up goals that continue story arcs."
           },
           {
             role: "user",

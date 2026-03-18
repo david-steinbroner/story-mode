@@ -516,13 +516,25 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
 
       let aiResponse = await aiService.generateResponse(sessionId, firstPagePrompt, storyId);
 
-      // If the first AI call failed with a parse error (intermittent on new stories),
-      // retry once — the internal retry in generateResponse handles most cases,
-      // but this catches any remaining edge cases at the route level.
-      if (aiResponse.error === 'parse_failure') {
-        console.log('[Story New] First AI response had parse_failure, retrying at route level');
+      console.log('[Story New] AI response received', {
+        hasError: !!aiResponse.error,
+        errorType: aiResponse.error,
+        contentPreview: aiResponse.content?.substring(0, 100),
+        hasStoryTitle: !!aiResponse.storyTitle,
+        storyTitle: aiResponse.storyTitle,
+      });
+
+      // If the first AI call failed with any error, retry once
+      if (aiResponse.error) {
+        console.log(`[Story New] AI response had ${aiResponse.error}, retrying at route level`);
         await new Promise(resolve => setTimeout(resolve, 200));
         aiResponse = await aiService.generateResponse(sessionId, firstPagePrompt, storyId);
+        console.log('[Story New] Retry response', {
+          hasError: !!aiResponse.error,
+          errorType: aiResponse.error,
+          contentPreview: aiResponse.content?.substring(0, 100),
+          hasStoryTitle: !!aiResponse.storyTitle,
+        });
       }
 
       // Track token spend
