@@ -11,7 +11,11 @@ if (!DATABASE_URL) {
   );
 }
 
-const client = postgres(DATABASE_URL);
+const client = postgres(DATABASE_URL, {
+  max: 20, // Allow up to 20 concurrent connections (default is 10)
+  idle_timeout: 20, // Close idle connections after 20 seconds
+  connect_timeout: 10, // Timeout for new connections after 10 seconds
+});
 export const db = drizzle(client, { schema });
 
 export async function testConnection(): Promise<boolean> {
