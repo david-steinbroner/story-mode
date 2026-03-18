@@ -599,7 +599,7 @@ Example Quest Actions:
 
       let aiResponse;
       try {
-        const rawContent = response.choices[0].message.content || '{}';
+        let rawContent = response.choices[0].message.content || '{}';
         console.log('[AI Service] Parsing JSON response', {
           contentLength: rawContent.length,
           contentPreview: rawContent.substring(0, 200)
@@ -609,6 +609,10 @@ Example Quest Actions:
         console.log('[AI Service] === RAW AI RESPONSE ===');
         console.log(rawContent);
         console.log('[AI Service] === END RAW RESPONSE ===');
+
+        // Strip markdown code fences if present (e.g. ```json ... ```)
+        // Some models (DeepSeek, Mistral) wrap JSON in markdown code blocks
+        rawContent = rawContent.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
 
         // Try to parse the JSON, which may contain control characters
         aiResponse = JSON.parse(rawContent);
@@ -624,7 +628,10 @@ Example Quest Actions:
           error: parseError.message,
           position: parseError.message.match(/position (\d+)/)?.[1]
         });
-        const rawContent = response.choices[0].message.content || '{}';
+        let rawContent = response.choices[0].message.content || '{}';
+
+        // Strip markdown code fences if present
+        rawContent = rawContent.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
 
         // Sanitize JSON by properly escaping string content
         // Strategy: Find string values and escape special characters within them
