@@ -527,7 +527,7 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
       console.log('[Story New] AI response received', {
         hasError: !!aiResponse.error,
         errorType: aiResponse.error,
-        contentPreview: aiResponse.content?.substring(0, 100),
+        contentPreview: aiResponse.content?.substring(0, 50),
         hasStoryTitle: !!aiResponse.storyTitle,
         storyTitle: aiResponse.storyTitle,
       });
@@ -540,7 +540,7 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
         console.log('[Story New] Retry response', {
           hasError: !!aiResponse.error,
           errorType: aiResponse.error,
-          contentPreview: aiResponse.content?.substring(0, 100),
+          contentPreview: aiResponse.content?.substring(0, 50),
           hasStoryTitle: !!aiResponse.storyTitle,
         });
       }

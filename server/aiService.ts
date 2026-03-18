@@ -454,12 +454,10 @@ CHARACTER PROGRESSION:
         hasSummary: !!context.storySummary,
       });
 
-      // Log recent message chain for debugging conversation flow
-      console.log('[AI Service] === MESSAGE HISTORY ===');
-      context.recentMessages.forEach((msg, idx) => {
-        console.log(`[${idx + 1}/${context.recentMessages.length}] ${msg.sender} (ID: ${msg.id}): ${msg.content.substring(0, 100)}...`);
-      });
-      console.log('[AI Service] === END MESSAGE HISTORY ===');
+      // Log recent message chain (truncated for privacy)
+      console.log('[AI Service] Message history:', context.recentMessages.map((msg, idx) =>
+        `${msg.sender}:${msg.content.substring(0, 50)}`
+      ).join(' | '));
 
       const contextPrompt = this.createContextPrompt(context);
 
@@ -535,12 +533,7 @@ Example Quest Actions:
         userPromptLength: messages[1].content?.toString().length || 0
       });
 
-      // Log full prompts for debugging (truncated for readability)
-      console.log('[AI Service] === RAW PROMPT (System) ===');
-      console.log(this.getSystemPrompt(context.gameState).substring(0, 500) + '...');
-      console.log('[AI Service] === RAW PROMPT (User) ===');
-      console.log(messages[1].content?.toString().substring(0, 1000) + '...');
-      console.log('[AI Service] === END RAW PROMPTS ===');
+      // Prompt lengths logged (content omitted for privacy)
 
       const response = await openai.chat.completions.create({
         model: "deepseek/deepseek-chat",
@@ -605,13 +598,8 @@ Example Quest Actions:
         let rawContent = response.choices[0].message.content || '{}';
         console.log('[AI Service] Parsing JSON response', {
           contentLength: rawContent.length,
-          contentPreview: rawContent.substring(0, 200)
+          contentPreview: rawContent.substring(0, 50)
         });
-
-        // Log full raw response for debugging
-        console.log('[AI Service] === RAW AI RESPONSE ===');
-        console.log(rawContent);
-        console.log('[AI Service] === END RAW RESPONSE ===');
 
         // Strip markdown code fences if present (e.g. ```json ... ```)
         // Some models (DeepSeek, Mistral) wrap JSON in markdown code blocks
