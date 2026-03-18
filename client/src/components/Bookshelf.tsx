@@ -112,7 +112,7 @@ function BookSpine({
   const spineContent = (
     <div
       className="group flex flex-col items-center gap-2 focus:outline-none select-none"
-      style={{ width: 80 }}
+      style={{ width: 110 }}
     >
       {/* Book spine */}
       <div
@@ -654,7 +654,7 @@ export default function Bookshelf({
       </div>
 
       {/* Version */}
-      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v0.7.4</p>
+      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v0.7.5</p>
     </div>
   );
 }
