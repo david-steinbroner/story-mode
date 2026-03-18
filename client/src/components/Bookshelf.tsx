@@ -139,17 +139,7 @@ function BookSpine({
         <div className="absolute inset-0 flex items-center justify-center px-1">
           {isNew ? (
             <Plus className="w-5 h-5 text-[hsl(var(--muted-foreground))]/50" />
-          ) : (
-            <span
-              className="text-[7px] font-semibold text-center leading-tight text-black/40"
-              style={{
-                writingMode:
-                  (title?.length || 0) > 12 ? "vertical-rl" : undefined,
-              }}
-            >
-              {title || "Story"}
-            </span>
-          )}
+          ) : null}
         </div>
 
         {/* Complete indicator */}
@@ -180,7 +170,7 @@ function BookSpine({
 
       {/* Label */}
       <div className="text-center w-full">
-        <p className="text-[10px] font-medium text-[hsl(var(--muted-foreground))] leading-tight truncate">
+        <p className="text-[10px] font-medium text-[hsl(var(--muted-foreground))] leading-tight line-clamp-2">
           {isNew ? "New Story" : title || "Untitled"}
         </p>
         {!isNew && totalPages && (
@@ -664,7 +654,7 @@ export default function Bookshelf({
       </div>
 
       {/* Version */}
-      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v0.7.3</p>
+      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v0.7.4</p>
     </div>
   );
 }
