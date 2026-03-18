@@ -1,9 +1,10 @@
 import rateLimit from 'express-rate-limit';
 
 // General API rate limiter - prevents abuse
+// Each story page triggers 4-5 GET requests, so a 25-page story = ~125+ data fetches alone
 export const generalLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 100, // 100 requests per hour per IP
+  max: 500, // 500 requests per hour per IP
   message: { error: 'Too many requests from this IP. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -17,9 +18,10 @@ export const generalLimiter = rateLimit({
 });
 
 // AI endpoint rate limiter - more restrictive for expensive operations
+// A 25-page story needs ~25 AI calls + summaries + world generation
 export const aiLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 20, // 20 AI requests per hour per IP
+  max: 60, // 60 AI requests per hour per IP
   message: { error: 'Too many AI requests. Please wait before trying again.' },
   standardHeaders: true,
   legacyHeaders: false,
