@@ -145,7 +145,7 @@ You are the engineering team. I am the PM.
 A task is **not done** until all of the following are true:
 
 - [ ] The feature works as described in the task
-- [ ] No existing features are broken (manual smoke test: character creation → story → quest update)
+- [ ] No existing features are broken (manual smoke test: create story → read story → end story → archive)
 - [ ] No TypeScript errors (`tsc --noEmit` passes)
 - [ ] No console errors in the browser during normal use
 - [ ] Code follows the style guide in Section 6
@@ -334,19 +334,41 @@ The core product pivot is complete — Story Mode is now a page-based interactiv
 
 ---
 
-### Pre-work completed this session (before Guide chatbot build):
+### Work completed this session:
 
 **Bug fixes shipped:**
-- **Story view showed "No messages yet"** ✅ — Two root causes fixed: `queryClient.ts` was building fetch URLs via `queryKey.join("/")`, producing `/api/messages/uuid` (no matching route). Fixed to use `queryKey[0]` only. Also fixed timing issue where `_activeStoryId` module variable was set via `useEffect` (after render) instead of synchronously in `enterStory`/`navigateToBookshelf`.
-- **New story button missing when all stories archived** ✅ — Condition `completedStories.length > 0` was filtering out archived stories. Fixed to `stories.length > 0` so the button always appears when stories exist.
+- **Story view "No messages yet"** ✅ — `queryClient.ts` URL fix (`queryKey[0]` only) + `_activeStoryId` timing fix (set synchronously in `enterStory`/`navigateToBookshelf`).
+- **New story button missing when all stories archived** ✅ — Filter condition fix (`stories.length > 0` instead of `completedStories.length > 0`).
+- **Nav bar not fixed on mobile** ✅ — `h-screen` → `h-dvh` for mobile Safari viewport, plus `overflow: hidden` on `html`/`body`.
+- **Player messages appearing out of order** ✅ — Optimistic cache update added to `aiChatMutation.onMutate` so player choices appear immediately.
+- **End Story not persisting** ✅ — Route-level retry expanded to catch all error types (was only catching `parse_failure`). Captured `storyIdToEnd` before async state changes.
+- **Duplicate story creation** ✅ — Server-side creation lock (`Map<sessionId, timestamp>`, 30s window, 429 on duplicates). Client-side: `isSubmitting` ref guard (no timeout reset) + `isCreatingStory` state check at top of `onStartStory`.
+- **AI fallback showing D&D text** ✅ — All fallback messages updated to brand voice ("Your Guide"), removed DM/NPC/combat/quest/weapon/magical weave references. Updated `generateFollowUpQuest` system prompt.
 
 **Features shipped:**
-- **Archive for finished stories** ✅ — Long-press a finished book spine → popover with "Archive" action. Archived stories removed from Finished shelf, accessible via "Archive (n)" link. Unarchive by long-pressing in archive section. State persisted in localStorage (`story-mode-archived-ids`).
+- **AI-generated story titles** ✅ — `storyTitle` column on `gameState`, parsed from AI opening response. Bookshelf displays real titles, fallback to "Untitled Story".
+- **Always-visible "Start a New Story" button** ✅ — Shows whenever stories exist, not only when Currently Reading is empty.
+- **Scroll-to-bottom button** ✅ — Floating ChevronDown button appears when scrolled >100px from bottom in story reading screen.
+- **Long-press end/archive on active stories** ✅ — Active book spines now show End Story + Archive popover on long-press.
+- **Text selection disabled on book spines** ✅ — `select-none` prevents highlighting on long-press.
+- **Loading button copy** ✅ — Changed from "The Guide is writing..." to "Starting your story..."
+- **Archive moved to database** ✅ — `storyArchived` boolean column on `gameState`, `PATCH /api/stories/:storyId/archive` endpoint. Replaces localStorage.
+- **Guide avatar as universal menu icon** ✅ — Extracted `GuideAvatar.tsx` as shared component. Replaces three-dot icon on story screen. Bookshelf avatar is now a DropdownMenu trigger with font size, archive toggle, and admin link.
+- **Version number on bookshelf** ✅ — Small text at bottom of library page, bumped with each deploy. Currently v0.7.0.
 
-**UI polish shipped:**
-- **Nav bar persistence** ✅ — Removed `sticky top-0` from ChatInterface nav bar; the flex layout already keeps it fixed since only the messages div scrolls.
-- **Choices drawer defaults to collapsed** ✅ — Removed `setIsDrawerOpen(true)` from the `latestChoices` effect. Users must tap "What happens next?" to expand.
-- **Shorter "Surprise me" text** ✅ — `max_tokens` reduced from 150 → 90, prompt updated to "1-2 sentences max."
+**Code cleanup shipped:**
+- Deleted: `CharacterQuestionnaire.tsx`, `AbilityScoreRoller.tsx`, `CampaignManager.tsx`
+- Deleted: `MemStorage` class (~665 lines)
+- Deleted: Enemy routes, combat routes, campaign routes (~350 lines)
+- Net: **-1,362 lines** removed
+
+---
+
+### Bookshelf nav / menu — completed ✅
+
+The Guide avatar in the bookshelf header is now a DropdownMenu trigger. Menu items: font size controls (shared `storymode-font-size` localStorage key), archive toggle (only when archived stories exist), admin link. The same Guide avatar replaces the three-dot icon on the story reading screen for consistency.
+
+This sets up the Guide chatbot — when we build it, the avatar tap will open the chat instead of the menu, and settings will move into the chat.
 
 ---
 
@@ -384,28 +406,14 @@ Each canned response flows through a `GuideConfirmDialog` for confirmation befor
 
 ---
 
-### Bookshelf nav bar / menu — not yet built:
-
-The bookshelf header currently has "Story Mode / Your Library" on the left and the GuideAvatar on the right. It needs a proper menu matching the story reading screen.
-
-**Menu contents (three-dot dropdown, same shadcn DropdownMenu pattern as ChatInterface):**
-- Text size controls (+/- with Small/Medium/Large/X-Large labels) — shared localStorage key `storymode-font-size` so size is consistent across views
-- Archive — opens/closes the archive section (replaces the current inline "Archive (n)" link in the Finished shelf header)
-- Admin — navigates to `/admin`
-
-**Layout:** Header stays the same (title left, GuideAvatar right), three-dot icon added between them or at far right next to the avatar.
-
----
-
-### Full task breakdown (remaining):
+### Remaining tasks:
 1. Build `GuideChat.tsx` — slide-up modal UI with message list, text input, Guide avatar
 2. Implement client-side intent matcher — keyword matching for canned intents
 3. Wire canned intents to confirmation dialogs using existing `GuideConfirmDialog` + `GuideStoryCard`
 4. Build `POST /api/guide/chat` endpoint with short Guide-specific system prompt
 5. Connect AI fallback for unmatched intents
-6. Wire GuideChat to the Guide mascot tap on Bookshelf
-7. Add three-dot menu to Bookshelf header (text size, archive toggle, admin link)
-8. Test all flows: resume, new story, delete, help, clear data, AI freeform, menu items
+6. Wire GuideChat to the Guide mascot tap on Bookshelf (replace current menu — settings move into chat)
+7. Test all flows: resume, new story, delete, help, clear data, AI freeform
 
 **Out of scope:**
 - Guide appearing during active stories
@@ -445,16 +453,16 @@ Added act-based pacing guidance so the AI shapes the narrative arc across the fu
 
 | File | What it does |
 |---|---|
-| `shared/schema.ts` | Database schema (Drizzle + Zod types). Source of truth for data models. All tables include `sessionId` and `storyId` for isolation. Includes `storySummaries` table. |
+| `shared/schema.ts` | Database schema (Drizzle + Zod types). Source of truth for data models. All tables include `sessionId` and `storyId` for isolation. Includes `storySummaries` table. `gameState` has `storyTitle`, `storyArchived`, and `storyComplete` columns. |
 | `server/db.ts` | Database connection pool (postgres-js + Drizzle). Exports `db` instance and `testConnection()`. |
 | `server/dbStorage.ts` | Production storage implementation. All CRUD operations with session + story scoping and business logic (level-ups, quest rewards). |
-| `server/storage.ts` | Exports `IStorage` interface and the active storage instance. `MemStorage` class still exists as backup but is unused. |
-| `server/routes.ts` | All API endpoints. Thin handlers only. Includes story lifecycle routes (`/api/story/new`, `/api/stories`, `/api/stories/:storyId`, `/api/story/surprise-me`). Uses `getSessionId(req)` helper. |
+| `server/storage.ts` | Exports `IStorage` interface and the active `DbStorage` storage instance. |
+| `server/routes.ts` | All API endpoints. Thin handlers only. Includes story lifecycle routes (`/api/story/new`, `/api/stories`, `/api/stories/:storyId`, `/api/story/surprise-me`, `PATCH /api/stories/:storyId/archive`). Server-side story creation lock (`storyCreationLocks` Map). Uses `getSessionId(req)` helper. |
 | `server/aiService.ts` | All AI calls. Prompt construction with pacing guidance, rolling summary integration, response parsing, action execution. Returns `tokenUsage` for cost tracking. |
 | `server/summaryService.ts` | Rolling story summary generation. Condenses older messages into narrative summaries every 10 messages. |
 | `server/spendTracker.ts` | Real-time cost tracking with actual token counts. Tracks daily/all-time spend, per-session usage. Provides admin stats. |
 | `client/src/App.tsx` | 3-view routing (bookshelf → newStory → game) and top-level state. `enterStory()` and `navigateToBookshelf()` set `_activeStoryId` synchronously before invalidating queries. Complex — be careful here. |
-| `client/src/components/Bookshelf.tsx` | Main landing screen. Virtual bookshelf with book spines, quick-continue card, GuideAvatar mascot. Includes client-side archive feature (localStorage). Long-press finished spines to archive/unarchive. |
+| `client/src/components/Bookshelf.tsx` | Main landing screen. Virtual bookshelf with book spines, quick-continue card. Guide avatar is a DropdownMenu trigger (font size, archive toggle, admin). Archive is server-side (`storyArchived` column). Long-press any book spine for actions (end story, archive, unarchive). |
 | `client/src/components/NewStoryCreation.tsx` | 2-step story creation wizard: page count → character description. Includes "Surprise me" AI character generator (max_tokens: 90, 1-2 sentences). |
 | `client/src/components/ChatInterface.tsx` | Story reading screen. Fixed nav bar (non-sticky, flex layout keeps it pinned), message display, collapsible bottom drawer for choices (defaults collapsed), font size controls, End Story confirmation. |
 | `client/src/components/GuideConfirmDialog.tsx` | Reusable confirmation modal for Guide chatbot actions. Built on shadcn AlertDialog with brand palette. Props: title, description, children slot, confirm/cancel labels. |
@@ -481,18 +489,18 @@ Added act-based pacing guidance so the AI shapes the narrative arc across the fu
 
 These exist in the codebase but are scheduled for removal. Do not build on top of them:
 
-- `CharacterQuestionnaire.tsx`, `AbilityScoreRoller.tsx` — D&D character creation, replaced by `NewStoryCreation.tsx`
-- `CampaignManager.tsx` — broken, replaced by bookshelf model
-- The `users`, `enemies`, `campaigns` tables and related routes (combat routes, enemy routes) — dead code from the D&D paradigm, not session-scoped
-- `MemStorage` class in `server/storage.ts` — kept as backup but unused; `DbStorage` is the active implementation
+- The `users`, `enemies`, `campaigns` **table definitions** in `shared/schema.ts` — dead code from the D&D paradigm. Removing requires a migration and could break things, so leaving for now.
 
 **Already deleted:**
 - `components/examples/` — removed (was dead storybook code)
 - `server/worker.ts` — removed (was dead Cloudflare Workers stub)
 - `CombatInterface.tsx` — removed (wrong product paradigm)
 - `CharacterCreation.tsx` — removed (replaced by new story creation flow)
-
-Do not refactor or improve the files listed above. They will be deleted.
+- `CharacterQuestionnaire.tsx`, `AbilityScoreRoller.tsx`, `CampaignManager.tsx` — removed (D&D character creation, replaced by `NewStoryCreation.tsx`)
+- `MemStorage` class in `server/storage.ts` — removed (~665 lines). `IStorage` interface and `DbStorage` export remain.
+- Enemy routes (`GET/POST/PATCH /api/enemies`) — removed
+- Combat route (`POST /api/combat/action`) — removed (~260 lines)
+- Campaign routes (`GET/POST/PATCH/DELETE /api/campaigns/*`) — removed (~90 lines)
 
 ---
 
@@ -509,3 +517,19 @@ If any of the following are true, stop and ask before writing code:
 - You're not sure if something is in or out of scope
 
 When in doubt, ask. A 30-second question saves a 30-minute revert.
+
+---
+
+## 14. Maintenance & Cleanup Cadence
+
+After every major feature session or milestone completion, run through this checklist before moving on:
+
+- [ ] Delete any dead code identified during the session (unused components, dead routes, stale imports)
+- [ ] Check build logs for warnings: duplicate keys, unused imports, deprecation notices, bundle size issues
+- [ ] Run `npm audit` and note any new high/critical vulnerabilities
+- [ ] Run `tsc --noEmit` and fix any new type errors
+- [ ] Update CLAUDE.md Sections 9b, 10, and 12 to reflect the current state of the codebase
+- [ ] Verify `.env.example` has all current env vars documented
+- [ ] Check for any console.log statements that should be removed from production code
+
+This prevents technical debt from accumulating between milestones. Cowork will remind you to do this — if it doesn't, ask.
