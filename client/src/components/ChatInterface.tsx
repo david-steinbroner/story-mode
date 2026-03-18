@@ -123,7 +123,7 @@ export default function ChatInterface({
     return options;
   }, [messages]);
 
-  const showDrawer = latestChoices.length > 0 && !isLoading && !gameState?.storyComplete;
+  const showDrawer = !isLoading && !gameState?.storyComplete;
 
   // Auto-expand drawer when new choices arrive
   const prevChoicesRef = useRef<string[]>([]);
