@@ -627,7 +627,7 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
       });
 
       const response = await openai.chat.completions.create({
-        model: "mistralai/mistral-small-creative",
+        model: "deepseek/deepseek-chat",
         max_tokens: 90,
         messages: [
           {

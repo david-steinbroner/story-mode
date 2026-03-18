@@ -527,7 +527,7 @@ Example Quest Actions:
       ];
 
       console.log('[AI Service] Calling OpenRouter API', {
-        model: "mistralai/mistral-small-creative",
+        model: "deepseek/deepseek-chat",
         systemPromptLength: this.getSystemPrompt(context.gameState).length,
         userPromptLength: messages[1].content?.toString().length || 0
       });
@@ -540,7 +540,7 @@ Example Quest Actions:
       console.log('[AI Service] === END RAW PROMPTS ===');
 
       const response = await openai.chat.completions.create({
-        model: "mistralai/mistral-small-creative",
+        model: "deepseek/deepseek-chat",
         messages,
         response_format: { type: "json_object" },
       });
@@ -841,7 +841,7 @@ Example Quest Actions:
   }): Promise<Quest | null> {
     try {
       const response = await openai.chat.completions.create({
-        model: "mistralai/mistral-small-creative",
+        model: "deepseek/deepseek-chat",
         messages: [
           {
             role: "system",
@@ -953,7 +953,7 @@ Example Quest Actions:
       }).join('\\n');
 
       const response = await openai.chat.completions.create({
-        model: "mistralai/mistral-small-creative",
+        model: "deepseek/deepseek-chat",
         messages: [
           {
             role: "system",
@@ -1029,7 +1029,7 @@ Format as JSON:
       const context = await this.getGameContext(sessionId, storyId);
       
       const response = await openai.chat.completions.create({
-        model: "mistralai/mistral-small-creative",
+        model: "deepseek/deepseek-chat",
         messages: [
           {
             role: "system",
@@ -1070,7 +1070,7 @@ Make quests appropriate for the character level and current location.`
   async generateNPCDialogue(npcName: string, context: string, playerMessage: string): Promise<string> {
     try {
       const response = await openai.chat.completions.create({
-        model: "mistralai/mistral-small-creative",
+        model: "deepseek/deepseek-chat",
         messages: [
           {
             role: "system",
@@ -1140,7 +1140,7 @@ Respond in this EXACT JSON format (no other text):
 }`;
 
       const response = await openai.chat.completions.create({
-        model: "mistralai/mistral-small-creative",
+        model: "deepseek/deepseek-chat",
         messages: [
           {
             role: "system",
