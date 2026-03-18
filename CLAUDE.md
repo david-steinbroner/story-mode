@@ -245,7 +245,7 @@ Optional: if there's a logical next step, flag it. Don't start it without being 
 | Server | Express.js + Node | Serves API and static files |
 | Database | PostgreSQL via Supabase | Drizzle ORM for queries and migrations |
 | Auth/Sessions | Supabase anonymous sessions | No accounts required — session per browser |
-| AI | OpenRouter → Claude 3.5 Haiku | Via OpenAI SDK |
+| AI | OpenRouter → DeepSeek V3 | Via OpenAI SDK. Switched from Claude 3.5 Haiku for better creative writing + JSON reliability. |
 | Analytics | PostHog | Client-side only |
 | Errors | Sentry | Client + server, 10% trace sample |
 | Deployment | Render (web service + postgres) | Auto-deploy from main branch |
@@ -354,7 +354,19 @@ The core product pivot is complete — Story Mode is now a page-based interactiv
 - **Loading button copy** ✅ — Changed from "The Guide is writing..." to "Starting your story..."
 - **Archive moved to database** ✅ — `storyArchived` boolean column on `gameState`, `PATCH /api/stories/:storyId/archive` endpoint. Replaces localStorage.
 - **Guide avatar as universal menu icon** ✅ — Extracted `GuideAvatar.tsx` as shared component. Replaces three-dot icon on story screen. Bookshelf avatar is now a DropdownMenu trigger with font size, archive toggle, and admin link.
-- **Version number on bookshelf** ✅ — Small text at bottom of library page, bumped with each deploy. Currently v0.7.2.
+- **Version number on bookshelf** ✅ — Small text at bottom of library page, bumped with each deploy. Currently v0.7.18.
+- **Content freedom in AI prompts** ✅ — Added CONTENT FREEDOM section to system prompt allowing mature themes when reader-initiated.
+- **AI model swap** ✅ — Claude 3.5 Haiku → Mistral Small Creative → DeepSeek V3. DeepSeek has best JSON reliability and creative quality.
+- **Choice drawer always visible** ✅ — Drawer shows whenever story is active (not gated on parsed choices), so "I have something else in mind..." is always available.
+- **Choice parser expanded** ✅ — `parseMessageContent()` now handles bullets, numbered lists, and "Option A:" labels. Strips all prefixes.
+- **Book spine labels improved** ✅ — Removed unreadable 7px spine text, widened label area to 110px, 2-line clamp instead of truncate.
+
+**Infrastructure & reliability shipped:**
+- **Rate limits increased** ✅ — General: 100 → 500/hr, AI: 20 → 60/hr (each page turn fires 4-5 fetches).
+- **Trust proxy** ✅ — `app.set('trust proxy', 1)` for Render reverse proxy compatibility with rate limiter.
+- **DB connection pool** ✅ — Increased pool from default 10 → max 20 with idle/connect timeouts. Fixes `MaxClientsInSessionMode`.
+- **DeepSeek JSON compatibility** ✅ — Removed `response_format: { type: "json_object" }` (DeepSeek returns 400). Added markdown code fence stripping for ```json wrappers.
+- **Production log privacy** ✅ — Removed raw prompt/response log blocks, truncated all content previews to 50 chars.
 
 **Code cleanup shipped:**
 - Deleted: `CharacterQuestionnaire.tsx`, `AbilityScoreRoller.tsx`, `CampaignManager.tsx`
@@ -458,11 +470,11 @@ Added act-based pacing guidance so the AI shapes the narrative arc across the fu
 | File | What it does |
 |---|---|
 | `shared/schema.ts` | Database schema (Drizzle + Zod types). Source of truth for data models. All tables include `sessionId` and `storyId` for isolation. Includes `storySummaries` table. `gameState` has `storyTitle`, `storyArchived`, and `storyComplete` columns. |
-| `server/db.ts` | Database connection pool (postgres-js + Drizzle). Exports `db` instance and `testConnection()`. |
+| `server/db.ts` | Database connection pool (postgres-js + Drizzle). Pool: max 20, idle_timeout 20, connect_timeout 10. Exports `db` instance and `testConnection()`. |
 | `server/dbStorage.ts` | Production storage implementation. All CRUD operations with session + story scoping and business logic (level-ups, quest rewards). |
 | `server/storage.ts` | Exports `IStorage` interface and the active `DbStorage` storage instance. |
 | `server/routes.ts` | All API endpoints. Thin handlers only. Includes story lifecycle routes (`/api/story/new`, `/api/stories`, `/api/stories/:storyId`, `/api/story/surprise-me`, `PATCH /api/stories/:storyId/archive`). Server-side story creation lock (`storyCreationLocks` Map). Uses `getSessionId(req)` helper. |
-| `server/aiService.ts` | All AI calls. Prompt construction with pacing guidance, rolling summary integration, response parsing, action execution. Returns `tokenUsage` for cost tracking. |
+| `server/aiService.ts` | All AI calls via DeepSeek V3. Prompt construction with pacing guidance, content freedom, anti-repetition rules. JSON response parsing with markdown fence stripping. Rolling summary integration. Returns `tokenUsage` for cost tracking. Logs truncated to 50 chars for privacy. |
 | `server/summaryService.ts` | Rolling story summary generation. Condenses older messages into narrative summaries every 10 messages. |
 | `server/spendTracker.ts` | Real-time cost tracking with actual token counts. Tracks daily/all-time spend, per-session usage. Provides admin stats. |
 | `client/src/App.tsx` | 3-view routing (bookshelf → newStory → game) and top-level state. `enterStory()` and `navigateToBookshelf()` set `_activeStoryId` synchronously before invalidating queries. Complex — be careful here. |
