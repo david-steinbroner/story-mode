@@ -68,11 +68,20 @@ function parseMessageContent(content: string): { text: string; options: string[]
   let inOptions = false;
 
   for (const line of lines) {
-    // Check if line starts with bullet point (•, -, or *)
-    if (line.trim().match(/^[•\-\*]\s+/)) {
+    const trimmed = line.trim();
+    // Check if line starts with bullet point (•, -, *) or numbered option (1., 2., A., B.)
+    // Also match "Option A:", "Option B:" style prefixes
+    if (trimmed.match(/^[•\-\*]\s+/) || trimmed.match(/^(?:Option\s+)?[A-D][.:]\s+/i) || trimmed.match(/^[1-4][.:]\s+/)) {
       inOptions = true;
-      options.push(line.trim().replace(/^[•\-\*]\s+/, ''));
-    } else if (line.trim().toLowerCase().includes('what do you do')) {
+      // Strip all prefix formats: bullets, "Option A:", "A.", "1.", etc.
+      const cleaned = trimmed
+        .replace(/^[•\-\*]\s+/, '')
+        .replace(/^(?:Option\s+)?[A-D][.:]\s+/i, '')
+        .replace(/^[1-4][.:]\s+/, '');
+      if (cleaned.length > 0) {
+        options.push(cleaned);
+      }
+    } else if (trimmed.toLowerCase().includes('what do you do') || trimmed.toLowerCase().includes('what will you do')) {
       inOptions = true;
       // Don't add this line to text or options
     } else if (!inOptions) {
