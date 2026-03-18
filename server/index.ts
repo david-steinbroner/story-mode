@@ -8,6 +8,7 @@ import { generalLimiter } from "./rateLimit";
 import { testConnection } from "./db";
 
 const app = express();
+app.set('trust proxy', 1); // Trust first proxy (Render's reverse proxy)
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
