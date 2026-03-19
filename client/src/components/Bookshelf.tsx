@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from "react";
-import { Plus, Check, CheckCircle, Archive, ArchiveRestore, ChevronRight, Minus, Settings } from "lucide-react";
+import { Plus, Check, CheckCircle, Archive, ArchiveRestore, Minus, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -135,12 +135,12 @@ function BookSpine({
           <div className="absolute left-[6px] top-0 bottom-0 w-[1px] bg-black/10" />
         )}
 
-        {/* Title or + icon */}
-        <div className="absolute inset-0 flex items-center justify-center px-1">
-          {isNew ? (
+        {/* + icon for new story spine */}
+        {isNew && (
+          <div className="absolute inset-0 flex items-center justify-center px-1">
             <Plus className="w-5 h-5 text-[hsl(var(--muted-foreground))]/50" />
-          ) : null}
-        </div>
+          </div>
+        )}
 
         {/* Complete indicator */}
         {isComplete && !isArchived && (
@@ -654,7 +654,7 @@ export default function Bookshelf({
       </div>
 
       {/* Version */}
-      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v0.7.19</p>
+      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v0.7.20</p>
     </div>
   );
 }

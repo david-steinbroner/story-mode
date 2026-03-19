@@ -153,12 +153,6 @@ STORY PROGRESSION — CRITICAL:
 - Read the STORY SO FAR summary carefully. If a scene or dynamic has already played out, ADVANCE PAST IT. Don't restart or replay it.
 - Vary the pacing: not every page should end on the same kind of beat. Mix tension, surprise, quiet moments, humor, action, and intimacy.
 - Introduce complications, new characters, unexpected turns, and consequences. A good story surprises the reader.
-
-CONTENT FREEDOM:
-- This is an open creative platform. Mature themes — including romance, sexuality, violence, horror, dark humor, trauma, and morally complex situations — are fully welcome when they serve the story.
-- Match the tone and intensity the reader establishes through their character description and choices. If they steer toward explicit, dark, or provocative territory, follow without hesitation.
-- Never sanitize, deflect, fade to black, or redirect the narrative away from what the reader is clearly asking for. The reader controls the experience.
-- Treat every genre and theme with the same craft and literary quality — a horror scene or a sex scene deserves the same vivid, well-written prose as any other moment.
 ${isPageBased ? `\nThis is a ${totalPages}-page story. Each of your responses is one page.` : ''}
 ${pacingGuidance}
 
@@ -528,7 +522,7 @@ Example Quest Actions:
       ];
 
       console.log('[AI Service] Calling OpenRouter API', {
-        model: "deepseek/deepseek-chat",
+        model: "anthropic/claude-3.5-haiku",
         systemPromptLength: this.getSystemPrompt(context.gameState).length,
         userPromptLength: messages[1].content?.toString().length || 0
       });
@@ -536,9 +530,9 @@ Example Quest Actions:
       // Prompt lengths logged (content omitted for privacy)
 
       const response = await openai.chat.completions.create({
-        model: "deepseek/deepseek-chat",
+        model: "anthropic/claude-3.5-haiku",
         messages,
-        // response_format removed — relying on prompt-level JSON instructions for model compatibility
+        response_format: { type: "json_object" },
       });
 
       const apiDuration = Date.now() - startTime;
@@ -839,7 +833,7 @@ Example Quest Actions:
   }): Promise<Quest | null> {
     try {
       const response = await openai.chat.completions.create({
-        model: "deepseek/deepseek-chat",
+        model: "anthropic/claude-3.5-haiku",
         messages: [
           {
             role: "system",
@@ -865,7 +859,7 @@ Example Quest Actions:
             }`
           }
         ],
-        // response_format removed — relying on prompt-level JSON instructions for model compatibility
+        response_format: { type: "json_object" },
       });
 
       const result = JSON.parse(response.choices[0].message.content || '{}');
@@ -951,7 +945,7 @@ Example Quest Actions:
       }).join('\\n');
 
       const response = await openai.chat.completions.create({
-        model: "deepseek/deepseek-chat",
+        model: "anthropic/claude-3.5-haiku",
         messages: [
           {
             role: "system",
@@ -986,7 +980,7 @@ Format as JSON:
 }`
           }
         ],
-        // response_format removed — relying on prompt-level JSON instructions for model compatibility
+        response_format: { type: "json_object" },
       });
 
       const result = JSON.parse(response.choices[0].message.content || '{}');
@@ -1027,7 +1021,7 @@ Format as JSON:
       const context = await this.getGameContext(sessionId, storyId);
       
       const response = await openai.chat.completions.create({
-        model: "deepseek/deepseek-chat",
+        model: "anthropic/claude-3.5-haiku",
         messages: [
           {
             role: "system",
@@ -1053,7 +1047,7 @@ Format as JSON array:
 Make quests appropriate for the character level and current location.`
           }
         ],
-        // response_format removed — relying on prompt-level JSON instructions for model compatibility
+        response_format: { type: "json_object" },
       });
 
       const result = JSON.parse(response.choices[0].message.content || '[]');
@@ -1068,7 +1062,7 @@ Make quests appropriate for the character level and current location.`
   async generateNPCDialogue(npcName: string, context: string, playerMessage: string): Promise<string> {
     try {
       const response = await openai.chat.completions.create({
-        model: "deepseek/deepseek-chat",
+        model: "anthropic/claude-3.5-haiku",
         messages: [
           {
             role: "system",
@@ -1138,7 +1132,7 @@ Respond in this EXACT JSON format (no other text):
 }`;
 
       const response = await openai.chat.completions.create({
-        model: "deepseek/deepseek-chat",
+        model: "anthropic/claude-3.5-haiku",
         messages: [
           {
             role: "system",
