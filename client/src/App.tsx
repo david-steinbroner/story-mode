@@ -223,7 +223,6 @@ function GameApp() {
       queryClient.invalidateQueries({ queryKey: ['/api/quests', activeStoryId] });
       queryClient.invalidateQueries({ queryKey: ['/api/items'] });
       queryClient.invalidateQueries({ queryKey: ['/api/game-state', activeStoryId] });
-      queryClient.invalidateQueries({ queryKey: ['/api/enemies'] });
     },
     onError: (error: any, _variables: string, context: { previousMessages?: Message[] } | undefined) => {
       console.error('[App] AI mutation error:', error);

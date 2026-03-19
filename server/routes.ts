@@ -14,7 +14,7 @@ import {
   type Message
 } from "@shared/schema";
 import { z } from "zod";
-import { aiLimiter, generalLimiter, strictLimiter } from "./rateLimit";
+import { aiLimiter, generalLimiter } from "./rateLimit";
 import { spendTracker } from "./spendTracker";
 import { aiService, type AIResponse } from "./aiService";
 import OpenAI from "openai";
@@ -735,29 +735,6 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
     } catch (error) {
       console.error('Error initializing adventure template:', error);
       res.status(500).json({ error: 'Failed to initialize adventure template' });
-    }
-  });
-
-  // Character portrait generation
-  const portraitGenerationSchema = z.object({
-    appearance: z.string().min(1).max(500),
-    name: z.string().min(1).max(100)
-  });
-  
-  app.post("/api/character/generate-portrait", strictLimiter, async (req, res) => {
-    try {
-      const result = portraitGenerationSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({ error: "Invalid portrait generation data", details: result.error.errors });
-      }
-
-      const { appearance, name } = result.data;
-      const portraitUrl = await aiService.generateCharacterPortrait(name, appearance);
-      
-      res.json({ url: portraitUrl });
-    } catch (error) {
-      console.error('Error generating character portrait:', error);
-      res.status(500).json({ error: 'Failed to generate character portrait' });
     }
   });
 

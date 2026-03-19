@@ -130,8 +130,7 @@ export class DbStorage implements IStorage {
           updatedCharacter.strength += levelDiff;
           updatedCharacter.constitution += levelDiff;
 
-          // TODO: Remove class-based bonuses in Milestone 3 — replacing with genre-neutral trait system
-          // Bonus stats based on class
+          // Legacy class-based bonuses (no longer relevant but harmless)
           if (updatedCharacter.class === "Fighter") {
             updatedCharacter.strength += levelDiff;
             updatedCharacter.dexterity += Math.floor(levelDiff / 2);
