@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
-// Initialize Sentry for error tracking
-import { initSentry, Sentry } from "./sentry";
+// Sentry MUST be initialized before any other imports that may throw, so its
+// instrumentation hooks are in place when the rest of the app loads.
+import { initSentry, Sentry, captureError } from "./sentry";
 initSentry();
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
@@ -8,45 +9,29 @@ import { generalLimiter } from "./rateLimit";
 import { testConnection } from "./db";
 
 const app = express();
-app.set('trust proxy', 1); // Trust first proxy (Render's reverse proxy)
+app.set('trust proxy', 1); // Render's reverse proxy fronts every request
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-
-// Apply general rate limiting to all API routes
 app.use("/api", generalLimiter);
+
+// Lightweight access log. In production we never include the response body
+// because story content is the response body — that would leak reader-typed
+// prose and AI output into Render's log retention.
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
 
   res.on("finish", () => {
+    if (!path.startsWith("/api")) return;
     const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
-      log(logLine);
-    }
+    log(`${req.method} ${path} ${res.statusCode} in ${duration}ms`);
   });
 
   next();
 });
 
 (async () => {
-  // Test database connection before starting the server
   const dbConnected = await testConnection();
   if (!dbConnected) {
     console.error("[server] Failed to connect to database. Exiting.");
@@ -55,27 +40,30 @@ app.use((req, res, next) => {
 
   const server = await registerRoutes(app);
 
+  // Pipe everything that escapes a route handler through Sentry. Must come
+  // after registerRoutes so it sits at the bottom of the middleware stack.
+  Sentry.setupExpressErrorHandler(app);
+
+  // Final error formatter. Returns a generic message to the client (so internal
+  // error text never leaks) while preserving the original error for Sentry.
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-
-    res.status(status).json({ message });
-    throw err;
+    captureError(err);
+    if (!res.headersSent) {
+      res.status(status).json({
+        error: status >= 500 ? "Something went wrong on our end." : (err.message || "Bad request"),
+      });
+    }
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
   if (app.get("env") === "development") {
     await setupVite(app, server);
   } else {
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
+  // Render binds to PORT; nothing else is reachable, so this is the only port
+  // we listen on. Local dev defaults to 5000 to match docs.
   const port = parseInt(process.env.PORT || '5000', 10);
   server.listen(port, "0.0.0.0", () => {
     log(`serving on port ${port}`);

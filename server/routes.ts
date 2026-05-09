@@ -1,6 +1,6 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
-import { randomUUID } from "crypto";
+import { randomUUID, timingSafeEqual } from "crypto";
 import { storage } from "./storage";
 import {
   insertCharacterSchema,
@@ -21,6 +21,19 @@ import OpenAI from "openai";
 
 // Server-side deduplication lock for story creation (prevents multiple stories from rapid taps)
 const storyCreationLocks = new Map<string, number>();
+
+// Hard caps on free-text user input. Prevents accidental cost spikes from a runaway client
+// (e.g. paste of a whole novel) and shrinks the surface for prompt-injection payloads.
+const MAX_CHAT_MESSAGE_LENGTH = 2000;
+const MAX_QUICK_ACTION_LENGTH = 100;
+
+const chatMessageSchema = z.object({
+  message: z.string().min(1).max(MAX_CHAT_MESSAGE_LENGTH),
+});
+
+const quickActionSchema = z.object({
+  action: z.string().min(1).max(MAX_QUICK_ACTION_LENGTH),
+});
 
 // Validation schemas for updates
 const updateCharacterSchema = insertCharacterSchema.partial().refine(
@@ -254,8 +267,6 @@ function getStoryId(req: Request): string | undefined {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Initialize storage with default data (system context, no user session)
-  await storage.init('system');
   // Character routes
   app.get("/api/character", async (req, res) => {
     try {
@@ -514,7 +525,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? "Based on the character description, determine the most fitting genre and tone for this story and write accordingly."
         : `This is a ${genre} story.`;
 
-      const firstPagePrompt = `Begin a new ${totalPages}-page story. ${genreInstruction} The reader describes themselves as: "${characterDescription}"
+      const firstPagePrompt = `Begin a new ${totalPages}-page story. ${genreInstruction} The reader describes themselves as: <reader_input>${characterDescription}</reader_input>
 
 Your job: Create the opening page. Establish the world, introduce the reader's character within it, and end with the first set of choices. This is page 1 of ${totalPages} — focus on setup and atmosphere. Make the reader want to turn the page.
 
@@ -1011,10 +1022,11 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
     try {
       const sessionId = getSessionId(req);
       const storyId = getStoryId(req);
-      const { message } = req.body;
-      if (!message || typeof message !== 'string') {
-        return res.status(400).json({ error: "Message is required" });
+      const parsed = chatMessageSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Message is required and must be 1–2000 characters" });
       }
+      const { message } = parsed.data;
 
       // Check daily spend limit
       const spendCheck = spendTracker.canMakeRequest();
@@ -1046,10 +1058,11 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
   app.post("/api/ai/quick-action", aiLimiter, async (req, res) => {
     try {
       const sessionId = getSessionId(req);
-      const { action } = req.body;
-      if (!action || typeof action !== 'string') {
-        return res.status(400).json({ error: "Action is required" });
+      const parsed = quickActionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Action is required and must be 1–100 characters" });
       }
+      const { action } = parsed.data;
 
       let actionMessage = '';
       switch (action) {
@@ -1107,7 +1120,7 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
   // ============================================
 
   const adminAuth = (req: Request, res: any, next: any) => {
-    const adminKey = req.headers['x-admin-key'] as string;
+    const adminKey = req.headers['x-admin-key'];
     const expectedKey = process.env.ADMIN_KEY;
 
     if (!expectedKey) {
@@ -1115,7 +1128,14 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
       return res.status(503).json({ error: 'Admin API not configured' });
     }
 
-    if (!adminKey || adminKey !== expectedKey) {
+    // Compare in constant time so an attacker can't infer the key from response timing.
+    // Length-mismatched keys short-circuit; only equal-length buffers reach timingSafeEqual.
+    if (typeof adminKey !== 'string' || adminKey.length !== expectedKey.length) {
+      return res.status(401).json({ error: 'Invalid admin key' });
+    }
+    const provided = Buffer.from(adminKey);
+    const expected = Buffer.from(expectedKey);
+    if (!timingSafeEqual(provided, expected)) {
       return res.status(401).json({ error: 'Invalid admin key' });
     }
 

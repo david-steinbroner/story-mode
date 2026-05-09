@@ -2,8 +2,6 @@ import { db } from "./db";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
 import { type IStorage } from "./storage";
 import {
-  type User,
-  type InsertUser,
   type Character,
   type InsertCharacter,
   type Quest,
@@ -12,12 +10,8 @@ import {
   type InsertItem,
   type Message,
   type InsertMessage,
-  type Enemy,
-  type InsertEnemy,
   type GameState,
   type InsertGameState,
-  type Campaign,
-  type InsertCampaign,
   type StorySummary,
   type InsertStorySummary,
   characters,
@@ -30,42 +24,13 @@ import {
 
 /**
  * Database-backed storage implementation with session isolation.
- * All data is scoped to a sessionId to ensure each browser session has isolated game state.
+ * All data is scoped to a sessionId so each browser session has isolated state.
  */
 export class DbStorage implements IStorage {
-  // ============================================================
-  // USER MANAGEMENT (Legacy — scheduled for deletion)
-  // ============================================================
-
-  async getUser(id: string): Promise<User | undefined> {
-    throw new Error("Not implemented — scheduled for deletion");
-  }
-
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    throw new Error("Not implemented — scheduled for deletion");
-  }
-
-  async createUser(user: InsertUser): Promise<User> {
-    throw new Error("Not implemented — scheduled for deletion");
-  }
-
-  // ============================================================
-  // CHARACTER MANAGEMENT
-  // ============================================================
-
-  async init(sessionId: string): Promise<void> {
-    try {
-      // Check if character exists for this session
-      const existingCharacter = await this.getCharacter(sessionId);
-      if (existingCharacter) {
-        return; // Session already initialized
-      }
-
-      // No default initialization — user must create their own character
-      // This differs from MemStorage which created a default character
-    } catch (error) {
-      throw new Error(`Failed to initialize session: ${error instanceof Error ? error.message : error}`);
-    }
+  // Used to be a hook for seeding default characters per session. Kept as a
+  // no-op so callers don't need to know whether seeding is required.
+  async init(_sessionId: string): Promise<void> {
+    return;
   }
 
   async getCharacter(sessionId: string, storyId?: string): Promise<Character | undefined> {
@@ -680,61 +645,6 @@ export class DbStorage implements IStorage {
     }
   }
 
-  // ============================================================
-  // ENEMY MANAGEMENT (Legacy — scheduled for deletion)
-  // ============================================================
-
-  async getEnemies(combatId?: string): Promise<Enemy[]> {
-    throw new Error("Not implemented — scheduled for deletion");
-  }
-
-  async getEnemy(id: string): Promise<Enemy | undefined> {
-    throw new Error("Not implemented — scheduled for deletion");
-  }
-
-  async createEnemy(enemy: InsertEnemy): Promise<Enemy> {
-    throw new Error("Not implemented — scheduled for deletion");
-  }
-
-  async updateEnemy(id: string, updates: Partial<Enemy>): Promise<Enemy | null> {
-    throw new Error("Not implemented — scheduled for deletion");
-  }
-
-  async deleteEnemy(id: string): Promise<boolean> {
-    throw new Error("Not implemented — scheduled for deletion");
-  }
-
-  // ============================================================
-  // CAMPAIGN MANAGEMENT (Legacy — scheduled for deletion)
-  // ============================================================
-
-  async getCampaigns(): Promise<Campaign[]> {
-    throw new Error("Not implemented — scheduled for deletion");
-  }
-
-  async getCampaign(id: string): Promise<Campaign | undefined> {
-    throw new Error("Not implemented — scheduled for deletion");
-  }
-
-  async getActiveCampaign(): Promise<Campaign | undefined> {
-    throw new Error("Not implemented — scheduled for deletion");
-  }
-
-  async createCampaign(campaign: InsertCampaign): Promise<Campaign> {
-    throw new Error("Not implemented — scheduled for deletion");
-  }
-
-  async updateCampaign(id: string, updates: Partial<Campaign>): Promise<Campaign | null> {
-    throw new Error("Not implemented — scheduled for deletion");
-  }
-
-  async deleteCampaign(id: string): Promise<boolean> {
-    throw new Error("Not implemented — scheduled for deletion");
-  }
-
-  async setActiveCampaign(id: string): Promise<Campaign | null> {
-    throw new Error("Not implemented — scheduled for deletion");
-  }
 }
 
 // Export singleton instance
