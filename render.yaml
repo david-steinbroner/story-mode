@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: aittrpg
+    name: story-mode
     runtime: node
     plan: free
     buildCommand: npm install && npm run build
@@ -11,4 +11,10 @@ services:
       - key: PORT
         value: 10000
       - key: OPENROUTER_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_KEY
+        sync: false
+      - key: SENTRY_DSN
         sync: false
