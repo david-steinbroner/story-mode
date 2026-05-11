@@ -109,7 +109,7 @@ export default function AdminDashboard() {
               value={adminKey}
               onChange={(e) => setAdminKey(e.target.value)}
               className="w-full px-3 py-2 border rounded-md mb-4 focus:outline-none focus:ring-2"
-              style={{ borderColor: "#DBD8E3", color: "#5C5470" }}
+              style={{ borderColor: "#DBD8E3", color: "#5C5470", fontSize: "16px" }}
               placeholder="Enter admin key"
               autoFocus
             />

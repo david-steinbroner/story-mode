@@ -17,6 +17,7 @@ interface NewStoryCreationProps {
   onBack: () => void;
   isLoading?: boolean;
   className?: string;
+  seedDescription?: string;
 }
 
 const STORY_LENGTHS = [
@@ -31,9 +32,10 @@ export default function NewStoryCreation({
   onBack,
   isLoading = false,
   className = "",
+  seedDescription = "",
 }: NewStoryCreationProps) {
   const [storyLength, setStoryLength] = useState<string>("");
-  const [characterDescription, setCharacterDescription] = useState("");
+  const [characterDescription, setCharacterDescription] = useState(seedDescription);
   const [step, setStep] = useState<1 | 2>(1);
   const [isSurprising, setIsSurprising] = useState(false);
   const isSubmitting = useRef(false);

@@ -73,39 +73,23 @@ export default function ColdStartLoader({ isLoading, error }: ColdStartLoaderPro
             
             <div className="space-y-2">
               <h3 className="font-serif text-xl font-semibold">
-                {showColdStartMessage ? "Waking Up the Server..." : "Loading..."}
+                {showColdStartMessage ? "Your Guide is stretching..." : "Loading..."}
               </h3>
-              
+
               {!showColdStartMessage ? (
                 <p className="text-sm text-muted-foreground">
-                  Preparing your adventure
+                  Preparing your story
                 </p>
               ) : (
-                <div className="space-y-3">
-                  <p className="text-sm text-muted-foreground">
-                    The server was sleeping and is now starting up. This happens after periods of inactivity.
-                  </p>
-                  <div className="text-xs text-muted-foreground bg-muted p-3 rounded-md space-y-1">
-                    <p className="font-semibold">Why the wait?</p>
-                    <p>
-                      The free hosting tier puts the server to sleep after 15 minutes of inactivity 
-                      to save resources. First visit after sleep takes ~30 seconds to wake up.
-                    </p>
-                    <p className="mt-2">
-                      Subsequent requests will be instant!
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-center gap-2 text-sm">
-                    <span className="text-muted-foreground">Time elapsed:</span>
-                    <span className="font-mono font-semibold">{loadingTime}s</span>
-                  </div>
-                </div>
+                <p className="text-sm text-muted-foreground">
+                  First visit in a while — your Guide takes about 30 seconds to wake up. Hang tight.
+                </p>
               )}
             </div>
 
             {loadingTime > 45 && (
               <div className="text-xs text-muted-foreground">
-                Taking longer than usual... You can try refreshing the page.
+                Still working on it... If this lingers, try refreshing the page.
               </div>
             )}
           </>

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from "react";
-import { Plus, Check, CheckCircle, Archive, ArchiveRestore, Minus, Settings } from "lucide-react";
+import { Plus, Check, CheckCircle, Archive, ArchiveRestore, Minus, Settings, Mail, MoreVertical, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -50,9 +50,18 @@ function useLongPress(onLongPress: () => void, delay = 500) {
 interface BookshelfProps {
   stories: GameState[];
   onContinueStory: (storyId: string) => void;
-  onNewStory: () => void;
+  onNewStory: (seedDescription?: string) => void;
   className?: string;
 }
+
+// First-visit examples shown in the empty-state hero. Each is tappable and
+// pre-fills the character description in the new-story wizard. Picked to span
+// genre/vibe so a returning user isn't pushed toward the same shape twice.
+const HERO_EXAMPLES = [
+  "A pastry chef who finds a recipe written in their grandmother's hand — except their grandmother died before they were born.",
+  "A retired space cartographer accepting one last contract on a planet that doesn't appear on any map.",
+  "A modern dancer training for a competition who keeps waking up with bruises they can't explain.",
+];
 
 // Genre color mapping
 const GENRE_SPINES: Record<string, string> = {
@@ -87,6 +96,7 @@ function BookSpine({
   onArchive,
   onUnarchive,
   onEndStory,
+  onDelete,
   isArchived,
 }: {
   title?: string;
@@ -99,13 +109,15 @@ function BookSpine({
   onArchive?: () => void;
   onUnarchive?: () => void;
   onEndStory?: () => void;
+  onDelete?: () => void;
   isArchived?: boolean;
 }) {
   const spineGradient = genre ? GENRE_SPINES[genre] || GENRE_SPINES.fantasy : "";
   const [popoverOpen, setPopoverOpen] = useState(false);
 
+  const hasActions = !!(onArchive || onUnarchive || onEndStory || onDelete);
   const longPress = useLongPress(() => {
-    if ((onArchive || onUnarchive || onEndStory) && !isNew) {
+    if (hasActions && !isNew) {
       setPopoverOpen(true);
     }
   });
@@ -185,11 +197,13 @@ function BookSpine({
     </div>
   );
 
-  // Stories with long-press actions get a popover
-  if (onArchive || onUnarchive || onEndStory) {
+  // Stories with actions: long-press (mobile) + kebab button (desktop) both
+  // open the same popover. The kebab is the discoverable affordance for users
+  // who can't long-press with a mouse.
+  if (hasActions) {
     return (
       <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
-        <PopoverTrigger asChild>
+        <div className="relative">
           <button
             onClick={(e) => {
               // If long press just fired, don't also navigate
@@ -212,7 +226,17 @@ function BookSpine({
           >
             {spineContent}
           </button>
-        </PopoverTrigger>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              onClick={(e) => e.stopPropagation()}
+              className="absolute top-1 right-1 w-6 h-6 rounded-full bg-background/80 backdrop-blur-sm border border-border/60 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+              aria-label="Story actions"
+            >
+              <MoreVertical className="w-3.5 h-3.5" />
+            </button>
+          </PopoverTrigger>
+        </div>
         <PopoverContent
           className="w-auto p-1 bg-[#FFF9F0] border border-[#C9B6E4]/30"
           side="top"
@@ -255,6 +279,19 @@ function BookSpine({
             >
               <ArchiveRestore size={16} className="text-[#A8E6CF]" />
               <span>Unarchive</span>
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={() => {
+                onDelete();
+                setPopoverOpen(false);
+              }}
+              className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-destructive hover:bg-destructive/10 transition-colors w-full"
+              style={{ minHeight: 44, minWidth: 44 }}
+            >
+              <Trash2 size={16} />
+              <span>Delete</span>
             </button>
           )}
         </PopoverContent>
@@ -317,9 +354,12 @@ export default function Bookshelf({
 
   // Funnel-tracking wrappers so every entry point into a story is logged once
   // at the source instead of sprinkled at six callsites.
-  const onNewStory = useCallback(() => {
-    analytics.trackEvent("new_story_clicked", { storyCount: stories.length });
-    rawOnNewStory();
+  const onNewStory = useCallback((seedDescription?: string) => {
+    analytics.trackEvent("new_story_clicked", {
+      storyCount: stories.length,
+      seeded: !!seedDescription,
+    });
+    rawOnNewStory(seedDescription);
   }, [rawOnNewStory, stories.length]);
 
   const onContinueStory = useCallback((storyId: string) => {
@@ -358,6 +398,18 @@ export default function Bookshelf({
       queryClient.invalidateQueries({ queryKey: ['/api/stories'] });
     } catch (error) {
       console.error('Failed to unarchive story:', error);
+    }
+  }, []);
+
+  const deleteStory = useCallback(async (storyId: string, title: string) => {
+    // Confirm via the native dialog. Archive is the soft-delete path; this is
+    // the permanent removal, so we make the user say yes once.
+    if (!window.confirm(`Delete "${title}" forever? This can't be undone.`)) return;
+    try {
+      await apiRequest('DELETE', `/api/stories/${storyId}`);
+      queryClient.invalidateQueries({ queryKey: ['/api/stories'] });
+    } catch (error) {
+      console.error('Failed to delete story:', error);
     }
   }, []);
 
@@ -452,9 +504,14 @@ export default function Bookshelf({
               </>
             )}
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => { window.location.pathname = "/admin"; }}>
-              <Settings className="w-4 h-4 mr-2" />
-              Admin
+            <DropdownMenuItem
+              onClick={() => {
+                analytics.trackEvent("feedback_mailto_clicked", { from: "bookshelf" });
+                window.location.href = "mailto:feedback@mystorymode.com?subject=Story%20Mode%20feedback";
+              }}
+            >
+              <Mail className="w-4 h-4 mr-2" />
+              Send Feedback
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -496,7 +553,7 @@ export default function Bookshelf({
                   onArchive={() => archiveStory(story.storyId!)}
                 />
               ))}
-              <BookSpine isNew onClick={onNewStory} />
+              <BookSpine isNew onClick={() => onNewStory()} />
             </div>
             <WoodenShelf />
           </div>
@@ -539,13 +596,13 @@ export default function Bookshelf({
           {activeStories.length === 0 && (
             <div className="relative">
               <div className="flex items-start gap-4 px-3 pb-3 pt-1">
-                <BookSpine isNew onClick={onNewStory} />
+                <BookSpine isNew onClick={() => onNewStory()} />
               </div>
               <WoodenShelf />
             </div>
           )}
           <button
-            onClick={onNewStory}
+            onClick={() => onNewStory()}
             className="w-full mt-4 bg-primary text-primary-foreground rounded-lg p-4 font-semibold text-base flex items-center justify-center hover:opacity-90 transition-opacity active:scale-[0.98]"
           >
             Start a New Story
@@ -589,7 +646,7 @@ export default function Bookshelf({
             <WoodenShelf />
           </div>
           <p className="text-[10px] text-[#6C7A89]/40 mt-2 px-1">
-            Hold a book to archive it
+            Tap a book to read, or use the ⋯ menu for options
           </p>
         </div>
       )}
@@ -623,6 +680,7 @@ export default function Bookshelf({
                   isArchived={true}
                   onClick={() => onContinueStory(story.storyId!)}
                   onUnarchive={() => unarchiveStory(story.storyId!)}
+                  onDelete={() => deleteStory(story.storyId!, getStoryTitle(story))}
                 />
               ))}
             </div>
@@ -634,46 +692,64 @@ export default function Bookshelf({
         </div>
       )}
 
-      {/* Empty state — no stories yet */}
+      {/* First-visit hero — only when the shelf is completely empty */}
       {stories.length === 0 && (
-        <div className="mt-4">
-          <div className="relative mb-6">
-            <div className="flex items-start gap-4 px-3 pb-3 pt-1 justify-center">
-              <BookSpine isNew onClick={onNewStory} />
+        <div className="mt-4 space-y-6">
+          <div className="text-center px-2">
+            <h2 className="font-serif text-2xl sm:text-3xl text-foreground leading-snug">
+              Tell me about yourself.
+              <br />
+              I'll write the story.
+            </h2>
+          </div>
+
+          <ol className="space-y-3 max-w-md mx-auto px-2">
+            {[
+              "Describe a character in a sentence or two.",
+              "Your Guide builds a world around them.",
+              "Tap choices to shape what happens next.",
+            ].map((step, i) => (
+              <li key={i} className="flex items-start gap-3">
+                <span
+                  className="flex-shrink-0 w-6 h-6 rounded-full bg-secondary/40 text-foreground text-xs font-semibold flex items-center justify-center mt-0.5"
+                  aria-hidden
+                >
+                  {i + 1}
+                </span>
+                <p className="text-sm text-muted-foreground leading-relaxed">{step}</p>
+              </li>
+            ))}
+          </ol>
+
+          <div className="space-y-2">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground/70 px-2">
+              Need a spark? Tap one to start.
+            </p>
+            <div className="space-y-2">
+              {HERO_EXAMPLES.map((example, i) => (
+                <button
+                  key={i}
+                  onClick={() => onNewStory(example)}
+                  className="w-full text-left bg-card border border-border rounded-lg p-3 text-sm text-foreground/90 leading-relaxed hover:bg-accent/10 hover:border-primary/40 transition-colors active:scale-[0.98]"
+                  style={{ minHeight: 44 }}
+                >
+                  {example}
+                </button>
+              ))}
             </div>
-            <WoodenShelf />
           </div>
 
           <button
-            onClick={onNewStory}
+            onClick={() => onNewStory()}
             className="w-full bg-primary text-primary-foreground rounded-lg p-4 font-semibold text-base flex items-center justify-center hover:opacity-90 transition-opacity active:scale-[0.98]"
           >
-            Start Your First Story
+            Start from scratch
           </button>
         </div>
       )}
 
-      {/* Community teaser (future) */}
-      <div className="mt-8">
-        <button
-          className="w-full text-left bg-card border border-border rounded-lg p-4 opacity-50 cursor-not-allowed"
-          disabled
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex-1">
-              <h3 className="text-sm font-semibold text-foreground">
-                Public Library
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Community stories coming soon
-              </p>
-            </div>
-          </div>
-        </button>
-      </div>
-
       {/* Version */}
-      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v0.7.21</p>
+      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.0.0</p>
     </div>
   );
 }

@@ -13,6 +13,7 @@ import NewStoryCreation from "./components/NewStoryCreation";
 import { useAnalytics, useSessionTracking } from "./hooks/useAnalytics";
 import { useToast } from "./hooks/use-toast";
 import { setUserContext, setGameContext } from "./lib/sentry";
+import * as Sentry from "@sentry/react";
 
 // Types
 import type { Character, Quest, Message, GameState } from "@shared/schema";
@@ -67,9 +68,13 @@ function GameApp() {
   });
 
   // Fetch all stories for the bookshelf (not scoped by storyId)
-  const { data: stories = [] } = useQuery<GameState[]>({
+  const { data: stories = [], isLoading: storiesLoading, error: storiesError } = useQuery<GameState[]>({
     queryKey: ['/api/stories'],
   });
+
+  // Seed character description from a "How it works" example tap on the
+  // bookshelf — flows through to NewStoryCreation as a pre-filled textarea.
+  const [seedDescription, setSeedDescription] = useState("");
 
   // Update Sentry context when character data changes
   // MOVED AFTER data declarations to prevent TDZ errors in Safari
@@ -208,7 +213,7 @@ function GameApp() {
           });
 
           toast({
-            title: wasCompleted ? "Quest Complete!" : "Quest Updated",
+            title: wasCompleted ? "Mission Complete!" : "Mission Updated",
             description: quest.title,
             duration: 3000,
           });
@@ -280,11 +285,20 @@ function GameApp() {
   // Handle different views
   if (currentView === "bookshelf") {
     return (
-      <Bookshelf
-        stories={stories}
-        onContinueStory={(storyId) => enterStory(storyId)}
-        onNewStory={() => setCurrentView("newStory")}
-      />
+      <>
+        <ColdStartLoader
+          isLoading={storiesLoading && stories.length === 0}
+          error={storiesError as Error | null}
+        />
+        <Bookshelf
+          stories={stories}
+          onContinueStory={(storyId) => enterStory(storyId)}
+          onNewStory={(seed) => {
+            setSeedDescription(seed ?? "");
+            setCurrentView("newStory");
+          }}
+        />
+      </>
     );
   }
 
@@ -292,6 +306,7 @@ function GameApp() {
     return (
       <NewStoryCreation
         isLoading={isCreatingStory}
+        seedDescription={seedDescription}
         onStartStory={async (storyData) => {
           console.log('[App] onStartStory ENTRY', { isCreatingStory, timestamp: Date.now() });
           if (isCreatingStory) return;
@@ -355,8 +370,12 @@ function GameApp() {
 }
 
 function App() {
-  // Check if we're on the admin route
-  const isAdminRoute = window.location.pathname === "/admin";
+  // /admin is gated behind ?admin=1 so the route doesn't show up to a curious
+  // user who guesses the path. The Express admin endpoints behind it still
+  // require the ADMIN_KEY, but this hides the dashboard chrome entirely.
+  const isAdminRoute =
+    window.location.pathname === "/admin" &&
+    new URLSearchParams(window.location.search).get("admin") === "1";
 
   if (isAdminRoute) {
     return <AdminDashboard />;
@@ -365,7 +384,26 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <GameApp />
+        <Sentry.ErrorBoundary
+          fallback={({ resetError }) => (
+            <div className="min-h-dvh flex items-center justify-center px-6 bg-background">
+              <div className="max-w-md text-center space-y-4">
+                <h1 className="font-serif text-2xl text-foreground">Something went wrong.</h1>
+                <p className="text-sm text-muted-foreground">
+                  Your Guide hit an unexpected snag. We've been notified. You can try again, and your stories are safe.
+                </p>
+                <button
+                  onClick={() => { resetError(); window.location.reload(); }}
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+                >
+                  Reload Story Mode
+                </button>
+              </div>
+            </div>
+          )}
+        >
+          <GameApp />
+        </Sentry.ErrorBoundary>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

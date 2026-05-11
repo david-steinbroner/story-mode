@@ -19,7 +19,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import EmptyState from "./EmptyState";
-import { MessageSquare, Loader2, RefreshCw, Send, Minus, Plus, BookOpen, XCircle, ChevronUp, ChevronDown } from "lucide-react";
+import { MessageSquare, Loader2, RefreshCw, Send, Minus, Plus, BookOpen, XCircle, ChevronUp, ChevronDown, Mail, ThumbsUp, ThumbsDown } from "lucide-react";
 import GuideAvatar from "./GuideAvatar";
 import type { Message, Character, Quest, Item, GameState } from "@shared/schema";
 import { useState, useRef, useEffect, useMemo } from "react";
@@ -108,6 +108,7 @@ export default function ChatInterface({
   const [inputText, setInputText] = useState("");
   const [fontSizeIndex, setFontSizeIndex] = useState(getInitialFontSizeIndex);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
+  const [endStorySentiment, setEndStorySentiment] = useState<"up" | "down" | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -452,6 +453,16 @@ ${JSON.stringify(debugInfo, null, 2)}
               </div>
               <DropdownMenuSeparator />
               <DropdownMenuItem
+                onClick={() => {
+                  analytics.trackEvent("feedback_mailto_clicked", { from: "story" });
+                  window.location.href = "mailto:feedback@mystorymode.com?subject=Story%20Mode%20feedback";
+                }}
+              >
+                <Mail className="w-4 h-4 mr-2" />
+                Send Feedback
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
                 onClick={() => setShowEndConfirm(true)}
                 className="text-destructive focus:text-destructive"
               >
@@ -464,7 +475,13 @@ ${JSON.stringify(debugInfo, null, 2)}
       </div>
 
       {/* End Story confirmation dialog */}
-      <AlertDialog open={showEndConfirm} onOpenChange={setShowEndConfirm}>
+      <AlertDialog
+        open={showEndConfirm}
+        onOpenChange={(open) => {
+          setShowEndConfirm(open);
+          if (!open) setEndStorySentiment(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>End this story?</AlertDialogTitle>
@@ -472,12 +489,55 @@ ${JSON.stringify(debugInfo, null, 2)}
               This will mark the story as finished and return you to the library. You can still read it later from the Finished shelf.
             </AlertDialogDescription>
           </AlertDialogHeader>
+
+          {/* Inline sentiment capture. Optional — selecting nothing still ends the story. */}
+          <div className="py-2">
+            <p className="text-sm text-muted-foreground mb-2">How was this story?</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setEndStorySentiment(endStorySentiment === "up" ? null : "up")}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border transition-colors ${
+                  endStorySentiment === "up"
+                    ? "bg-secondary/40 border-primary text-foreground"
+                    : "bg-background border-border text-muted-foreground hover:border-primary/40"
+                }`}
+                style={{ minHeight: 44 }}
+                aria-pressed={endStorySentiment === "up"}
+              >
+                <ThumbsUp className="w-4 h-4" />
+                <span className="text-sm">Loved it</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEndStorySentiment(endStorySentiment === "down" ? null : "down")}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border transition-colors ${
+                  endStorySentiment === "down"
+                    ? "bg-destructive/10 border-destructive text-foreground"
+                    : "bg-background border-border text-muted-foreground hover:border-destructive/40"
+                }`}
+                style={{ minHeight: 44 }}
+                aria-pressed={endStorySentiment === "down"}
+              >
+                <ThumbsDown className="w-4 h-4" />
+                <span className="text-sm">Not for me</span>
+              </button>
+            </div>
+          </div>
+
           <AlertDialogFooter>
             <AlertDialogCancel>Keep Reading</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                console.log('[ChatInterface] End Story confirmed');
+                console.log('[ChatInterface] End Story confirmed', { sentiment: endStorySentiment });
                 analytics.buttonClicked('End Story Confirmed', 'Chat Interface');
+                if (endStorySentiment) {
+                  analytics.trackEvent("story_sentiment_submitted", {
+                    sentiment: endStorySentiment,
+                    currentPage: gameState?.currentPage,
+                    totalPages: gameState?.totalPages,
+                  });
+                }
                 onEndAdventure?.();
               }}
             >
@@ -497,8 +557,8 @@ ${JSON.stringify(debugInfo, null, 2)}
             {messages.length === 0 ? (
               <EmptyState
                 icon={MessageSquare}
-                title="No messages yet"
-                description="Start your adventure by speaking or using quick actions!"
+                title="Your story is loading"
+                description="Tap a choice below to begin."
               />
             ) : (
               messages.map((message, index) => {
@@ -624,7 +684,7 @@ ${JSON.stringify(debugInfo, null, 2)}
                     if (e.key === "Enter") handleCustomSubmit();
                   }}
                   autoFocus
-                  className="flex-1 px-3 py-2.5 bg-muted rounded-md text-sm text-foreground placeholder:text-muted-foreground border border-input focus:outline-none focus:ring-2 focus:ring-primary min-h-[44px]"
+                  className="flex-1 px-3 py-2.5 bg-muted rounded-md text-base text-foreground placeholder:text-muted-foreground border border-input focus:outline-none focus:ring-2 focus:ring-primary min-h-[44px]"
                   disabled={isLoading}
                 />
                 <Button
