@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { ArrowLeft, Loader2, Info } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { apiRequest } from "@/lib/queryClient";
+import { analytics } from "@/lib/posthog";
 
 interface NewStoryCreationProps {
   onStartStory: (data: {
@@ -44,6 +45,10 @@ export default function NewStoryCreation({
     console.log('[NewStory] handleSubmit ENTRY', { isValid, isSubmitting: isSubmitting.current, isLoading });
     if (!isValid || isSubmitting.current) return;
     isSubmitting.current = true;
+    analytics.trackEvent("story_creation_submitted", {
+      storyLength,
+      characterDescriptionLength: characterDescription.trim().length,
+    });
     onStartStory({
       genre: "auto",
       storyLength,
@@ -94,6 +99,7 @@ export default function NewStoryCreation({
                     key={l.id}
                     onClick={() => {
                       setStoryLength(l.id);
+                      analytics.trackEvent("story_length_selected", { storyLength: l.id, pages: l.pages });
                       setTimeout(() => setStep(2), 300);
                     }}
                     className={`p-4 rounded-lg border-2 transition-all text-center ${
@@ -174,6 +180,7 @@ export default function NewStoryCreation({
                     className="h-7 text-xs"
                     disabled={isSurprising || isLoading}
                     onClick={async () => {
+                      analytics.trackEvent("surprise_me_clicked");
                       setIsSurprising(true);
                       try {
                         const response = await apiRequest("POST", "/api/story/surprise-me", {});

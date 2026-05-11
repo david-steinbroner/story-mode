@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { analytics } from "@/lib/posthog";
 import GuideAvatar from "./GuideAvatar";
 import type { GameState } from "@shared/schema";
 
@@ -307,12 +308,30 @@ function getInitialFontSizeIndex(): number {
 
 export default function Bookshelf({
   stories,
-  onContinueStory,
-  onNewStory,
+  onContinueStory: rawOnContinueStory,
+  onNewStory: rawOnNewStory,
   className = "",
 }: BookshelfProps) {
   const [showArchive, setShowArchive] = useState(false);
   const [fontSizeIndex, setFontSizeIndex] = useState(getInitialFontSizeIndex);
+
+  // Funnel-tracking wrappers so every entry point into a story is logged once
+  // at the source instead of sprinkled at six callsites.
+  const onNewStory = useCallback(() => {
+    analytics.trackEvent("new_story_clicked", { storyCount: stories.length });
+    rawOnNewStory();
+  }, [rawOnNewStory, stories.length]);
+
+  const onContinueStory = useCallback((storyId: string) => {
+    const story = stories.find((s) => s.storyId === storyId);
+    analytics.trackEvent("continue_story_clicked", {
+      currentPage: story?.currentPage,
+      totalPages: story?.totalPages,
+      storyComplete: story?.storyComplete,
+      storyArchived: story?.storyArchived,
+    });
+    rawOnContinueStory(storyId);
+  }, [rawOnContinueStory, stories]);
 
   const currentFontSize = FONT_SIZES[fontSizeIndex];
 

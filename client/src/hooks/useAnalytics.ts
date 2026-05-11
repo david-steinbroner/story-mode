@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { analytics } from '@/lib/posthog';
+import { analytics, identifyUser } from '@/lib/posthog';
 
 /**
  * Hook to easily track analytics events in components
@@ -23,6 +23,14 @@ export function usePageView(pageName: string) {
 export function useSessionTracking() {
   useEffect(() => {
     const sessionStart = Date.now();
+
+    // Identify the PostHog actor with our anonymous session id so every event
+    // for this browser correlates to a single user in funnels and cohorts.
+    const sessionId = localStorage.getItem('sessionId');
+    if (sessionId) {
+      identifyUser(sessionId);
+    }
+
     analytics.sessionStarted();
 
     return () => {

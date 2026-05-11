@@ -8,6 +8,7 @@ import {
   insertItemSchema,
   insertMessageSchema,
   insertGameStateSchema,
+  storyCreationLocks as storyCreationLocksTable,
   type Character,
   type Quest,
   type Item,
@@ -17,10 +18,22 @@ import { z } from "zod";
 import { aiLimiter, generalLimiter } from "./rateLimit";
 import { spendTracker } from "./spendTracker";
 import { aiService, type AIResponse } from "./aiService";
+import { logEvent } from "./eventLog";
+import { db } from "./db";
+import { eq, and, lt } from "drizzle-orm";
 import OpenAI from "openai";
 
-// Server-side deduplication lock for story creation (prevents multiple stories from rapid taps)
-const storyCreationLocks = new Map<string, number>();
+// How long a single in-flight story creation can hold the per-session lock.
+// Long enough to span a slow first-page AI call on Render's cold start.
+const STORY_CREATION_LOCK_MS = 30_000;
+
+// Per-(session, story) lock for /api/ai/chat. Lives in memory because the
+// blast radius of a lost lock is small (worst case: a duplicate AI call from
+// a user with two tabs open) and the recovery is built in: locks expire after
+// 60s regardless of process state.
+const chatLocks = new Map<string, number>();
+const CHAT_LOCK_MS = 60_000;
+const chatLockKey = (sessionId: string, storyId?: string) => `${sessionId}:${storyId ?? "_"}`;
 
 // Hard caps on free-text user input. Prevents accidental cost spikes from a runaway client
 // (e.g. paste of a whole novel) and shrinks the surface for prompt-injection payloads.
@@ -453,6 +466,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const sessionId = getSessionId(req);
       const { storyId } = req.params;
       await storage.clearAllAdventureData(sessionId, storyId);
+      await logEvent(sessionId, "story_deleted", {}, storyId);
       res.json({ success: true });
     } catch (error) {
       console.error('Error deleting story:', error);
@@ -464,13 +478,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const sessionId = getSessionId(req);
     console.log(`[Story New] REQUEST RECEIVED session=${sessionId} timestamp=${Date.now()}`);
 
-    // Server-side deduplication: block concurrent story creation for the same session
-    const lastCreation = storyCreationLocks.get(sessionId);
-    if (lastCreation && Date.now() - lastCreation < 30000) {
-      console.log(`[Story New] BLOCKED — creation already in progress for session=${sessionId} (locked ${Date.now() - lastCreation}ms ago)`);
+    // Atomic deduplication via Postgres. The unique-on-conflict insert claims
+    // the lock for this session if no live lock exists, or if the existing one
+    // has already expired. Replaces an earlier in-memory Map that was lost on
+    // every Render restart.
+    const expiresAt = new Date(Date.now() + STORY_CREATION_LOCK_MS);
+    const claimed = await db
+      .insert(storyCreationLocksTable)
+      .values({ sessionId, expiresAt })
+      .onConflictDoUpdate({
+        target: storyCreationLocksTable.sessionId,
+        set: { expiresAt },
+        setWhere: lt(storyCreationLocksTable.expiresAt, new Date()),
+      })
+      .returning({ sessionId: storyCreationLocksTable.sessionId });
+
+    if (claimed.length === 0) {
+      console.log(`[Story New] BLOCKED — creation already in progress for session=${sessionId}`);
       return res.status(429).json({ success: false, error: "Story creation already in progress" });
     }
-    storyCreationLocks.set(sessionId, Date.now());
 
     try {
       const result = newStorySchema.safeParse(req.body);
@@ -558,7 +584,7 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
 
       // Track token spend
       if (aiResponse.tokenUsage) {
-        spendTracker.trackRequest(sessionId, aiResponse.tokenUsage);
+        await spendTracker.trackRequest(sessionId, aiResponse.tokenUsage);
       }
 
       // Save the AI's first page and apply any actions (quests, items, etc.)
@@ -567,6 +593,18 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
       // Save AI-generated story title if provided
       if (aiResponse.storyTitle) {
         await storage.updateGameState(sessionId, { storyTitle: aiResponse.storyTitle }, storyId);
+      }
+
+      await logEvent(sessionId, "story_started", {
+        genre,
+        storyLength,
+        totalPages,
+        characterDescriptionLength: characterDescription.length,
+        aiHadFallback: !!aiResponse.error,
+      }, storyId);
+
+      if (aiResponse.error) {
+        await logEvent(sessionId, "ai_fallback", { phase: "story_start", errorType: aiResponse.error }, storyId);
       }
 
       res.json({
@@ -587,7 +625,8 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
       console.error('Error creating new story:', error);
       res.status(500).json({ error: 'Failed to create story' });
     } finally {
-      storyCreationLocks.delete(sessionId);
+      // Release the lock no matter how this request ended.
+      await db.delete(storyCreationLocksTable).where(eq(storyCreationLocksTable.sessionId, sessionId));
     }
   });
 
@@ -623,7 +662,7 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
       const sessionId = getSessionId(req);
 
       // Check spend limits
-      const spendCheck = spendTracker.canMakeRequest();
+      const spendCheck = await spendTracker.canMakeRequest();
       if (!spendCheck.allowed) {
         return res.status(429).json({ success: false, error: spendCheck.reason });
       }
@@ -652,7 +691,7 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
 
       // Track token usage
       if (response.usage) {
-        spendTracker.trackRequest(sessionId, {
+        await spendTracker.trackRequest(sessionId, {
           promptTokens: response.usage.prompt_tokens,
           completionTokens: response.usage.completion_tokens,
           totalTokens: response.usage.total_tokens,
@@ -993,6 +1032,12 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
       const sessionId = getSessionId(req);
       const storyId = getStoryId(req);
       const gameState = await storage.updateGameState(sessionId, req.body, storyId);
+      if (req.body?.storyComplete === true) {
+        await logEvent(sessionId, "story_completed", {
+          currentPage: gameState?.currentPage,
+          totalPages: gameState?.totalPages,
+        }, storyId);
+      }
       res.json(gameState);
     } catch (error) {
       console.error('Error updating game state:', error);
@@ -1010,6 +1055,7 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
         return res.status(400).json({ error: "archived must be a boolean" });
       }
       await storage.updateGameState(sessionId, { storyArchived: archived }, storyId);
+      await logEvent(sessionId, archived ? "story_archived" : "story_unarchived", {}, storyId);
       res.json({ success: true });
     } catch (error) {
       console.error('Error archiving story:', error);
@@ -1019,9 +1065,19 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
 
   // AI Conversation endpoints
   app.post("/api/ai/chat", aiLimiter, async (req, res) => {
+    const sessionId = getSessionId(req);
+    const storyId = getStoryId(req);
+    const lockKey = chatLockKey(sessionId, storyId);
+
+    // Per-(session, story) lock: blocks the duplicate AI call a user produces
+    // by opening two tabs of the same story and tapping a choice in each.
+    const heldSince = chatLocks.get(lockKey);
+    if (heldSince && Date.now() - heldSince < CHAT_LOCK_MS) {
+      return res.status(429).json({ error: "A response is already being generated. Please wait." });
+    }
+    chatLocks.set(lockKey, Date.now());
+
     try {
-      const sessionId = getSessionId(req);
-      const storyId = getStoryId(req);
       const parsed = chatMessageSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: "Message is required and must be 1–2000 characters" });
@@ -1029,7 +1085,7 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
       const { message } = parsed.data;
 
       // Check daily spend limit
-      const spendCheck = spendTracker.canMakeRequest();
+      const spendCheck = await spendTracker.canMakeRequest();
       if (!spendCheck.allowed) {
         return res.status(429).json({ error: spendCheck.reason });
       }
@@ -1038,10 +1094,19 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
       const aiResponse = await aiService.generateResponse(sessionId, message, storyId);
 
       // Track request with actual token usage
-      spendTracker.trackRequest(sessionId, aiResponse.tokenUsage);
+      await spendTracker.trackRequest(sessionId, aiResponse.tokenUsage);
 
       // Apply AI response (store messages, apply actions, detect side quests)
       const aiMessage = await applyAIResponse(sessionId, message, aiResponse, storyId);
+
+      await logEvent(sessionId, "page_turned", {
+        messageLength: message.length,
+        aiHadFallback: !!aiResponse.error,
+      }, storyId);
+
+      if (aiResponse.error) {
+        await logEvent(sessionId, "ai_fallback", { phase: "page_turn", errorType: aiResponse.error }, storyId);
+      }
 
       res.json({
         message: aiMessage,
@@ -1050,7 +1115,13 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
 
     } catch (error) {
       console.error('Error in AI chat:', error);
+      await logEvent(sessionId, "ai_request_failed", {
+        phase: "page_turn",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      }, storyId);
       res.status(500).json({ error: "Failed to process AI conversation" });
+    } finally {
+      chatLocks.delete(lockKey);
     }
   });
 
@@ -1089,7 +1160,7 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
       }
 
       // Check daily spend limit
-      const spendCheck = spendTracker.canMakeRequest();
+      const spendCheck = await spendTracker.canMakeRequest();
       if (!spendCheck.allowed) {
         return res.status(429).json({ error: spendCheck.reason });
       }
@@ -1099,7 +1170,7 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
       const aiResponse = await aiService.generateResponse(sessionId, actionMessage, storyId);
 
       // Track request with actual token usage
-      spendTracker.trackRequest(sessionId, aiResponse.tokenUsage);
+      await spendTracker.trackRequest(sessionId, aiResponse.tokenUsage);
 
       // Apply AI response (store messages, apply actions, detect side quests)
       const aiMessage = await applyAIResponse(sessionId, actionMessage, aiResponse, storyId);
@@ -1145,7 +1216,7 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
   // GET /api/admin/spend - Return spend metrics
   app.get("/api/admin/spend", adminAuth, async (_req, res) => {
     try {
-      const stats = spendTracker.getAdminStats();
+      const stats = await spendTracker.getAdminStats();
       res.json({
         todaysCost: stats.today.totalCost,
         allTimeCost: stats.allTime.totalCost,

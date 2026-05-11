@@ -110,7 +110,7 @@ export async function generateStorySummary(
     });
 
     // Track the request cost (spendTracker uses internal fallback if tokenUsage is undefined)
-    spendTracker.trackRequest(sessionId, tokenUsage);
+    await spendTracker.trackRequest(sessionId, tokenUsage);
 
     // Validate response
     if (!response.choices || response.choices.length === 0) {

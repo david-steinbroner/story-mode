@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, timestamp, jsonb, numeric, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -117,6 +117,39 @@ export const gameState = pgTable("game_state", {
   storyComplete: boolean("story_complete").default(false).notNull(),
 });
 
+// Daily AI spend tally. Persisted (rather than in-memory) so the $10/day cap
+// survives Render restarts and so the admin dashboard reflects real lifetime
+// cost. Keyed by UTC date string; one row per day.
+export const dailySpend = pgTable("daily_spend", {
+  date: date("date").primaryKey(),
+  requestCount: integer("request_count").default(0).notNull(),
+  totalCostMicroDollars: integer("total_cost_micro_dollars").default(0).notNull(),
+  totalPromptTokens: integer("total_prompt_tokens").default(0).notNull(),
+  totalCompletionTokens: integer("total_completion_tokens").default(0).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Distributed lock for /api/story/new. Replaces the in-memory Map that lost
+// its state on every Render restart. Each session can hold at most one lock;
+// stale locks past expiresAt are ignored and overwritten.
+export const storyCreationLocks = pgTable("story_creation_locks", {
+  sessionId: varchar("session_id").primaryKey(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
+
+// Append-only behavioral event stream. Used to derive funnel and survival
+// metrics that PostHog can't reconstruct (server-only events like AI fallback
+// rate, plus a server-side ground truth for client-fired events that may be
+// lost to ad-blockers).
+export const eventLog = pgTable("event_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull(),
+  storyId: varchar("story_id"),
+  eventType: text("event_type").notNull(),
+  properties: jsonb("properties"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const insertCharacterSchema = createInsertSchema(characters);
 export const insertQuestSchema = createInsertSchema(quests);
 export const insertItemSchema = createInsertSchema(items);
@@ -128,6 +161,10 @@ export const updateCharacterSchema = insertCharacterSchema.omit({ name: true, cl
 export const updateQuestSchema = insertQuestSchema.partial();
 export const updateItemSchema = insertItemSchema.partial();
 export const updateGameStateSchema = insertGameStateSchema.partial();
+
+export type DailySpend = typeof dailySpend.$inferSelect;
+export type StoryCreationLock = typeof storyCreationLocks.$inferSelect;
+export type EventLog = typeof eventLog.$inferSelect;
 
 export type Character = typeof characters.$inferSelect;
 export type Quest = typeof quests.$inferSelect;

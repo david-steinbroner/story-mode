@@ -1,3 +1,6 @@
+import { db } from "./db";
+import { dailySpend } from "@shared/schema";
+import { eq, sql } from "drizzle-orm";
 import { captureError } from "./sentry";
 
 interface TokenUsage {
@@ -6,9 +9,16 @@ interface TokenUsage {
   totalTokens: number;
 }
 
-interface DailySpend {
-  date: string; // YYYY-MM-DD
-  totalCost: number; // in dollars
+interface DailyTotals {
+  date: string;
+  totalCost: number;
+  requestCount: number;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+}
+
+interface AllTimeStats {
+  totalCost: number;
   requestCount: number;
   totalPromptTokens: number;
   totalCompletionTokens: number;
@@ -20,179 +30,199 @@ interface SessionSpend {
   totalTokens: number;
 }
 
-interface AllTimeStats {
-  totalCost: number;
-  requestCount: number;
-  totalPromptTokens: number;
-  totalCompletionTokens: number;
-}
+const DAILY_LIMIT_USD = 10;
+const WARNING_THRESHOLD_USD = 8;
+
+// Claude 3.5 Haiku via OpenRouter.
+const INPUT_COST_PER_1K_USD = 0.0008;
+const OUTPUT_COST_PER_1K_USD = 0.004;
+
+// Convert dollar cost to integer micro-dollars for safe atomic accumulation in
+// Postgres. Avoids floating-point drift when many small charges add up.
+const dollarsToMicros = (dollars: number) => Math.round(dollars * 1_000_000);
+const microsToDollars = (micros: number) => micros / 1_000_000;
+
+const todayKey = () => new Date().toISOString().split("T")[0];
 
 class SpendTracker {
-  private currentSpend: DailySpend;
-  private allTimeStats: AllTimeStats;
-  private sessionSpends: Map<string, SessionSpend>;
-  private readonly DAILY_LIMIT = 10; // $10 per day
-  private readonly WARNING_THRESHOLD = 8; // Alert at $8
+  // Per-session totals are kept in memory only — they're a debugging convenience
+  // for the admin dashboard and don't need to survive restarts. Daily / lifetime
+  // totals come from Postgres.
+  private sessionSpends = new Map<string, SessionSpend>();
 
-  // Claude 3.5 Haiku via OpenRouter pricing (per 1K tokens)
-  private readonly INPUT_COST_PER_1K = 0.0008; // $0.0008 per 1K input tokens
-  private readonly OUTPUT_COST_PER_1K = 0.004; // $0.004 per 1K output tokens
-
-  constructor() {
-    this.currentSpend = this.initializeDay();
-    this.allTimeStats = {
-      totalCost: 0,
-      requestCount: 0,
-      totalPromptTokens: 0,
-      totalCompletionTokens: 0,
-    };
-    this.sessionSpends = new Map();
+  private calculateCost(usage: TokenUsage): number {
+    return (
+      (usage.promptTokens / 1000) * INPUT_COST_PER_1K_USD +
+      (usage.completionTokens / 1000) * OUTPUT_COST_PER_1K_USD
+    );
   }
 
-  private initializeDay(): DailySpend {
-    const today = new Date().toISOString().split('T')[0];
-    return {
-      date: today,
-      totalCost: 0,
-      requestCount: 0,
-      totalPromptTokens: 0,
-      totalCompletionTokens: 0,
-    };
-  }
-
-  private checkAndResetDay(): void {
-    const today = new Date().toISOString().split('T')[0];
-    if (this.currentSpend.date !== today) {
-      console.log(`[SpendTracker] Day reset. Previous: ${this.currentSpend.date}, Spent: $${this.currentSpend.totalCost.toFixed(4)}, Requests: ${this.currentSpend.requestCount}`);
-      this.currentSpend = this.initializeDay();
+  private async getDailyTotals(): Promise<DailyTotals> {
+    const date = todayKey();
+    try {
+      const rows = await db.select().from(dailySpend).where(eq(dailySpend.date, date)).limit(1);
+      if (rows.length === 0) {
+        return { date, totalCost: 0, requestCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0 };
+      }
+      const row = rows[0];
+      return {
+        date,
+        totalCost: microsToDollars(row.totalCostMicroDollars),
+        requestCount: row.requestCount,
+        totalPromptTokens: row.totalPromptTokens,
+        totalCompletionTokens: row.totalCompletionTokens,
+      };
+    } catch (err) {
+      captureError(err, { context: "spendTracker.getDailyTotals" });
+      // On read failure we fail open — better to serve a request than to lock the
+      // app out of the AI path because the spend table is briefly unreachable.
+      return { date, totalCost: 0, requestCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0 };
     }
   }
 
-  private calculateCost(usage: TokenUsage): number {
-    const inputCost = (usage.promptTokens / 1000) * this.INPUT_COST_PER_1K;
-    const outputCost = (usage.completionTokens / 1000) * this.OUTPUT_COST_PER_1K;
-    return inputCost + outputCost;
+  private async getAllTimeTotals(): Promise<AllTimeStats> {
+    try {
+      const rows = await db
+        .select({
+          totalCostMicros: sql<number>`COALESCE(SUM(${dailySpend.totalCostMicroDollars}), 0)::integer`,
+          requestCount: sql<number>`COALESCE(SUM(${dailySpend.requestCount}), 0)::integer`,
+          totalPromptTokens: sql<number>`COALESCE(SUM(${dailySpend.totalPromptTokens}), 0)::integer`,
+          totalCompletionTokens: sql<number>`COALESCE(SUM(${dailySpend.totalCompletionTokens}), 0)::integer`,
+        })
+        .from(dailySpend);
+      const r = rows[0];
+      return {
+        totalCost: microsToDollars(r?.totalCostMicros ?? 0),
+        requestCount: r?.requestCount ?? 0,
+        totalPromptTokens: r?.totalPromptTokens ?? 0,
+        totalCompletionTokens: r?.totalCompletionTokens ?? 0,
+      };
+    } catch (err) {
+      captureError(err, { context: "spendTracker.getAllTimeTotals" });
+      return { totalCost: 0, requestCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0 };
+    }
   }
 
-  canMakeRequest(): { allowed: boolean; reason?: string; remaining?: number } {
-    this.checkAndResetDay();
+  async canMakeRequest(): Promise<{ allowed: boolean; reason?: string; remaining?: number }> {
+    const today = await this.getDailyTotals();
 
-    if (this.currentSpend.totalCost >= this.DAILY_LIMIT) {
+    if (today.totalCost >= DAILY_LIMIT_USD) {
       const resetTime = new Date();
       resetTime.setUTCHours(24, 0, 0, 0);
       const hoursUntilReset = Math.ceil((resetTime.getTime() - Date.now()) / (1000 * 60 * 60));
-
       return {
         allowed: false,
-        reason: `Daily AI budget limit reached ($${this.DAILY_LIMIT}). Resets in ${hoursUntilReset} hours.`,
+        reason: `Daily AI budget limit reached ($${DAILY_LIMIT_USD}). Resets in ${hoursUntilReset} hours.`,
       };
     }
 
-    const remaining = this.DAILY_LIMIT - this.currentSpend.totalCost;
-    // Estimate ~2000 tokens per request average for remaining calculation
-    const estimatedCostPerRequest = (1000 * this.INPUT_COST_PER_1K + 1000 * this.OUTPUT_COST_PER_1K);
+    const remaining = DAILY_LIMIT_USD - today.totalCost;
+    const estimatedCostPerRequest = (1000 / 1000) * INPUT_COST_PER_1K_USD + (1000 / 1000) * OUTPUT_COST_PER_1K_USD;
     return {
       allowed: true,
       remaining: Math.floor(remaining / estimatedCostPerRequest),
     };
   }
 
-  trackRequest(sessionId?: string, usage?: TokenUsage): void {
-    this.checkAndResetDay();
+  async trackRequest(sessionId?: string, usage?: TokenUsage): Promise<void> {
+    const tokenUsage: TokenUsage = usage ?? (() => {
+      // Fallback estimate when OpenRouter doesn't return a usage block (rare).
+      // Keeps the spend cap accurate enough that runaway costs are still capped.
+      console.warn("[SpendTracker] No token usage provided, using fallback estimate");
+      return { promptTokens: 1500, completionTokens: 500, totalTokens: 2000 };
+    })();
 
-    // Calculate cost based on actual usage or estimate
-    let cost: number;
-    let promptTokens = 0;
-    let completionTokens = 0;
+    const cost = this.calculateCost(tokenUsage);
+    const costMicros = dollarsToMicros(cost);
+    const date = todayKey();
 
-    if (usage) {
-      cost = this.calculateCost(usage);
-      promptTokens = usage.promptTokens;
-      completionTokens = usage.completionTokens;
-    } else {
-      // Fallback estimate if no usage provided (~2000 tokens total, realistic split)
-      promptTokens = 1500;
-      completionTokens = 500;
-      cost = this.calculateCost({ promptTokens, completionTokens, totalTokens: 2000 });
-      console.warn('[SpendTracker] No token usage provided, using fallback estimate');
+    try {
+      await db
+        .insert(dailySpend)
+        .values({
+          date,
+          requestCount: 1,
+          totalCostMicroDollars: costMicros,
+          totalPromptTokens: tokenUsage.promptTokens,
+          totalCompletionTokens: tokenUsage.completionTokens,
+        })
+        .onConflictDoUpdate({
+          target: dailySpend.date,
+          set: {
+            requestCount: sql`${dailySpend.requestCount} + 1`,
+            totalCostMicroDollars: sql`${dailySpend.totalCostMicroDollars} + ${costMicros}`,
+            totalPromptTokens: sql`${dailySpend.totalPromptTokens} + ${tokenUsage.promptTokens}`,
+            totalCompletionTokens: sql`${dailySpend.totalCompletionTokens} + ${tokenUsage.completionTokens}`,
+            updatedAt: sql`NOW()`,
+          },
+        });
+    } catch (err) {
+      // We log but do not propagate — losing a single tally row is preferable
+      // to surfacing a cost-tracking error to the user mid-story.
+      captureError(err, { context: "spendTracker.trackRequest", sessionId });
     }
 
-    // Update daily spend
-    this.currentSpend.totalCost += cost;
-    this.currentSpend.requestCount += 1;
-    this.currentSpend.totalPromptTokens += promptTokens;
-    this.currentSpend.totalCompletionTokens += completionTokens;
-
-    // Update all-time stats
-    this.allTimeStats.totalCost += cost;
-    this.allTimeStats.requestCount += 1;
-    this.allTimeStats.totalPromptTokens += promptTokens;
-    this.allTimeStats.totalCompletionTokens += completionTokens;
-
-    // Track per-session if sessionId provided
     if (sessionId) {
-      const sessionSpend = this.sessionSpends.get(sessionId) || {
+      const sessionSpend = this.sessionSpends.get(sessionId) ?? {
         requestCount: 0,
         totalCost: 0,
         totalTokens: 0,
       };
       sessionSpend.requestCount += 1;
       sessionSpend.totalCost += cost;
-      sessionSpend.totalTokens += promptTokens + completionTokens;
+      sessionSpend.totalTokens += tokenUsage.promptTokens + tokenUsage.completionTokens;
       this.sessionSpends.set(sessionId, sessionSpend);
     }
 
-    console.log(`[SpendTracker] Request tracked. Tokens: ${promptTokens}+${completionTokens}=${promptTokens + completionTokens}, Cost: $${cost.toFixed(6)}, Today: $${this.currentSpend.totalCost.toFixed(4)} (${this.currentSpend.requestCount} requests)`);
+    // Re-read after writing so warning thresholds account for the just-applied
+    // increment without trusting our local snapshot.
+    const today = await this.getDailyTotals();
+    console.log(
+      `[SpendTracker] Request tracked. Tokens: ${tokenUsage.promptTokens}+${tokenUsage.completionTokens}=${
+        tokenUsage.promptTokens + tokenUsage.completionTokens
+      }, Cost: $${cost.toFixed(6)}, Today: $${today.totalCost.toFixed(4)} (${today.requestCount} requests)`
+    );
 
-    // Alert if approaching limit
-    if (this.currentSpend.totalCost >= this.WARNING_THRESHOLD && this.currentSpend.totalCost - cost < this.WARNING_THRESHOLD) {
-      console.warn(`[SpendTracker] WARNING: Approaching daily limit! $${this.currentSpend.totalCost.toFixed(2)}/$${this.DAILY_LIMIT}`);
-
-      captureError(new Error('Daily AI spend approaching limit'), {
-        totalCost: this.currentSpend.totalCost,
-        requestCount: this.currentSpend.requestCount,
-        limit: this.DAILY_LIMIT,
-        percentage: (this.currentSpend.totalCost / this.DAILY_LIMIT * 100).toFixed(1),
+    if (today.totalCost >= WARNING_THRESHOLD_USD && today.totalCost - cost < WARNING_THRESHOLD_USD) {
+      captureError(new Error("Daily AI spend approaching limit"), {
+        totalCost: today.totalCost,
+        requestCount: today.requestCount,
+        limit: DAILY_LIMIT_USD,
+        percentage: ((today.totalCost / DAILY_LIMIT_USD) * 100).toFixed(1),
       });
     }
-
-    // Alert if limit reached
-    if (this.currentSpend.totalCost >= this.DAILY_LIMIT && this.currentSpend.totalCost - cost < this.DAILY_LIMIT) {
-      console.error(`[SpendTracker] LIMIT REACHED! $${this.currentSpend.totalCost.toFixed(2)}/$${this.DAILY_LIMIT}`);
-
-      captureError(new Error('Daily AI spend limit reached'), {
-        totalCost: this.currentSpend.totalCost,
-        requestCount: this.currentSpend.requestCount,
-        limit: this.DAILY_LIMIT,
+    if (today.totalCost >= DAILY_LIMIT_USD && today.totalCost - cost < DAILY_LIMIT_USD) {
+      captureError(new Error("Daily AI spend limit reached"), {
+        totalCost: today.totalCost,
+        requestCount: today.requestCount,
+        limit: DAILY_LIMIT_USD,
       });
     }
   }
 
-  getStats(): DailySpend & { limit: number; percentage: number } {
-    this.checkAndResetDay();
+  async getStats(): Promise<DailyTotals & { limit: number; percentage: number }> {
+    const today = await this.getDailyTotals();
     return {
-      ...this.currentSpend,
-      limit: this.DAILY_LIMIT,
-      percentage: (this.currentSpend.totalCost / this.DAILY_LIMIT) * 100,
+      ...today,
+      limit: DAILY_LIMIT_USD,
+      percentage: (today.totalCost / DAILY_LIMIT_USD) * 100,
     };
   }
 
-  getAdminStats(): {
-    today: DailySpend;
+  async getAdminStats(): Promise<{
+    today: DailyTotals;
     allTime: AllTimeStats;
     dailyLimit: number;
     remainingBudget: number;
     averageCostPerRequest: number;
-  } {
-    this.checkAndResetDay();
+  }> {
+    const [today, allTime] = await Promise.all([this.getDailyTotals(), this.getAllTimeTotals()]);
     return {
-      today: { ...this.currentSpend },
-      allTime: { ...this.allTimeStats },
-      dailyLimit: this.DAILY_LIMIT,
-      remainingBudget: Math.max(0, this.DAILY_LIMIT - this.currentSpend.totalCost),
-      averageCostPerRequest: this.allTimeStats.requestCount > 0
-        ? this.allTimeStats.totalCost / this.allTimeStats.requestCount
-        : 0,
+      today,
+      allTime,
+      dailyLimit: DAILY_LIMIT_USD,
+      remainingBudget: Math.max(0, DAILY_LIMIT_USD - today.totalCost),
+      averageCostPerRequest: allTime.requestCount > 0 ? allTime.totalCost / allTime.requestCount : 0,
     };
   }
 
@@ -204,5 +234,4 @@ class SpendTracker {
   }
 }
 
-// Singleton instance
 export const spendTracker = new SpendTracker();
