@@ -783,7 +783,7 @@ export default function Bookshelf({
       )}
 
       {/* Version */}
-      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.1.0</p>
+      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.1.1</p>
     </div>
   );
 }

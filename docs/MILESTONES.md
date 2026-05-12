@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.0.0**. Pre-launch audit Phases 1–5 (security → brand/domain → reliability → polish → cleanup) all shipped 2026-05-11 across five commits on `main`. AI voice rewrite + parse-failure hardening + rate-limit fixes shipped 2026-05-12. **Current in-flight milestone:** Milestone 6 (Guide chatbot on bookshelf) — foundation components exist (`GuideConfirmDialog`, `GuideStoryCard`), chat UI + intent matcher + `POST /api/guide/chat` endpoint still TODO. **Completed:** Milestones 1–5 (Foundation, AI Memory, Page Structure pivot, Pacing, Polish + UX Overhaul).
+> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.1.0**. Pre-launch audit Phases 1–5 (security → brand/domain → reliability → polish → cleanup) all shipped 2026-05-11 across five commits on `main`. AI voice rewrite + parse-failure hardening + rate-limit fixes shipped 2026-05-12. **Current in-flight milestone:** Milestone 6 (Guide chatbot on bookshelf) — foundation components exist (`GuideConfirmDialog`, `GuideStoryCard`), chat UI + intent matcher + `POST /api/guide/chat` endpoint still TODO. **Completed:** Milestones 1–5 (Foundation, AI Memory, Page Structure pivot, Pacing, Polish + UX Overhaul).
 >
 > *Last updated: 2026-05-12 · Maintenance rule at the bottom.*
 

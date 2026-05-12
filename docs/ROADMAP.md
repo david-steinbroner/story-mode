@@ -1,6 +1,6 @@
 # Story Mode — Roadmap
 
-> **TL;DR (read this first):** Live at mystorymode.com on v1.0.0. Pre-launch audit (Phases 1–5) shipped 2026-05-11. AI voice rewrite + rate-limit fix shipped 2026-05-12. **Next up:** Milestone 6 (Guide chatbot), monetization decision, palette consolidation. **Not blocked on anything** — pick the next item by appetite.
+> **TL;DR (read this first):** Live at mystorymode.com on v1.1.0. Pre-launch audit (Phases 1–5) shipped 2026-05-11. AI voice rewrite + rate-limit fix shipped 2026-05-12. **Next up:** Milestone 6 (Guide chatbot), monetization decision, palette consolidation. **Not blocked on anything** — pick the next item by appetite.
 >
 > *Last updated: 2026-05-12 · Maintenance rule at the bottom.*
 
