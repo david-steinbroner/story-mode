@@ -44,7 +44,6 @@ export default function NewStoryCreation({
     storyLength && characterDescription.trim().length >= 5;
 
   const handleSubmit = () => {
-    console.log('[NewStory] handleSubmit ENTRY', { isValid, isSubmitting: isSubmitting.current, isLoading });
     if (!isValid || isSubmitting.current) return;
     isSubmitting.current = true;
     analytics.trackEvent("story_creation_submitted", {

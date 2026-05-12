@@ -240,8 +240,6 @@ async function applyAIResponse(
     });
 
     if (shouldGenerateSideQuest) {
-      console.log('[Routes] Side quest opportunity detected, generating side quest');
-
       const sideQuest = await aiService.generateSideQuest(sessionId, playerMessage, {
         character,
         gameState,
@@ -252,7 +250,6 @@ async function applyAIResponse(
         const questValidation = insertQuestSchema.safeParse(sideQuest);
         if (questValidation.success) {
           await storage.createQuest(questValidation.data);
-          console.log('[Routes] Side quest created:', sideQuest.title);
         } else {
           console.warn('[Routes] Invalid side quest data:', questValidation.error.errors);
         }
@@ -305,8 +302,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Auto-generate world from character if appearance and backstory are provided
       if (character.appearance || character.backstory) {
-        console.log('[Routes] Generating world from character:', character.name);
-
         try {
           const worldData = await aiService.generateWorldFromCharacter({
             name: character.name,
@@ -366,8 +361,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           });
 
-          console.log('[Routes] World generation complete:', worldData.worldSetting);
-
         } catch (worldGenError) {
           console.error('[Routes] Error generating world, using defaults:', worldGenError);
           // Continue with character creation even if world generation fails
@@ -398,21 +391,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('Error updating character:', error);
       res.status(500).json({ error: "Failed to update character" });
     }
-  });
-
-  // Adventure management
-  const adventureTemplateSchema = z.object({
-    id: z.string(),
-    name: z.string(),
-    setting: z.string(),
-    initialScene: z.string(),
-    initialQuest: z.object({
-      title: z.string(),
-      description: z.string(),
-      priority: z.enum(["high", "normal", "low"]),
-      maxProgress: z.number()
-    }),
-    introMessage: z.string().optional() // Rich descriptive intro message
   });
 
   app.post("/api/adventure/reset", async (req, res) => {
@@ -561,25 +539,12 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
 
       let aiResponse = await aiService.generateResponse(sessionId, firstPagePrompt, storyId);
 
-      console.log('[Story New] AI response received', {
-        hasError: !!aiResponse.error,
-        errorType: aiResponse.error,
-        contentPreview: aiResponse.content?.substring(0, 50),
-        hasStoryTitle: !!aiResponse.storyTitle,
-        storyTitle: aiResponse.storyTitle,
-      });
-
-      // If the first AI call failed with any error, retry once
+      // If the first AI call failed with any error, retry once at the route
+      // level after a short delay — handles cases where the DB write for the
+      // new story hadn't yet settled before generateResponse read context.
       if (aiResponse.error) {
-        console.log(`[Story New] AI response had ${aiResponse.error}, retrying at route level`);
         await new Promise(resolve => setTimeout(resolve, 200));
         aiResponse = await aiService.generateResponse(sessionId, firstPagePrompt, storyId);
-        console.log('[Story New] Retry response', {
-          hasError: !!aiResponse.error,
-          errorType: aiResponse.error,
-          contentPreview: aiResponse.content?.substring(0, 50),
-          hasStoryTitle: !!aiResponse.storyTitle,
-        });
       }
 
       // Track token spend
@@ -702,89 +667,6 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
     } catch (error) {
       console.error("Error generating surprise character:", error);
       res.status(500).json({ success: false, error: "Failed to generate character description" });
-    }
-  });
-
-  // ============================================================
-  // LEGACY: Adventure template initialization
-  // ============================================================
-
-  app.post("/api/adventure/initialize", async (req, res) => {
-    try {
-      const sessionId = getSessionId(req);
-      const result = adventureTemplateSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({ error: "Invalid adventure template data", details: result.error.errors });
-      }
-
-      const template = result.data;
-
-      // Create a default character if none exists
-      const existingCharacter = await storage.getCharacter(sessionId);
-      if (!existingCharacter) {
-        await storage.createCharacter({
-          sessionId,
-          name: 'Adventurer',
-          class: 'Fighter',
-          level: 1,
-          experience: 0,
-          strength: 15,
-          dexterity: 14,
-          constitution: 13,
-          intelligence: 12,
-          wisdom: 12,
-          charisma: 11,
-          currentHealth: 10,
-          maxHealth: 10,
-          currentMana: 0,
-          maxMana: 0,
-        });
-      }
-
-      // Update game state with the new adventure
-      await storage.updateGameState(sessionId, {
-        currentScene: template.initialScene,
-        inCombat: false,
-        currentTurn: null,
-        turnCount: 0
-      });
-
-      // Clear existing quests and messages for fresh adventure start
-      await storage.clearQuests(sessionId);
-      await storage.clearMessages(sessionId);
-
-      // Create the initial quest
-      const quest = await storage.createQuest({
-        sessionId,
-        title: template.initialQuest.title,
-        description: template.initialQuest.description,
-        status: 'active',
-        priority: template.initialQuest.priority,
-        progress: 0,
-        maxProgress: template.initialQuest.maxProgress,
-        reward: "Experience and story progression",
-        isMainStory: true,
-        parentQuestId: null,
-        chainId: null
-      });
-
-      const welcomeMessage = await storage.createMessage({
-        sessionId,
-        content: template.introMessage || `Welcome to ${template.name}! You find yourself in ${template.initialScene}. ${template.initialQuest.description}`,
-        sender: 'dm',
-        senderName: null,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      });
-
-      res.json({
-        success: true,
-        quest,
-        message: welcomeMessage,
-        gameState: await storage.getGameState(sessionId)
-      });
-    } catch (error) {
-      console.error('Error initializing adventure template:', error);
-      res.status(500).json({ error: 'Failed to initialize adventure template' });
     }
   });
 

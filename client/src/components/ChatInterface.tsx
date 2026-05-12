@@ -195,9 +195,6 @@ export default function ChatInterface({
   };
 
   const handleChoiceSelect = (option: string) => {
-    console.log('[ChatInterface] Quick action option clicked', {
-      option: option.substring(0, 50)
-    });
     analytics.buttonClicked('Quick Action Option', 'Chat Interface', {
       option_preview: option.substring(0, 50)
     });
@@ -219,7 +216,6 @@ export default function ChatInterface({
   };
 
   const handleCopyDebugInfo = () => {
-    console.log('[ChatInterface] Copy Debug Info button clicked');
     analytics.buttonClicked('Copy Debug Info', 'Chat Interface');
 
     const debugInfo = {
@@ -284,7 +280,6 @@ ${JSON.stringify(debugInfo, null, 2)}
 `;
 
     navigator.clipboard.writeText(debugText).then(() => {
-      console.log('[ChatInterface] Debug info copied to clipboard');
       toast({
         title: "Debug info copied!",
         description: "Paste this into your support ticket or browser console.",
@@ -292,18 +287,19 @@ ${JSON.stringify(debugInfo, null, 2)}
       });
     }).catch((err) => {
       console.error('[ChatInterface] Failed to copy debug info:', err);
+      // Clipboard API unavailable — keep the manual-copy log so users on
+      // older browsers can still grab the text from devtools.
+      console.log('[ChatInterface] Debug info (manual copy):', debugText);
       toast({
         title: "Copy failed",
         description: "Please check browser console for debug info.",
         variant: "destructive",
         duration: 3000,
       });
-      console.log('[ChatInterface] Debug info (manual copy):', debugText);
     });
   };
 
   const handleReportIssue = () => {
-    console.log('[ChatInterface] Report Issue button clicked');
     analytics.buttonClicked('Report Issue', 'Chat Interface');
 
     const issueContext = {
@@ -343,8 +339,6 @@ ${JSON.stringify(debugInfo, null, 2)}
       ...issueContext
     });
 
-    console.log('[ChatInterface] Issue reported to Sentry with context:', issueContext);
-
     toast({
       title: "Issue reported!",
       description: "Thank you! We've captured your game state for investigation.",
@@ -353,7 +347,6 @@ ${JSON.stringify(debugInfo, null, 2)}
   };
 
   const handleRegenerateResponse = () => {
-    console.log('[ChatInterface] Regenerate Response button clicked');
     analytics.buttonClicked('Regenerate Response', 'Chat Interface', {
       messageCount: messages.length,
       lastMessageId: messages[messages.length - 1]?.id
@@ -362,7 +355,6 @@ ${JSON.stringify(debugInfo, null, 2)}
     const lastPlayerMessage = [...messages].reverse().find(m => m.sender === 'player');
 
     if (lastPlayerMessage) {
-      console.log('[ChatInterface] Re-sending last player message:', lastPlayerMessage.content.substring(0, 100));
       analytics.trackEvent('ai_response_regenerated', {
         original_message_id: messages[messages.length - 1]?.id,
         player_message: lastPlayerMessage.content.substring(0, 100)
@@ -529,7 +521,6 @@ ${JSON.stringify(debugInfo, null, 2)}
             <AlertDialogCancel>Keep Reading</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                console.log('[ChatInterface] End Story confirmed', { sentiment: endStorySentiment });
                 analytics.buttonClicked('End Story Confirmed', 'Chat Interface');
                 if (endStorySentiment) {
                   analytics.trackEvent("story_sentiment_submitted", {

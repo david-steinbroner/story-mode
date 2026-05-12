@@ -46,13 +46,6 @@ export async function generateStorySummary(
 ): Promise<SummaryResult> {
   const startTime = Date.now();
 
-  console.log("[SummaryService] Starting summary generation", {
-    sessionId,
-    messageCount: messages.length,
-    hasPreviousSummary: !!previousSummary,
-    timestamp: new Date().toISOString(),
-  });
-
   try {
     // Validate API key
     if (!process.env.OPENROUTER_API_KEY) {
@@ -79,12 +72,6 @@ export async function generateStorySummary(
     const systemPrompt = buildSystemPrompt();
     const userPrompt = buildUserPrompt(conversationText, previousSummary);
 
-    console.log("[SummaryService] Calling OpenRouter API", {
-      model: "anthropic/claude-3.5-haiku",
-      systemPromptLength: systemPrompt.length,
-      userPromptLength: userPrompt.length,
-    });
-
     const response = await openai.chat.completions.create({
       model: "anthropic/claude-3.5-haiku",
       messages: [
@@ -92,8 +79,6 @@ export async function generateStorySummary(
         { role: "user", content: userPrompt },
       ],
     });
-
-    const apiDuration = Date.now() - startTime;
 
     // Extract token usage
     const tokenUsage: SummaryTokenUsage | undefined = response.usage
@@ -103,11 +88,6 @@ export async function generateStorySummary(
           totalTokens: response.usage.total_tokens || 0,
         }
       : undefined;
-
-    console.log("[SummaryService] API response received", {
-      durationMs: apiDuration,
-      tokenUsage,
-    });
 
     // Track the request cost (spendTracker uses internal fallback if tokenUsage is undefined)
     await spendTracker.trackRequest(sessionId, tokenUsage);
@@ -121,12 +101,6 @@ export async function generateStorySummary(
     if (!summaryText) {
       throw new Error("OpenRouter API returned empty summary");
     }
-
-    console.log("[SummaryService] Summary generated successfully", {
-      summaryLength: summaryText.length,
-      wordCount: summaryText.split(/\s+/).length,
-      totalDurationMs: Date.now() - startTime,
-    });
 
     return {
       summaryText,

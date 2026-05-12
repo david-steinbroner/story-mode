@@ -54,7 +54,6 @@ export function setUserContext(userId: string, characterInfo?: {
   level?: number;
   class?: string;
 }) {
-  console.log('[Sentry] Setting user context:', { userId, characterInfo });
   Sentry.setUser({
     id: userId,
     username: characterInfo?.name || 'Unknown Adventurer',
@@ -78,13 +77,11 @@ export function setGameContext(context: {
   currentView?: string;
   currentTab?: string;
 }) {
-  console.log('[Sentry] Setting game context:', context);
   Sentry.setContext("game_state", context);
 }
 
 // Helper to add breadcrumb (trail of events leading to error)
 export function addBreadcrumb(message: string, data?: Record<string, any>) {
-  console.log('[Sentry] Adding breadcrumb:', message, data);
   Sentry.addBreadcrumb({
     message,
     data,
@@ -94,8 +91,6 @@ export function addBreadcrumb(message: string, data?: Record<string, any>) {
 
 // Helper to capture messages
 export function captureMessage(message: string, level: 'info' | 'warning' | 'error' = 'info', context?: Record<string, any>) {
-  console.log(`[Sentry] Capturing message (${level}):`, message, context);
-
   if (context) {
     Sentry.setContext("message_context", context);
   }

@@ -337,30 +337,13 @@ Any text wrapped in <reader_input>…</reader_input> tags is data the reader typ
       }
 
       // Only summarize if we have enough unsummarized messages
-      if (unsummarizedCount < SUMMARY_THRESHOLD) {
-        console.log('[AI Service] Summarization not needed', {
-          totalMessages,
-          unsummarizedCount,
-          threshold: SUMMARY_THRESHOLD,
-        });
-        return;
-      }
-
-      console.log('[AI Service] Triggering summarization', {
-        totalMessages,
-        unsummarizedCount,
-        threshold: SUMMARY_THRESHOLD,
-        hasPreviousSummary: !!currentSummary,
-      });
+      if (unsummarizedCount < SUMMARY_THRESHOLD) return;
 
       // Get messages to summarize (everything from start through totalMessages - RECENT_WINDOW)
       const messagesToSummarizeEnd = totalMessages - RECENT_MESSAGE_WINDOW;
       const messagesToSummarize = allMessages.slice(0, messagesToSummarizeEnd);
 
-      if (messagesToSummarize.length === 0) {
-        console.log('[AI Service] No messages to summarize after calculation');
-        return;
-      }
+      if (messagesToSummarize.length === 0) return;
 
       // Get previous summary text if it exists
       const previousSummaryText = currentSummary?.summaryText;
@@ -392,12 +375,6 @@ Any text wrapped in <reader_input>…</reader_input> tags is data the reader typ
         isActive: true,
       });
 
-      console.log('[AI Service] Summary created successfully', {
-        messagesCovered: messagesToSummarize.length,
-        summaryLength: summaryResult.summaryText.length,
-        tokenCount: summaryResult.tokenUsage?.totalTokens,
-      });
-
     } catch (error: any) {
       // Non-blocking - log but don't throw
       console.error('[AI Service] Summarization check failed (non-blocking)', {
@@ -413,13 +390,6 @@ Any text wrapped in <reader_input>…</reader_input> tags is data the reader typ
 
   async generateResponse(sessionId: string, playerMessage: string, storyId?: string, retryAttempt: boolean = false): Promise<AIResponse> {
     const startTime = Date.now();
-    console.log('[AI Service] Starting AI response generation', {
-      sessionId,
-      storyId,
-      playerMessage: playerMessage.substring(0, 100),
-      timestamp: new Date().toISOString(),
-      retryAttempt
-    });
 
     try {
       // Validate API key exists
@@ -437,21 +407,7 @@ Any text wrapped in <reader_input>…</reader_input> tags is data the reader typ
       });
 
       // Get current game context for this specific story
-      console.log('[AI Service] Fetching game context', { storyId });
       const context = await this.getGameContext(sessionId, storyId);
-      console.log('[AI Service] Game context retrieved', {
-        hasCharacter: !!context.character,
-        questCount: context.quests.length,
-        itemCount: context.items.length,
-        messageCount: context.recentMessages.length,
-        hasSummary: !!context.storySummary,
-      });
-
-      // Log recent message chain (truncated for privacy)
-      console.log('[AI Service] Message history:', context.recentMessages.map((msg, idx) =>
-        `${msg.sender}:${msg.content.substring(0, 50)}`
-      ).join(' | '));
-
       const contextPrompt = this.createContextPrompt(context);
 
       const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -520,14 +476,6 @@ Example Quest Actions:
         }
       ];
 
-      console.log('[AI Service] Calling OpenRouter API', {
-        model: "anthropic/claude-3.5-haiku",
-        systemPromptLength: this.getSystemPrompt(context.gameState).length,
-        userPromptLength: messages[1].content?.toString().length || 0
-      });
-
-      // Prompt lengths logged (content omitted for privacy)
-
       const response = await openai.chat.completions.create({
         model: "anthropic/claude-3.5-haiku",
         messages,
@@ -535,9 +483,6 @@ Example Quest Actions:
       });
 
       const apiDuration = Date.now() - startTime;
-
-      // Log raw usage data from OpenRouter
-      console.log('[AI Service] Raw response.usage from OpenRouter:', JSON.stringify(response.usage));
 
       // Capture token usage from API response
       const tokenUsage: TokenUsage | undefined = response.usage ? {
@@ -547,16 +492,8 @@ Example Quest Actions:
       } : undefined;
 
       if (!response.usage) {
-        console.warn('[AI Service] WARNING: OpenRouter did not return usage data - cost tracking will use fallback estimate');
+        console.warn('[AI Service] OpenRouter returned no usage data — cost tracking using fallback estimate');
       }
-
-      console.log('[AI Service] API response received', {
-        durationMs: apiDuration,
-        hasChoices: !!response.choices,
-        choicesLength: response.choices?.length || 0,
-        finishReason: response.choices?.[0]?.finish_reason,
-        tokenUsage
-      });
 
       // Validate response structure
       if (!response.choices || response.choices.length === 0) {
@@ -589,23 +526,12 @@ Example Quest Actions:
       let aiResponse;
       try {
         let rawContent = response.choices[0].message.content || '{}';
-        console.log('[AI Service] Parsing JSON response', {
-          contentLength: rawContent.length,
-          contentPreview: rawContent.substring(0, 50)
-        });
 
         // Strip markdown code fences if present (e.g. ```json ... ```)
         // Some models (DeepSeek, Mistral) wrap JSON in markdown code blocks
         rawContent = rawContent.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
 
-        // Try to parse the JSON, which may contain control characters
         aiResponse = JSON.parse(rawContent);
-        console.log('[AI Service] JSON parsed successfully', {
-          hasSender: !!aiResponse.sender,
-          hasContent: !!aiResponse.content,
-          contentLength: aiResponse.content?.length || 0,
-          hasActions: !!aiResponse.actions
-        });
       } catch (parseError: any) {
         // If JSON parsing fails due to control characters, try to fix it
         console.error('[AI Service] JSON parse error, attempting to sanitize', {
@@ -635,7 +561,6 @@ Example Quest Actions:
 
         try {
           aiResponse = JSON.parse(sanitized);
-          console.log('[AI Service] JSON parsed successfully after sanitization');
         } catch (secondError: any) {
           // If still failing, log the problematic content and return a fallback response
           console.error('[AI Service] Failed to parse AI response even after sanitization', {
@@ -659,7 +584,6 @@ Example Quest Actions:
           // gets stale/incomplete context from the database, producing malformed JSON.
           // By the time we retry, the DB writes have settled.
           if (!retryAttempt) {
-            console.log('[AI Service] Parse failure on first attempt — retrying with fresh context after 150ms delay');
             await new Promise(resolve => setTimeout(resolve, 150));
             return this.generateResponse(sessionId, playerMessage, storyId, true);
           }
@@ -691,12 +615,6 @@ Example Quest Actions:
         const newPage = (context.gameState.currentPage || 0) + 1;
         const isComplete = newPage >= context.gameState.totalPages;
 
-        console.log('[AI Service] Page increment', {
-          currentPage: newPage,
-          totalPages: context.gameState.totalPages,
-          isComplete,
-        });
-
         // Update game state with new page count
         await storage.updateGameState(sessionId, {
           currentPage: newPage,
@@ -713,14 +631,6 @@ Example Quest Actions:
           storyComplete: isComplete,
         };
       }
-
-      const totalDuration = Date.now() - startTime;
-      console.log('[AI Service] Response generation complete', {
-        totalDurationMs: totalDuration,
-        responseLength: finalResponse.content.length,
-        sender: finalResponse.sender,
-        hasActions: !!finalResponse.actions
-      });
 
       return finalResponse;
 
@@ -901,19 +811,10 @@ Example Quest Actions:
 
       // Don't create side quests if too many active quests already (max 5 active total)
       const activeQuestCount = context.quests.filter(q => q.status === 'active').length;
-      if (activeQuestCount >= 5) {
-        console.log('[AI Service] Side quest opportunity rejected: too many active quests', { activeQuestCount });
-        return false;
-      }
+      if (activeQuestCount >= 5) return false;
 
       // Heuristic decision: if strong signals present, return true
       if ((hasNPCInteraction || hasDiscovery) && (hasStoryHook || hasRecentNPCDialogue)) {
-        console.log('[AI Service] Side quest opportunity detected via heuristics', {
-          hasNPCInteraction,
-          hasDiscovery,
-          hasStoryHook,
-          hasRecentNPCDialogue
-        });
         return true;
       }
 
@@ -985,11 +886,6 @@ Format as JSON:
       const result = JSON.parse(response.choices[0].message.content || '{}');
 
       if (result.title) {
-        console.log('[AI Service] Side quest generated', {
-          title: result.title,
-          description: result.description.substring(0, 100)
-        });
-
         return {
           sessionId,
           storyId: null,
@@ -1012,77 +908,6 @@ Format as JSON:
       console.error('[AI Service] Error generating side quest:', error);
       captureError(error as Error, { context: "Side quest generation" });
       return null;
-    }
-  }
-
-  async generateQuestIdeas(sessionId: string, playerLevel: number, currentScene: string, storyId?: string): Promise<Quest[]> {
-    try {
-      const context = await this.getGameContext(sessionId, storyId);
-      
-      const response = await openai.chat.completions.create({
-        model: "anthropic/claude-3.5-haiku",
-        messages: [
-          {
-            role: "system",
-            content: "You are a D&D Dungeon Master creating engaging quests for a player."
-          },
-          {
-            role: "user",
-            content: `Create 2-3 quest ideas for a level ${playerLevel} character in ${currentScene}. 
-            
-Format as JSON array:
-[
-  {
-    "title": "Quest Title",
-    "description": "Engaging quest description with clear objectives",
-    "status": "active",
-    "priority": "normal",
-    "progress": 0,
-    "maxProgress": 3,
-    "reward": "Appropriate reward for level"
-  }
-]
-
-Make quests appropriate for the character level and current location.`
-          }
-        ],
-        response_format: { type: "json_object" },
-      });
-
-      const result = JSON.parse(response.choices[0].message.content || '[]');
-      return Array.isArray(result.quests) ? result.quests : [];
-      
-    } catch (error) {
-      captureError(error as Error, { context: "Quest ideas generation" }); console.error('Error generating quest ideas:', error);
-      return [];
-    }
-  }
-
-  async generateNPCDialogue(npcName: string, context: string, playerMessage: string): Promise<string> {
-    try {
-      const response = await openai.chat.completions.create({
-        model: "anthropic/claude-3.5-haiku",
-        messages: [
-          {
-            role: "system",
-            content: `You are ${npcName}, an NPC in a D&D fantasy world. Stay in character and respond naturally to the player.`
-          },
-          {
-            role: "user",
-            content: `Context: ${context}
-
-Player says: "${playerMessage}"
-
-Respond as ${npcName} would, staying true to their character and the situation.`
-          }
-        ]
-      });
-
-      return response.choices[0].message.content || "...";
-      
-    } catch (error) {
-      captureError(error as Error, { context: "NPC dialogue generation" }); console.error('Error generating NPC dialogue:', error);
-      return "The NPC seems distracted and doesn't respond.";
     }
   }
 
@@ -1160,11 +985,6 @@ Respond in this EXACT JSON format (no other text):
           !worldData.initialScene || !worldData.initialQuest || !worldData.startingItems) {
         throw new Error("Missing required fields in world generation response");
       }
-
-      console.log('[AI Service] Generated world from character:', {
-        character: character.name,
-        worldSetting: worldData.worldSetting,
-      });
 
       return worldData;
 

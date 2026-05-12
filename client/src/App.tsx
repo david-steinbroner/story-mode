@@ -44,7 +44,6 @@ function GameApp() {
       newStory: 'New Story',
       game: 'Game Screen'
     };
-    console.log('[App] View changed to:', currentView);
     analytics.screenViewed(viewNames[currentView], { view: currentView });
   }, [currentView]);
 
@@ -80,11 +79,6 @@ function GameApp() {
   // MOVED AFTER data declarations to prevent TDZ errors in Safari
   useEffect(() => {
     if (character) {
-      console.log('[App] Updating Sentry user context', {
-        characterId: character.id,
-        characterName: character.name,
-        level: character.level
-      });
       setUserContext(character.id, {
         name: character.name,
         level: character.level,
@@ -123,22 +117,14 @@ function GameApp() {
     },
     mutationFn: async (message: string) => {
       const startTime = Date.now();
-      console.log('[App] Sending message to AI:', message.substring(0, 100));
 
       try {
         const response = await apiRequest('POST', '/api/ai/chat', { message });
         const data = await response.json();
         const duration = Date.now() - startTime;
 
-        console.log('[App] AI response received:', {
-          duration,
-          success: true,
-          hasContent: !!data.content
-        });
-
         // Automatic error detection: Slow response
         if (duration > 10000) {
-          console.warn('[App] Slow AI response detected:', duration, 'ms');
           analytics.trackEvent('ai_response_slow', {
             duration_ms: duration,
             threshold_ms: 10000,
@@ -148,7 +134,6 @@ function GameApp() {
 
         // Automatic error detection: Empty or missing content
         if (!data.content || data.content.trim().length === 0) {
-          console.error('[App] AI response has no content');
           analytics.errorOccurred('ai_response_empty', 'AI returned empty content', {
             message_preview: message.substring(0, 100),
             response_keys: Object.keys(data)
@@ -221,7 +206,6 @@ function GameApp() {
       }
 
       // Refetch all data after AI response
-      console.log('[App] AI response successful, refreshing data');
       analytics.messageSent("chat");
       queryClient.invalidateQueries({ queryKey: ['/api/messages', activeStoryId] });
       queryClient.invalidateQueries({ queryKey: ['/api/character'] });
@@ -271,7 +255,6 @@ function GameApp() {
         // Mark story as finished (not delete) so it appears on the Finished shelf
         // PATCH must complete before navigateToBookshelf clears _activeStoryId
         await apiRequest('PATCH', '/api/game-state', { storyComplete: true });
-        console.log('[App] Story marked complete:', storyIdToEnd);
       }
       navigateToBookshelf();
       analytics.trackEvent("adventure_ended");
@@ -308,26 +291,20 @@ function GameApp() {
         isLoading={isCreatingStory}
         seedDescription={seedDescription}
         onStartStory={async (storyData) => {
-          console.log('[App] onStartStory ENTRY', { isCreatingStory, timestamp: Date.now() });
           if (isCreatingStory) return;
           setIsCreatingStory(true);
           try {
-            console.log('[App] onStartStory CALLING API', { timestamp: Date.now() });
             const response = await apiRequest('POST', '/api/story/new', storyData);
             const data = await response.json();
-            console.log('[App] New story created:', data);
-
-            // Enter the newly created story
             enterStory(data.storyId);
           } catch (error) {
-            console.log('[App] onStartStory ERROR', error);
+            console.error('[App] Story creation failed:', error);
             toast({
               title: "Error Creating Story",
               description: "Something went wrong. Please try again.",
               variant: "destructive",
             });
           } finally {
-            console.log('[App] onStartStory COMPLETE', { timestamp: Date.now() });
             setIsCreatingStory(false);
           }
         }}

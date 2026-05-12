@@ -5,6 +5,11 @@ server/public
 vite.config.ts.*
 *.tar.gz
 
+# Spreadsheet working files — local-only economic models / scratchpads.
+# Track lockfiles too so an open Excel doc never sneaks into a commit.
+*.xlsx
+.~lock.*.xlsx#
+
 # Environment variables (keep your API keys safe!)
 .env
 .env.local
