@@ -1,6 +1,8 @@
 # Story Mode — Milestone History
 
-This file tracks completed and in-flight milestones. Moved out of `CLAUDE.md` so the constitution stays focused on rules and current state.
+> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.0.0**. Pre-launch audit Phases 1–5 (security → brand/domain → reliability → polish → cleanup) all shipped 2026-05-11 across five commits on `main`. AI voice rewrite + parse-failure hardening + rate-limit fixes shipped 2026-05-12. **Current in-flight milestone:** Milestone 6 (Guide chatbot on bookshelf) — foundation components exist (`GuideConfirmDialog`, `GuideStoryCard`), chat UI + intent matcher + `POST /api/guide/chat` endpoint still TODO. **Completed:** Milestones 1–5 (Foundation, AI Memory, Page Structure pivot, Pacing, Polish + UX Overhaul).
+>
+> *Last updated: 2026-05-12 · Maintenance rule at the bottom.*
 
 ---
 
@@ -168,3 +170,14 @@ These were removed during milestones 5–6:
 - Enemy routes (`GET/POST/PATCH /api/enemies`)
 - Combat route (`POST /api/combat/action`) — ~260 lines
 - Campaign routes (`GET/POST/PATCH/DELETE /api/campaigns/*`) — ~90 lines
+- **2026-05-11 Phase 5 cleanup:** 7 components (`DMChatInterface`, `HealthBar`, `StatDisplay`, `ItemCard`, `QuestCard`, `PageHeader`, `StoryProgress`, `ThemeToggle`), 2 AI service methods (`generateQuestIdeas`, `generateNPCDialogue`), legacy `POST /api/adventure/initialize` route + schema, D&D PostHog event helpers, ~55 verbose `console.log` statements, the entire `.dark {…}` CSS variable block (~100 lines). Net -1,059 lines.
+- **2026-05-09 Supabase RLS hardening:** dropped `users`, `enemies`, `campaigns` tables in production; enabled RLS on all 6 live tables (no policies — server bypasses via postgres role).
+
+---
+
+## Maintenance
+
+- **Update when:** any milestone work ships (committed code) — add a section under "Completed Milestones" or extend the current one. Also append to "Already deleted" when meaningful dead code is removed.
+- **TL;DR refresh:** rewrite the top block whenever the current milestone changes or a phase ships. Keep it under ~10 lines so it's scannable in one read.
+- **Same commit as code:** the doc update rides along with the milestone commit, not as a separate hygiene commit.
+- **Last updated:** 2026-05-12

@@ -35,6 +35,8 @@ npm run check        # tsc --noEmit
 npm run db:push      # push schema to DB (after editing shared/schema.ts)
 ```
 
+**Testing on a real phone over LAN:** find your machine's IP with `ifconfig | grep "inet "`, then visit `http://192.168.x.x:3000` on a device on the same wifi. Useful since Story Mode is mobile-first.
+
 ## Deploying
 
 `git push origin main` → Render auto-deploys. Render builds via `npm run build`, runs `npm start` from `dist/`.
