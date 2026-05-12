@@ -1,6 +1,6 @@
 # Story Mode — Design System
 
-> **TL;DR (read this first):** Pastel Playground palette (cream background, soft teal primary, warm peach secondary, sage accent, terracotta destructive). Light-only — no dark mode. Inter sans for UI, Cinzel serif for hero headers, Crimson Pro serif for story body via `.story-prose`. Mobile-first at 375px. Tap targets ≥44px. Tap-first interaction model — every long-press action also has a visible button (e.g. `MoreVertical` on book spines). **Source of truth for color/typography values is `client/src/index.css`.** AI voice and banned vocabulary live in `docs/ai-voice.md`.
+> **TL;DR (read this first):** Pastel Playground palette (cream background, soft teal primary, warm peach secondary, sage accent, terracotta destructive). Light-only, no dark mode. **Inter** for UI, **Cinzel** for hero headers, **Crimson Pro** for story body via `.story-prose` (applied to AI message paragraphs). All three webfonts load from Google Fonts. Mobile-first at 375px. Tap targets ≥44px. Tap-first interaction model — every long-press action also has a visible button. **Source of truth for color/typography is `client/src/index.css` + `client/index.html`.** AI voice and banned vocabulary live in `docs/ai-voice.md`.
 >
 > *Last updated: 2026-05-12 · Maintenance rule at the bottom.*
 
@@ -43,12 +43,14 @@ Pastels frequently fail WCAG contrast. Verified pairs:
 
 Defined in `client/src/index.css` lines 102-104 and `tailwind.config.ts`.
 
-| Stack | Family | Used for | Status |
-|---|---|---|---|
-| `font-sans` | **Inter** | Body text, UI chrome, buttons | Loaded via Google Fonts in `index.html` ✓ |
-| `font-serif` | **Cinzel**, fallback Georgia | Hero headers (bookshelf "Story Mode" title, "The end." on finished page) | ⚠️ Cinzel is declared in CSS but NOT loaded in `index.html` — currently renders as Georgia. Either add the Google Fonts link or update the declaration. |
-| `.story-prose` | **Crimson Pro**, fallback Georgia | Story narrative body text on the reading screen | ⚠️ Same — declared in `index.css` line 313 but NOT loaded. Renders as Georgia. |
-| `font-mono` | Menlo | Debug output, code samples (rare) | System font, no load needed |
+| Stack | Family | Used for |
+|---|---|---|
+| `font-sans` | **Inter** | Body text, UI chrome, buttons |
+| `font-serif` | **Cinzel**, fallback Georgia | Hero headers (bookshelf "Story Mode" title, "The end." on finished page) |
+| `.story-prose` | **Crimson Pro**, fallback Georgia | Story narrative body text — applied to AI message paragraphs in `ChatInterface.tsx` |
+| `font-mono` | Menlo | Debug output, code samples (rare) |
+
+All three webfonts (Inter, Cinzel, Crimson Pro) load via the Google Fonts link in `client/index.html`. Menlo is a system font.
 
 - Base body size: **16px** (`font-size: 16px` on `body`). Prevents iOS Safari auto-zoom on input focus.
 - Heading line-height: **1.3** (set globally on `h1–h6`).

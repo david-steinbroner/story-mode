@@ -10,6 +10,10 @@ vite.config.ts.*
 *.xlsx
 .~lock.*.xlsx#
 
+# Local plugin/experimental workspaces, not part of the app
+story-mode-plugin/
+story-mode-toolkit.plugin
+
 # Environment variables (keep your API keys safe!)
 .env
 .env.local

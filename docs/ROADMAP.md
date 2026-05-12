@@ -1,6 +1,6 @@
 # Story Mode — Roadmap
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.2.0**. Pre-launch audit Phases 1–5 shipped 2026-05-11; AI voice rewrite + UX polish + parse-failure hardening + rate-limit fix shipped 2026-05-12; doc framework restructure (router pattern, ai-voice + api-and-cost split out) shipped 2026-05-12. **Next up:** Milestone 6 (Guide chatbot), monetization decision, `messages.created_at` migration, palette consolidation. **Not blocked on anything** — pick by appetite.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.2.1**. Pre-launch audit Phases 1–5 shipped 2026-05-11; AI voice rewrite + UX polish + parse-failure hardening + rate-limit fix shipped 2026-05-12; doc framework restructure (router pattern, ai-voice + api-and-cost split out) shipped 2026-05-12. **Next up:** Milestone 6 (Guide chatbot), monetization decision, `messages.created_at` migration, palette consolidation. **Not blocked on anything** — pick by appetite.
 >
 > *Last updated: 2026-05-12 · Maintenance rule at the bottom.*
 
@@ -59,6 +59,7 @@ Items raised but not committed to. Decide before doing.
 
 See `docs/MILESTONES.md` for the full history. Most recent (2026-05-11 / 2026-05-12):
 
+- **2026-05-12 — Typography wired** — Cinzel and Crimson Pro now actually load from Google Fonts (were declared in CSS but never linked). `.story-prose` (Crimson Pro) applied to AI message paragraphs — story body text reads as a proper book serif now, not Inter sans. Repo cleanup: archived `story-mode-prototype.html`, gitignored `story-mode-plugin/`, deleted empty `story-mode-toolkit.plugin`.
 - **2026-05-12 — Doc framework restructure** — CLAUDE.md as router; new `ai-voice.md` and `api-and-cost.md`; design-system.md updated; stale docs deleted/archived
 - **2026-05-12 — UX polish** — drawer peek fix, regenerate moved to message header + confirm dialog, "Need a spark?" bookshelf collapsible, dev `tsx watch`
 - **2026-05-12 — Parse-failure hardening** — `max_tokens: 2000`, single-quote dialogue rule, 3-attempt retry, em-dash post-processing

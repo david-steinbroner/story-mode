@@ -581,7 +581,7 @@ ${JSON.stringify(debugInfo, null, 2)}
                         ? "bg-primary/10 border-l-4 border-primary ml-2 sm:ml-4"
                         : "bg-muted/50"
                     }`}>
-                      <p className="leading-relaxed text-foreground whitespace-pre-line break-words" style={{ fontSize: `${currentFontSize.px}px` }}>{text}</p>
+                      <p className={`leading-relaxed text-foreground whitespace-pre-line break-words ${isPlayer ? '' : 'story-prose'}`} style={{ fontSize: `${currentFontSize.px}px` }}>{text}</p>
                     </div>
                   </div>
                 );
