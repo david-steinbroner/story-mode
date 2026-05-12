@@ -28,7 +28,7 @@ Required env vars (see `.env.example`):
 - `OPENROUTER_API_KEY` — AI responses
 - `DATABASE_URL` — Supabase connection string
 - `ADMIN_KEY` — protects `/api/admin/*`
-- `SENTRY_DSN`, `POSTHOG_KEY` — optional, observability
+- `SENTRY_DSN`, `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST` — optional, observability
 
 ```bash
 npm run check        # tsc --noEmit
@@ -62,8 +62,15 @@ migrations/         SQL migrations
 
 ## For engineers
 
-- `CLAUDE.md` — engineering operating manual (read this before editing). Covers code style, brand/UX rules, Definition of Done, "Do Not Touch" list, files-to-know table.
-- `docs/MILESTONES.md` — milestone history, current state, and what was deleted along the way.
+Before touching code, read `CLAUDE.md` (root) — it's the engineering operating manual. It also routes to:
+
+- `docs/design-system.md` — palette, typography, spacing, interaction model
+- `docs/ai-voice.md` — Guide voice, narration rules, banned vocabulary, prompt structure
+- `docs/api-and-cost.md` — endpoints, rate limits, token cost, daily cap
+- `docs/MILESTONES.md` — what shipped and when
+- `docs/ROADMAP.md` — what's next
+
+**A note on collaboration:** when working with an AI agent on this codebase, CLAUDE.md §2 establishes five working rules (no decisions without the PM, no changes without the PM, front-load permissions, front-load requirements, version bump on every push). The agent should propose before acting on anything that shapes the product.
 
 ## Design constraints
 

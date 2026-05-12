@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.1.0**. Pre-launch audit Phases 1–5 (security → brand/domain → reliability → polish → cleanup) all shipped 2026-05-11 across five commits on `main`. AI voice rewrite + parse-failure hardening + rate-limit fixes shipped 2026-05-12. **Current in-flight milestone:** Milestone 6 (Guide chatbot on bookshelf) — foundation components exist (`GuideConfirmDialog`, `GuideStoryCard`), chat UI + intent matcher + `POST /api/guide/chat` endpoint still TODO. **Completed:** Milestones 1–5 (Foundation, AI Memory, Page Structure pivot, Pacing, Polish + UX Overhaul).
+> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.2.0**. Pre-launch audit Phases 1–5 (security, brand/domain, reliability, polish, cleanup) shipped 2026-05-11 across five commits on `main`. AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, and the doc framework restructure (CLAUDE.md router + ai-voice.md + api-and-cost.md split) shipped 2026-05-12. **Current in-flight milestone:** Milestone 6 (Guide chatbot on bookshelf) — foundation components exist (`GuideConfirmDialog`, `GuideStoryCard`), chat UI + intent matcher + `POST /api/guide/chat` endpoint still TODO. **Completed:** Milestones 1–5 (Foundation, AI Memory, Page Structure pivot, Pacing, Polish + UX Overhaul) plus the Pre-launch Audit.
 >
 > *Last updated: 2026-05-12 · Maintenance rule at the bottom.*
 
@@ -32,15 +32,15 @@
 - **Loading button copy** ✅ — Changed from "The Guide is writing..." to "Starting your story..."
 - **Archive moved to database** ✅ — `storyArchived` boolean column on `gameState`, `PATCH /api/stories/:storyId/archive` endpoint. Replaces localStorage.
 - **Guide avatar as universal menu icon** ✅ — Extracted `GuideAvatar.tsx` as shared component. Replaces three-dot icon on story screen. Bookshelf avatar is now a DropdownMenu trigger with font size, archive toggle, and admin link.
-- **Version number on bookshelf** ✅ — Small text at bottom of library page, bumped with each deploy. Currently v0.7.18.
+- **Version number on bookshelf** ✅ — Small text at bottom of library page, bumped with each deploy. (Current version is in `package.json` and the footer; bumped many times since this milestone.)
 - **Content freedom in AI prompts** ✅ — Added CONTENT FREEDOM section to system prompt allowing mature themes when reader-initiated.
-- **AI model swap** ✅ — Claude 3.5 Haiku → Mistral Small Creative → DeepSeek V3. DeepSeek has best JSON reliability and creative quality.
+- **AI model swap** ✅ — Claude 3.5 Haiku → Mistral Small Creative → DeepSeek V3. DeepSeek had best JSON reliability at this milestone. **Later reverted to Claude 3.5 Haiku** for writing quality (commit `2621f8c`, 2026-05-11). Current model is documented in `docs/api-and-cost.md`.
 - **Choice drawer always visible** ✅ — Drawer shows whenever story is active (not gated on parsed choices), so "I have something else in mind..." is always available.
 - **Choice parser expanded** ✅ — `parseMessageContent()` now handles bullets, numbered lists, and "Option A:" labels. Strips all prefixes.
 - **Book spine labels improved** ✅ — Removed unreadable 7px spine text, widened label area to 110px, 2-line clamp instead of truncate.
 
 **Infrastructure & reliability shipped:**
-- **Rate limits increased** ✅ — General: 100 → 500/hr, AI: 20 → 60/hr (each page turn fires 4-5 fetches).
+- **Rate limits increased** ✅ — General: 100 → 500/hr, AI: 20 → 60/hr (each page turn fires 4-5 fetches). **Later bumped again** during the 2026-05-12 pass; current values in `docs/api-and-cost.md`.
 - **Trust proxy** ✅ — `app.set('trust proxy', 1)` for Render reverse proxy compatibility with rate limiter.
 - **DB connection pool** ✅ — Increased pool from default 10 → max 20 with idle/connect timeouts. Fixes `MaxClientsInSessionMode`.
 - **DeepSeek JSON compatibility** ✅ — Removed `response_format: { type: "json_object" }` (DeepSeek returns 400). Added markdown code fence stripping for ```json wrappers.
@@ -50,7 +50,7 @@
 - Deleted: `CharacterQuestionnaire.tsx`, `AbilityScoreRoller.tsx`, `CampaignManager.tsx`
 - Deleted: `MemStorage` class (~665 lines)
 - Deleted: Enemy routes, combat routes, campaign routes (~350 lines)
-- Net: **-1,362 lines** removed
+- Net: **-1,362 lines** removed during this milestone's cleanup (Phase 5 of the pre-launch audit on 2026-05-11 removed an additional -1,059 lines; see below).
 - Fixed duplicate `aiResponseReceived` key in `posthog.ts` (kept enhanced version)
 - Fixed PostHog `disabled` → `opt_out_capturing_by_default` (eliminated TS error)
 - Updated caniuse-lite browserslist database
@@ -113,6 +113,18 @@ Each canned response flows through a `GuideConfirmDialog` for confirmation befor
 ---
 
 ## Completed Milestones
+
+### Pre-launch Audit (2026-05-11 → 2026-05-12) ✅
+
+Five-phase punch list completed across five commits on `main`, taking Story Mode from "Milestone 6 in progress" to "publicly shippable" at v1.1.0. Follow-up 2026-05-12 passes shipped AI voice/UX/reliability improvements (v1.1.1) and the doc-framework restructure with `ai-voice.md` + `api-and-cost.md` split (v1.2.0).
+
+- **Phase 1 — Security** (commit `d0966bc`): dead schema deletion, npm audit fix, Sentry on Express, Zod input caps on AI endpoints, `<user_input>` delimiters, timing-safe admin auth, stopped logging response bodies in production
+- **Phase 2 — Brand + domain** (commit `6196b81`): Render service renamed, deleted Cloudflare config, removed Replit dev banner, OG image (1200×630), Twitter card, CORS for mystorymode.com. Email forwarding settled on ImprovMX.
+- **Phase 3 — Reliability** (commit `0e20cf3`): `daily_spend` / `story_creation_locks` / `event_log` tables + atomic upserts, DB-backed spend tracker, per-(session, story) chat lock, full async awaits, posthog.identify, server-side funnel events. Migration `005_phase3_reliability.sql` ran in Supabase.
+- **Phase 4 — Distribution polish** (commit `4a01351`): first-visit bookshelf hero with example prompts, cold-start loader on bookshelf, mailto feedback + thumbs sentiment, `<Sentry.ErrorBoundary>`, `/admin` gated behind `?admin=1`, kebab affordance on book spines + Delete option for archived, Mission Complete toast, version 1.0.0, hero example tuning (`ef84bd7`)
+- **Phase 5 — Cleanup** (commit `c9dc499`): 7 dead components deleted, 2 dead AI service methods, legacy `/api/adventure/initialize` route, D&D event taxonomy from posthog.ts, ~55 verbose console.log statements, full `.dark` CSS block, stale docs (DEPLOYMENT.md / LOCAL_DEVELOPMENT.md / design_guidelines.md / replit.md), gitignored xlsx. Net -1,059 lines.
+- **2026-05-12 follow-up batch** (commits `857d777`, `751b111`, `89c49db`): AI voice rewrite (80–140 words, no em dashes, milestone pacing, macro-choice rule), parse-failure hardening (`max_tokens: 2000`, single-quote dialogue, 3-attempt retry, em-dash post-processing), rate limits 60→240/hr keyed by session, drawer peek + regenerate button redesign, story-complete UI, bookshelf "Need a spark?" collapsible, dev `tsx watch`
+- **2026-05-12 doc framework** (commit `a26cf2f` and successors): CLAUDE.md restructured as a router, `docs/design-system.md` + `docs/ROADMAP.md` created, then `docs/ai-voice.md` + `docs/api-and-cost.md` split out, TL;DR + maintenance-footer pattern applied to all living docs
 
 ### Milestone 5: Polish, Bugs & UX Overhaul ✅
 
