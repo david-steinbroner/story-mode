@@ -605,9 +605,18 @@ Example Quest Actions:
         }
       }
 
+      // Strip em/en dashes and hyphen-as-dash patterns. The system prompt
+      // says "no em dashes" but Claude has a strong baseline preference for
+      // them, so we enforce it server-side. Em/en dash and ` - ` (model's
+      // common workaround) become ", ".
+      const cleanedContent = (aiResponse.content || "The Guide pauses, considering your words...")
+        .replace(/\s*[—–]\s*/g, ', ')
+        .replace(/ - /g, ', ')
+        .replace(/,\s*,/g, ',');
+
       // Validate and sanitize the response
       const finalResponse: AIResponse = {
-        content: aiResponse.content || "The Guide pauses, considering your words...",
+        content: cleanedContent,
         sender: aiResponse.sender === 'npc' ? 'npc' as const : 'dm' as const,
         senderName: aiResponse.sender === 'npc' ? aiResponse.senderName : null,
         storyTitle: aiResponse.storyTitle || undefined,

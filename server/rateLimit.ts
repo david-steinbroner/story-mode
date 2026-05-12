@@ -4,8 +4,20 @@ import type { Request } from 'express';
 // Each story page turn fans out to ~4-5 GET requests for character/quests/items/messages,
 // so a 25-page session burns ~125 reads on its own. The limit has to comfortably fit a
 // long session by a single user without throttling them.
-const GENERAL_LIMIT = 500;
-const AI_LIMIT = 60;
+const GENERAL_LIMIT = 1000;
+// 60/hour was too tight: an active reader hitting a page every 30s exhausts it in 30min.
+// 240/hour ≈ one page every 15 seconds for a full hour. The $10/day spend cap in
+// spendTracker is the real cost ceiling; this limiter is for politeness, not budget.
+const AI_LIMIT = 240;
+
+// Key rate limiting by sessionId (which the client sends via x-session-id) so a shared
+// IP (NAT / public wifi) doesn't make multiple readers compete for the same bucket.
+// Falls back to IP when the header is missing — admin requests, healthchecks, etc.
+const keyBySession = (req: Request) => {
+  const sessionId = req.headers['x-session-id'];
+  if (typeof sessionId === 'string' && sessionId.length > 0) return `session:${sessionId}`;
+  return `ip:${req.ip}`;
+};
 
 // express-rate-limit attaches state to req.rateLimit at runtime via module augmentation,
 // but the augmentation only registers if the package is imported as a side-effect type.
@@ -17,11 +29,12 @@ function getRateLimitInfo(req: Request) {
 export const generalLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: GENERAL_LIMIT,
-  message: { error: 'Too many requests from this IP. Please try again later.' },
+  keyGenerator: keyBySession,
+  message: { error: 'Too many requests. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => {
-    console.log(`[RateLimit] General limit exceeded for IP: ${req.ip}`);
+    console.log(`[RateLimit] General limit exceeded for key: ${keyBySession(req)}`);
     const resetTime = getRateLimitInfo(req)?.resetTime;
     res.status(429).json({
       error: 'Too many requests. Please try again in a few minutes.',
@@ -30,11 +43,12 @@ export const generalLimiter = rateLimit({
   },
 });
 
-// AI calls are the costly path — DB writes plus an OpenRouter charge per request.
-// 60/hour comfortably covers a full story session at one page per minute.
+// AI calls are the costly path: DB writes plus an OpenRouter charge per request.
+// Keyed by session so two readers behind the same NAT don't share a bucket.
 export const aiLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: AI_LIMIT,
+  keyGenerator: keyBySession,
   message: { error: 'Too many AI requests. Please wait before trying again.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -44,7 +58,7 @@ export const aiLimiter = rateLimit({
       ? Math.ceil((resetTime.getTime() - Date.now()) / (1000 * 60))
       : 60;
 
-    console.log(`[RateLimit] AI limit exceeded for IP: ${req.ip}`);
+    console.log(`[RateLimit] AI limit exceeded for key: ${keyBySession(req)}`);
     res.status(429).json({
       error: `You've used your AI request limit. Please try again in ${minutesUntilReset} minutes.`,
       limit: AI_LIMIT,

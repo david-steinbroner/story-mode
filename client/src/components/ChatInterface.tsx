@@ -110,6 +110,7 @@ export default function ChatInterface({
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [endStorySentiment, setEndStorySentiment] = useState<"up" | "down" | null>(null);
   const [finishedSentimentSubmitted, setFinishedSentimentSubmitted] = useState(false);
+  const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -557,12 +558,23 @@ ${JSON.stringify(debugInfo, null, 2)}
                 const { text } = parseMessageContent(message.content);
                 const isPlayer = message.sender === "player";
                 const isLast = index === messages.length - 1;
+                const canRegenerate = isLast && !isPlayer && !isLoading && !gameState?.storyComplete;
 
                 return (
                   <div key={message.id} ref={isLast ? lastMessageRef : undefined} className="space-y-1.5 max-w-full">
                     <div className="flex items-center gap-2">
                       {getSenderBadge(message.sender, message.senderName)}
                       <span className="text-xs text-muted-foreground">{message.timestamp}</span>
+                      {canRegenerate && (
+                        <button
+                          onClick={() => setShowRegenConfirm(true)}
+                          className="ml-auto p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors"
+                          aria-label="Regenerate this response"
+                          title="Regenerate this response"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                     <div className={`p-2.5 sm:p-3 rounded-lg max-w-full overflow-hidden ${
                       isPlayer
@@ -584,22 +596,31 @@ ${JSON.stringify(debugInfo, null, 2)}
               </div>
             )}
 
-            {/* Regenerate Response Button (after AI response, when not loading) */}
-            {!isLoading && messages.length > 0 && messages[messages.length - 1].sender !== 'player' && (
-              <div className="flex justify-center mt-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleRegenerateResponse}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                >
-                  <RefreshCw className="w-3 h-3 mr-1" />
-                  Regenerate response
-                </Button>
-              </div>
-            )}
           </div>
         </div>
+
+      {/* Regenerate confirmation dialog */}
+      <AlertDialog open={showRegenConfirm} onOpenChange={setShowRegenConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Regenerate this page?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The current response will be replaced with a new one. This uses
+              one more page of your story's generation.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                handleRegenerateResponse();
+              }}
+            >
+              Regenerate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Scroll to bottom button */}
       {isScrolledUp && (
@@ -696,12 +717,14 @@ ${JSON.stringify(debugInfo, null, 2)}
             overflow: 'hidden',
           }}
         >
-          {/* Drawer handle / collapsed bar */}
+          {/* Drawer handle / collapsed bar. Fills the full peek height so
+              that no content from below shows through when collapsed. */}
           <button
             onClick={() => setIsDrawerOpen(!isDrawerOpen)}
-            className="w-full flex flex-col items-center pt-2 pb-3 px-4"
+            className="w-full flex flex-col items-center justify-center px-4 gap-2"
+            style={{ height: '5rem' }}
           >
-            <div className="w-10 h-1 bg-muted-foreground/30 rounded-full mb-2" />
+            <div className="w-10 h-1 bg-muted-foreground/30 rounded-full" />
             <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
               <span>What happens next?</span>
               <ChevronUp
@@ -712,7 +735,7 @@ ${JSON.stringify(debugInfo, null, 2)}
           </button>
 
           {/* Expanded choices content */}
-          <div className="px-4 pb-4 space-y-2 overflow-y-auto" style={{ maxHeight: 'calc(50vh - 5rem)' }}>
+          <div className="px-4 pb-4 pt-1 space-y-2 overflow-y-auto" style={{ maxHeight: 'calc(50vh - 5rem)' }}>
             {latestChoices.map((option, index) => (
               <Button
                 key={index}

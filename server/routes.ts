@@ -552,8 +552,9 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
         await spendTracker.trackRequest(sessionId, aiResponse.tokenUsage);
       }
 
-      // Save the AI's first page and apply any actions (quests, items, etc.)
-      const firstMessage = await applyAIResponse(sessionId, `[New story: ${genreLabel}, ${storyLength}] ${characterDescription}`, aiResponse, storyId);
+      // Save the AI's first page and apply any actions (quests, items, etc.).
+      // The player message is just the character description, no debug prefix.
+      const firstMessage = await applyAIResponse(sessionId, characterDescription, aiResponse, storyId);
 
       // Save AI-generated story title if provided
       if (aiResponse.storyTitle) {
