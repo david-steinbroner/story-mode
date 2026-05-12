@@ -58,9 +58,9 @@ interface BookshelfProps {
 // pre-fills the character description in the new-story wizard. Picked to span
 // genre/vibe so a returning user isn't pushed toward the same shape twice.
 const HERO_EXAMPLES = [
-  "A pastry chef who finds a recipe written in their grandmother's hand — except their grandmother died before they were born.",
+  "A grumpy vole on the village mail route just received a humming parcel addressed to \"The Last One Awake.\"",
   "A retired space cartographer accepting one last contract on a planet that doesn't appear on any map.",
-  "A modern dancer training for a competition who keeps waking up with bruises they can't explain.",
+  "A mailman just delivered today's mail to a house that wasn't there yesterday — and isn't there now.",
 ];
 
 // Genre color mapping
