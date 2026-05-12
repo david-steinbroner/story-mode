@@ -647,7 +647,18 @@ IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evoca
         messages: [
           {
             role: "user",
-            content: `Generate a punchy character description (1-2 sentences max) for an interactive story. Pick any genre. Be specific and vivid — unique personality, situation, or secret. No generic tropes. Write in second person ("You are...").`,
+            content: `Generate a character description for an interactive story. 1 to 2 short sentences. Plain language. No em dashes. No abstract words like "destiny," "ethical implications," "fabric of reality," "wrestling with." Write in second person.
+
+Formula: a specific job or role, plus one weird thing that just happened or is happening. Lean toward the mundane meeting the surprising. Quirky and accessible, like an 80s choose-your-own-adventure book, not literary fiction.
+
+Examples of the vibe:
+- You run a small bakery. Yesterday a customer paid in coins minted by countries that don't exist.
+- You're a substitute teacher. The kid in seat 4B has been ten years old for thirty years.
+- You're a forest ranger in a quiet park. Last week the elk started leaving notes.
+- You're a vole on the village mail route. A humming parcel just arrived addressed to "The Last One Awake."
+- You're a hotel night clerk. Room 207 has been booked for forty years by a guest who never checks out.
+
+Return ONLY the character description. No preamble, no quotes.`,
           },
         ],
       });

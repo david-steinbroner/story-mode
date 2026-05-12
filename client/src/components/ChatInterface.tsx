@@ -109,6 +109,7 @@ export default function ChatInterface({
   const [fontSizeIndex, setFontSizeIndex] = useState(getInitialFontSizeIndex);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [endStorySentiment, setEndStorySentiment] = useState<"up" | "down" | null>(null);
+  const [finishedSentimentSubmitted, setFinishedSentimentSubmitted] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -542,7 +543,7 @@ ${JSON.stringify(debugInfo, null, 2)}
       <div
         className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-4"
         ref={scrollRef}
-        style={{ paddingBottom: showDrawer ? 56 : 16 }}
+        style={{ paddingBottom: showDrawer ? 80 : 16 }}
       >
         <div className="space-y-3 sm:space-y-4 max-w-full">
             {messages.length === 0 ? (
@@ -605,11 +606,83 @@ ${JSON.stringify(debugInfo, null, 2)}
         <button
           onClick={scrollToBottom}
           className="absolute z-20 right-4 bg-card border border-border rounded-full p-2 shadow-md hover:bg-accent/10 transition-colors"
-          style={{ bottom: showDrawer ? 68 : 20 }}
+          style={{ bottom: showDrawer ? 92 : 20 }}
           aria-label="Scroll to latest"
         >
           <ChevronDown className="w-5 h-5 text-muted-foreground" />
         </button>
+      )}
+
+      {/* Story-complete footer. Replaces the drawer once the AI hits the
+          final page so the reader can't extend, and offers a sentiment
+          capture for stories that ended naturally (not via End Story menu). */}
+      {gameState?.storyComplete && (
+        <div
+          className="absolute bottom-0 left-0 right-0 z-20 border-t border-border shadow-[0_-4px_12px_rgba(0,0,0,0.08)]"
+          style={{ backgroundColor: '#FFF9F0' }}
+        >
+          <div className="px-4 py-4 max-w-md mx-auto space-y-3">
+            <p className="text-center font-serif text-xl text-foreground">The end.</p>
+
+            {!finishedSentimentSubmitted && (
+              <div className="space-y-2">
+                <p className="text-xs text-center text-muted-foreground">How was this story?</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      analytics.trackEvent("story_sentiment_submitted", {
+                        sentiment: "up",
+                        source: "finished_page",
+                        currentPage: gameState?.currentPage,
+                        totalPages: gameState?.totalPages,
+                      });
+                      setFinishedSentimentSubmitted(true);
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-border bg-background text-muted-foreground hover:border-primary/40 transition-colors"
+                    style={{ minHeight: 44 }}
+                  >
+                    <ThumbsUp className="w-4 h-4" />
+                    <span className="text-sm">Loved it</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      analytics.trackEvent("story_sentiment_submitted", {
+                        sentiment: "down",
+                        source: "finished_page",
+                        currentPage: gameState?.currentPage,
+                        totalPages: gameState?.totalPages,
+                      });
+                      setFinishedSentimentSubmitted(true);
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-border bg-background text-muted-foreground hover:border-destructive/40 transition-colors"
+                    style={{ minHeight: 44 }}
+                  >
+                    <ThumbsDown className="w-4 h-4" />
+                    <span className="text-sm">Not for me</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {finishedSentimentSubmitted && (
+              <p className="text-xs text-center text-muted-foreground">Thanks for the feedback.</p>
+            )}
+
+            <Button
+              onClick={() => {
+                analytics.buttonClicked('Back to Library', 'Finished Page');
+                onNavigateToBookshelf?.();
+              }}
+              className="w-full"
+              style={{ minHeight: 44 }}
+            >
+              <BookOpen className="w-4 h-4 mr-2" />
+              Back to library
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* Bottom choices drawer */}
@@ -619,7 +692,7 @@ ${JSON.stringify(debugInfo, null, 2)}
           className="absolute bottom-0 left-0 right-0 z-20 rounded-t-xl border-t border-border shadow-[0_-4px_12px_rgba(0,0,0,0.08)] transition-all duration-300 ease-in-out"
           style={{
             backgroundColor: '#FFF9F0',
-            maxHeight: isDrawerOpen ? '50vh' : '3.5rem',
+            maxHeight: isDrawerOpen ? '50vh' : '5rem',
             overflow: 'hidden',
           }}
         >
@@ -639,7 +712,7 @@ ${JSON.stringify(debugInfo, null, 2)}
           </button>
 
           {/* Expanded choices content */}
-          <div className="px-4 pb-4 space-y-2 overflow-y-auto" style={{ maxHeight: 'calc(50vh - 3.5rem)' }}>
+          <div className="px-4 pb-4 space-y-2 overflow-y-auto" style={{ maxHeight: 'calc(50vh - 5rem)' }}>
             {latestChoices.map((option, index) => (
               <Button
                 key={index}

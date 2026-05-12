@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from "react";
-import { Plus, Check, CheckCircle, Archive, ArchiveRestore, Minus, Settings, Mail, MoreVertical, Trash2 } from "lucide-react";
+import { Plus, Check, CheckCircle, Archive, ArchiveRestore, Minus, Settings, Mail, MoreVertical, Trash2, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -350,6 +350,7 @@ export default function Bookshelf({
   className = "",
 }: BookshelfProps) {
   const [showArchive, setShowArchive] = useState(false);
+  const [showSparks, setShowSparks] = useState(false);
   const [fontSizeIndex, setFontSizeIndex] = useState(getInitialFontSizeIndex);
 
   // Funnel-tracking wrappers so every entry point into a story is logged once
@@ -607,6 +608,39 @@ export default function Bookshelf({
           >
             Start a New Story
           </button>
+
+          {/* Collapsible inspiration prompts. Lives here (not the empty-state
+              hero) so a returning reader with a full shelf can still grab a
+              spark without scrolling away from their library. */}
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setShowSparks((s) => !s)}
+              className="w-full flex items-center justify-center gap-1.5 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              style={{ minHeight: 44 }}
+              aria-expanded={showSparks}
+            >
+              <span>Need a spark?</span>
+              <ChevronDown
+                className="w-3.5 h-3.5 transition-transform duration-200"
+                style={{ transform: showSparks ? "rotate(180deg)" : "rotate(0deg)" }}
+              />
+            </button>
+            {showSparks && (
+              <div className="space-y-2 mt-1">
+                {HERO_EXAMPLES.map((example, i) => (
+                  <button
+                    key={i}
+                    onClick={() => onNewStory(example)}
+                    className="w-full text-left bg-card border border-border rounded-lg p-3 text-sm text-foreground/90 leading-relaxed hover:bg-accent/10 hover:border-primary/40 transition-colors active:scale-[0.98]"
+                    style={{ minHeight: 44 }}
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
