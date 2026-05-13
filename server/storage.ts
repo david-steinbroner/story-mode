@@ -50,6 +50,7 @@ export interface IStorage {
   getStories(sessionId: string): Promise<GameState[]>;
   createGameState(state: InsertGameState): Promise<GameState>;
   updateGameState(sessionId: string, updates: Partial<GameState>, storyId?: string): Promise<GameState>;
+  softDeleteStory(sessionId: string, storyId: string): Promise<boolean>;
 
   // Story summary management — rolling AI memory beyond the recent-messages window
   getActiveSummary(sessionId: string, storyId?: string): Promise<StorySummary | null>;

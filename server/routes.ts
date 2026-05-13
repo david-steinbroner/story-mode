@@ -442,7 +442,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const sessionId = getSessionId(req);
       const { storyId } = req.params;
-      await storage.clearAllAdventureData(sessionId, storyId);
+      // Soft delete: marks deletedAt = NOW(). A lazy purge in getStories
+      // performs the real cascade wipe after 30 days. Gives support a
+      // recovery window for readers who delete by accident or regret it.
+      const ok = await storage.softDeleteStory(sessionId, storyId);
+      if (!ok) {
+        return res.status(404).json({ error: "Story not found" });
+      }
       await logEvent(sessionId, "story_deleted", {}, storyId);
       res.json({ success: true });
     } catch (error) {

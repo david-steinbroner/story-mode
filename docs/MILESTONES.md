@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.3.0**. Pre-launch audit Phases 1–5 (security, brand/domain, reliability, polish, cleanup) shipped 2026-05-11. AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, and typography wiring shipped 2026-05-12 (v1.2.x). **Concurrency hardening + UI polish** (Postgres-backed chat lock + rate limiter, `messages.created_at`, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool, drawer/footer spacing fixes) shipped 2026-05-12 (v1.3.0). **Current in-flight milestone:** Milestone 6 (Guide chatbot on bookshelf) — foundation components exist (`GuideConfirmDialog`, `GuideStoryCard`), chat UI + intent matcher + `POST /api/guide/chat` endpoint still TODO. **Completed:** Milestones 1–5 (Foundation, AI Memory, Page Structure pivot, Pacing, Polish + UX Overhaul) plus the Pre-launch Audit and the v1.3.0 concurrency/UI pass.
+> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.4.0**. Pre-launch audit Phases 1–5 (security, brand/domain, reliability, polish, cleanup) shipped 2026-05-11. AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, and typography wiring shipped 2026-05-12 (v1.2.x). **Concurrency hardening + UI polish** (Postgres-backed chat lock + rate limiter, `messages.created_at`, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool, drawer/footer spacing fixes) shipped 2026-05-12 (v1.3.0). **Current in-flight milestone:** Milestone 6 (Guide chatbot on bookshelf) — foundation components exist (`GuideConfirmDialog`, `GuideStoryCard`), chat UI + intent matcher + `POST /api/guide/chat` endpoint still TODO. **Completed:** Milestones 1–5 (Foundation, AI Memory, Page Structure pivot, Pacing, Polish + UX Overhaul) plus the Pre-launch Audit and the v1.3.0 concurrency/UI pass.
 >
 > *Last updated: 2026-05-12 · Maintenance rule at the bottom.*
 
@@ -113,6 +113,36 @@ Each canned response flows through a `GuideConfirmDialog` for confirmation befor
 ---
 
 ## Completed Milestones
+
+### AI Quality Pass — Chunk A + Soft-Delete (2026-05-13) — v1.4.0 ✅
+
+Single PR landing the first chunk of the AI quality pass (per `docs/specs/ai-quality-pass-plan.md`) bundled with the soft-delete + 30-day grace pattern for stories.
+
+**The AI quality piece (Chunk A):**
+
+A deep diagnostic of a completed 25-page story ("Whispers of the Familiar") through the interactive-fiction skill surfaced three core failures: stalled middles (9 consecutive pages of zero plot motion mid-story), false choices (3–4 bulleted options that all collapsed to the same outcome — "hold still / stay still / make a sudden movement"), and AI overriding off-script player input ("stairs? too exposed" — redirected to the AI's planned maintenance-passage set piece). The audit's surprise finding: **the rules to prevent all three failures were already in the system prompt.** The AI was ignoring them.
+
+Chunk A restructured the prompt accordingly:
+
+- **THE THREE NON-NEGOTIABLES** section moved to the END of the prompt for attention-weight recency. Each rule got a concrete WRONG/RIGHT anti-example pulled from the real Whispers failures.
+- Non-Negotiable #1: "every page must introduce ONE concrete change" with the tunnel-stall as the WRONG example.
+- Non-Negotiable #2: "choices must lead to different directions" with the hold-still trio as the WRONG example.
+- Non-Negotiable #3 (genuinely new — not previously in the prompt): "the reader is the author of WHAT happens; you are the author of HOW" with the stairs override as the WRONG example.
+- **Banned patterns expanded** from em-dashes only to: "something" as antagonist after first appearance, three-item-list cadence ("X, Y, Z" every paragraph), hedge adverbs (slightly / almost imperceptibly / softly / faintly / barely).
+- **Voice section tightened.** Dialogue formatting merged into voice as a single bullet (was its own labeled section). Quest+progression compressed.
+- **No changes to `getPacingGuidance()`** — the per-page narrative directives were already in place from earlier work; the audit confirmed they work but weren't being attended to until promoted-to-end.
+
+**The soft-delete piece:**
+
+A late-day conversation about customer support recovery (a user reported wanting to find a story they'd deleted) revealed: hard-delete was the only path. With no recovery window, support has zero ability to help a reader who regrets a delete. New pattern:
+
+- New `game_state.deleted_at` column (migration 009). `DELETE /api/stories/:storyId` now sets `deleted_at = NOW()` instead of calling the cascading wipe.
+- `getStories()` filters `WHERE deleted_at IS NULL` — readers see stories disappear from their bookshelf immediately as before.
+- A lazy purge inside `getStories()` sweeps rows where `deleted_at < NOW() - 30 days` and runs the existing `clearAllAdventureData` cascade. Bounded by a partial index on `(deleted_at) WHERE deleted_at IS NOT NULL` so the sweep is cheap.
+- New AlertDialog confirmation popup before delete fires. Copy is explicit about the 30-day window: *"It'll stay on our servers for 30 days in case you change your mind, then it's gone for good."* Replaces the previous `window.confirm` with a brand-consistent dialog.
+- Eventually we want an admin search-by-content tool for support; for now, support queries Supabase directly (`WHERE deleted_at IS NOT NULL AND deleted_at > NOW() - INTERVAL '30 days'`).
+
+**Plan reference:** `docs/specs/ai-quality-pass-plan.md` — Chunks B (validate + retry), C (prose-tell post-process + telemetry), D (entity commitment tracking with cross-story-ready JSONB) remain. Sonnet 2-cell comparison will run as a small follow-up PR after the v1.4.0 prompt has run on real users.
 
 ### Concurrency Hardening + UI Polish (2026-05-12) — v1.3.0 ✅
 

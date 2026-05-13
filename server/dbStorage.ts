@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, and, desc, asc, sql } from "drizzle-orm";
+import { eq, and, desc, asc, sql, isNull, isNotNull, lt } from "drizzle-orm";
 import { type IStorage } from "./storage";
 import {
   type Character,
@@ -498,18 +498,71 @@ export class DbStorage implements IStorage {
 
   async getStories(sessionId: string): Promise<GameState[]> {
     try {
+      // Lazy purge: anything soft-deleted more than 30 days ago gets a real
+      // cascade wipe before we read. Cheap because the partial index limits
+      // the scan to soft-deleted rows only. Fire-and-forget; a failure here
+      // shouldn't block the read.
+      this.purgeStaleSoftDeletes().catch((err) => {
+        console.warn("[dbStorage] Lazy purge failed (non-fatal):", err);
+      });
+
       const result = await db
         .select()
         .from(gameState)
         .where(and(
           eq(gameState.sessionId, sessionId),
           // Only return V2 stories (those with a storyId and totalPages)
-          sql`${gameState.storyId} IS NOT NULL`
+          sql`${gameState.storyId} IS NOT NULL`,
+          // Hide soft-deleted stories from the bookshelf
+          isNull(gameState.deletedAt)
         ))
         .orderBy(desc(gameState.id));
       return result;
     } catch (error) {
       throw new Error(`Failed to get stories: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
+  // Story soft-delete: mark deleted_at = NOW() without cascading. The row
+  // stays in the DB for 30 days so customer support can recover it on
+  // request; the user sees it removed from their bookshelf immediately.
+  async softDeleteStory(sessionId: string, storyId: string): Promise<boolean> {
+    try {
+      const result = await db
+        .update(gameState)
+        .set({ deletedAt: new Date() })
+        .where(and(
+          eq(gameState.sessionId, sessionId),
+          eq(gameState.storyId, storyId)
+        ))
+        .returning({ id: gameState.id });
+      return result.length > 0;
+    } catch (error) {
+      throw new Error(`Failed to soft-delete story: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
+  // Sweep any rows soft-deleted more than 30 days ago. For each match, run
+  // the existing cascade (clearAllAdventureData) to wipe messages/quests/
+  // items/characters/summaries, then drop the gameState row itself.
+  private async purgeStaleSoftDeletes(): Promise<void> {
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const stale = await db
+      .select({ sessionId: gameState.sessionId, storyId: gameState.storyId })
+      .from(gameState)
+      .where(and(isNotNull(gameState.deletedAt), lt(gameState.deletedAt, cutoff)));
+
+    for (const row of stale) {
+      if (!row.storyId) continue;
+      // clearAllAdventureData wipes the child tables but leaves the
+      // gameState row, so we delete it explicitly after.
+      await this.clearAllAdventureData(row.sessionId, row.storyId);
+      await db
+        .delete(gameState)
+        .where(and(
+          eq(gameState.sessionId, row.sessionId),
+          eq(gameState.storyId, row.storyId)
+        ));
     }
   }
 

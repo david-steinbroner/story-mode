@@ -11,6 +11,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { analytics } from "@/lib/posthog";
 import GuideAvatar from "./GuideAvatar";
@@ -479,6 +489,12 @@ export default function Bookshelf({
   const [sparks, setSparks] = useState<string[]>(() => pickSparks(3));
   const reshuffleSparks = useCallback(() => setSparks(pickSparks(3)), []);
 
+  // Delete-confirmation state. Null = closed; { id, title } = dialog open for
+  // that story. Soft-delete with a 30-day server-side grace period; the user
+  // sees it removed from the bookshelf immediately. Mirrors the styled
+  // AlertDialog pattern used in ChatInterface (End Story / Regenerate).
+  const [storyToDelete, setStoryToDelete] = useState<{ id: string; title: string } | null>(null);
+
   // Funnel-tracking wrappers so every entry point into a story is logged once
   // at the source instead of sprinkled at six callsites.
   const onNewStory = useCallback((seedDescription?: string) => {
@@ -528,17 +544,23 @@ export default function Bookshelf({
     }
   }, []);
 
-  const deleteStory = useCallback(async (storyId: string, title: string) => {
-    // Confirm via the native dialog. Archive is the soft-delete path; this is
-    // the permanent removal, so we make the user say yes once.
-    if (!window.confirm(`Delete "${title}" forever? This can't be undone.`)) return;
+  // Open the styled confirmation dialog. Actual delete fires when the user
+  // confirms inside the dialog (see confirmDeleteStory below).
+  const deleteStory = useCallback((storyId: string, title: string) => {
+    setStoryToDelete({ id: storyId, title });
+  }, []);
+
+  const confirmDeleteStory = useCallback(async () => {
+    if (!storyToDelete) return;
+    const { id } = storyToDelete;
+    setStoryToDelete(null);
     try {
-      await apiRequest('DELETE', `/api/stories/${storyId}`);
+      await apiRequest('DELETE', `/api/stories/${id}`);
       queryClient.invalidateQueries({ queryKey: ['/api/stories'] });
     } catch (error) {
       console.error('Failed to delete story:', error);
     }
-  }, []);
+  }, [storyToDelete]);
 
   const endStory = useCallback(async (storyId: string) => {
     try {
@@ -930,7 +952,30 @@ export default function Bookshelf({
       )}
 
       {/* Version */}
-      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.3.0</p>
+      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.4.0</p>
+
+      {/* Delete-story confirmation. Soft delete with a 30-day server-side
+          grace period — copy makes the recovery window explicit so a reader
+          tapping Delete knows what just happened. */}
+      <AlertDialog
+        open={storyToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setStoryToDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this story?</AlertDialogTitle>
+            <AlertDialogDescription>
+              It'll stay on our servers for 30 days in case you change your mind, then it's gone for good.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteStory}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

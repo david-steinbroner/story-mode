@@ -124,6 +124,10 @@ export const gameState = pgTable("game_state", {
   // revisiting a finished story from the bookshelf. Persisted so we don't
   // ask twice across the two surfaces. "up" | "down" | null.
   sentiment: text("sentiment"),
+  // Soft-delete timestamp. Bookshelf queries filter `WHERE deleted_at IS NULL`.
+  // A lazy purge in getStories hard-deletes rows where deleted_at is older than
+  // 30 days. Customer-support recovery window for the in-between period.
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });
 
 // Daily AI spend tally. Persisted (rather than in-memory) so the $10/day cap

@@ -1,8 +1,8 @@
 # Story Mode — Roadmap
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.3.0**. Pre-launch audit Phases 1–5 (2026-05-11); voice rewrite + UX polish + doc framework + typography (2026-05-12); concurrency hardening (Postgres chat lock + rate limiter), `messages.created_at` migration, hero rebrand into the Guide bubble + 100-prompt spark pool, drawer/footer spacing, sentiment dedup (2026-05-12, v1.3.0). **Next up:** AI feedback pass, Milestone 6 (Guide chatbot), monetization decision, palette consolidation. **Three big-direction brainstorms parked** under Maybe/TBD: audio drama, AI-generated puzzles, walk-to-earn. **Not blocked on anything** — pick by appetite.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.4.0**. Pre-launch audit Phases 1–5 (2026-05-11); voice rewrite + UX polish + doc framework + typography (2026-05-12); concurrency hardening + hero rebrand + sentiment dedup (2026-05-12, v1.3.0); **AI quality pass — Chunk A (system prompt restructure with anti-examples from real failures, agency clause, expanded banned patterns) + soft-delete with 30-day grace period (2026-05-13, v1.4.0)**. **Next up:** Sonnet 2-cell comparison (small follow-up PR), Chunk B (validate + retry), Chunk C (prose-tell post-process), Chunk D (entity tracking), Milestone 6 (Guide chatbot), monetization decision. **Three big-direction brainstorms parked** under Maybe/TBD: audio drama, AI-generated puzzles, walk-to-earn.
 >
-> *Last updated: 2026-05-12 · Maintenance rule at the bottom.*
+> *Last updated: 2026-05-13 · Maintenance rule at the bottom.*
 
 ---
 
@@ -26,11 +26,11 @@ In rough priority order.
 - **Blocks on:** PM decision. Once chosen, enable the `pricing-strategy` skill and design the paywall flow with `paywall-upgrade-cro`.
 - **Done when:** at least one paid path exists in the codebase and a user can complete a purchase.
 
-### AI feedback pass
-- **What:** Tuning conversation deferred from the 2026-05-12 PR — the user has accumulated AI-quality feedback after testing the v1.3.0 build on phone (story coherence, pacing, voice consistency, choice quality).
-- **Status:** Not yet captured in detail; planned next session.
-- **Why now:** All the bigger directional ideas (audio drama, puzzles) rest on the writing being good. Fix the foundation first.
-- **Done when:** the user's concrete feedback items are addressed in `server/aiService.ts` and/or `docs/ai-voice.md`, smoke-tested.
+### AI quality pass — remaining chunks (B, C, D) + Sonnet comparison
+- **What:** Chunk A (system prompt restructure + agency clause + banned-patterns expansion) shipped 2026-05-13 as v1.4.0. Three chunks remain: Chunk B (validate + retry on rule violations), Chunk C (prose-tell post-process scrubbers + telemetry), Chunk D (entity commitment tracking via JSONB with cross-story-ready shape).
+- **Plus:** Sonnet 2-cell comparison as a small follow-up PR after the v1.4.0 prompt has run on real users for a bit. Test matrix in `docs/specs/ai-quality-pass-plan.md`.
+- **Status:** Chunk A live in production. Awaiting real-user signal before B/C/D and Sonnet test.
+- **Done when:** all four chunks have shipped + Sonnet decision made (ship/paid-tier/length-gated/revert).
 
 ### Palette consolidation
 - **What:** Replace hardcoded hex strings (`#FFF9F0`, `#6C7A89`, etc.) sprinkled through components with Tailwind tokens (`bg-background`, `text-foreground`, `bg-primary`). All tokens already defined.
@@ -60,8 +60,9 @@ Items raised but not committed to. Decide before doing.
 
 ## Recently shipped
 
-See `docs/MILESTONES.md` for the full history. Most recent (2026-05-11 / 2026-05-12):
+See `docs/MILESTONES.md` for the full history. Most recent:
 
+- **2026-05-13 — AI quality pass Chunk A + soft-delete (v1.4.0)** — System prompt in `server/aiService.ts` restructured. The THREE NON-NEGOTIABLES (anti-stall, choice-distinctness, player agency) moved to the end of the prompt where attention is highest. Concrete WRONG/RIGHT anti-examples drawn from real *Whispers of the Familiar* failures: tunnel stall, hold-still trio, stairs override. New banned patterns: "something" as antagonist after first appearance, three-item-list cadence, hedge adverbs. Soft-delete on stories (migration 009): DELETE marks `deleted_at` instead of cascading; 30-day support recovery window; lazy purge in `getStories`. New AlertDialog confirmation popup with explicit 30-day messaging. Plan: `docs/specs/ai-quality-pass-plan.md`.
 - **2026-05-12 — Concurrency hardening + UI polish (v1.3.0)** — Chat lock and rate-limiter migrated from in-memory Maps to Postgres so both survive restarts and stay coherent at multi-instance. Quest dedup now scoped by `storyId`. New `messages.created_at` column fixes same-minute timestamp ties that produced nondeterministic render order. Sentiment captured once across the End Story popup and THE END footer (new `gameState.sentiment`). Hero rebrand: welcome + tagline + 3 steps moved into the Guide chat bubble; 100-prompt hand-curated spark pool with a right-aligned refresh button. Drawer peek spacing, story-complete footer overlap, scroll-on-open, and `crypto.randomUUID` polyfill for plain-HTTP LAN testing. Phase 5 leftovers wrapped: dead `darkMode` config removed, 3 noisy per-request logs gated.
 - **2026-05-12 — Typography wired** — Cinzel and Crimson Pro now actually load from Google Fonts (were declared in CSS but never linked). `.story-prose` (Crimson Pro) applied to AI message paragraphs — story body text reads as a proper book serif now, not Inter sans. Repo cleanup: archived `story-mode-prototype.html`, gitignored `story-mode-plugin/`, deleted empty `story-mode-toolkit.plugin`.
 - **2026-05-12 — Doc framework restructure** — CLAUDE.md as router; new `ai-voice.md` and `api-and-cost.md`; design-system.md updated; stale docs deleted/archived
@@ -79,4 +80,4 @@ See `docs/MILESTONES.md` for the full history. Most recent (2026-05-11 / 2026-05
 - **TL;DR refresh:** rewrite the top block whenever "next up" priorities shift, a milestone ships, or the version bumps. The version in the TL;DR must match `package.json` — if they ever disagree, update this doc.
 - **Stale check:** if "Maybe / TBD" items have sat untouched for 2+ weeks, prune or promote them. They're decisions in-flight, not graveyards.
 - **Same commit as code:** doc updates ride along with the code commit.
-- **Last updated:** 2026-05-12
+- **Last updated:** 2026-05-13
