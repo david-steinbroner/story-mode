@@ -20,8 +20,9 @@ import { aiLimiter, generalLimiter } from "./rateLimit";
 import { spendTracker } from "./spendTracker";
 import { aiService, type AIResponse } from "./aiService";
 import { logEvent } from "./eventLog";
+import { eventLog as eventLogTable } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, lt } from "drizzle-orm";
+import { eq, and, lt, gte, sql as drizzleSql } from "drizzle-orm";
 import OpenAI from "openai";
 
 // How long a single in-flight story creation can hold the per-session lock.
@@ -1166,6 +1167,62 @@ Return ONLY the character description. No preamble, no quotes.`,
     } catch (error) {
       console.error('Error fetching admin session stats:', error);
       res.status(500).json({ error: 'Failed to fetch session stats' });
+    }
+  });
+
+  // GET /api/admin/ai-quality - Rolling AI quality metrics (Chunk B).
+  // Reads from event_log: counts page_turned events as the denominator and
+  // ai_quality_violation events as the numerators. Window defaults to 24h.
+  app.get("/api/admin/ai-quality", adminAuth, async (_req, res) => {
+    try {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+      const [violationsRows, pageTurnsRows] = await Promise.all([
+        db
+          .select({ properties: eventLogTable.properties })
+          .from(eventLogTable)
+          .where(and(
+            eq(eventLogTable.eventType, "ai_quality_violation"),
+            gte(eventLogTable.createdAt, since),
+          )),
+        db
+          .select({ count: drizzleSql<number>`COUNT(*)::integer` })
+          .from(eventLogTable)
+          .where(and(
+            eq(eventLogTable.eventType, "page_turned"),
+            gte(eventLogTable.createdAt, since),
+          )),
+      ]);
+
+      const totalPagesGenerated = Number(pageTurnsRows[0]?.count ?? 0);
+      // Count each violation kind. A single response can fire multiple, so
+      // these counts can sum higher than the row count.
+      const counts = { stall: 0, fakeChoices: 0, finalPageBroken: 0, momentumFired: 0 };
+      let totalViolationRows = 0;
+      for (const row of violationsRows) {
+        totalViolationRows += 1;
+        const p = (row.properties as Record<string, unknown>) ?? {};
+        if (p.stall) counts.stall += 1;
+        if (p.fakeChoices) counts.fakeChoices += 1;
+        if (p.finalPageBroken) counts.finalPageBroken += 1;
+        if (p.momentumFired) counts.momentumFired += 1;
+      }
+
+      res.json({
+        windowHours: 24,
+        totalPagesGenerated,
+        totalViolationRows,
+        counts,
+        rates: {
+          stall: totalPagesGenerated > 0 ? counts.stall / totalPagesGenerated : 0,
+          fakeChoices: totalPagesGenerated > 0 ? counts.fakeChoices / totalPagesGenerated : 0,
+          finalPageBroken: totalPagesGenerated > 0 ? counts.finalPageBroken / totalPagesGenerated : 0,
+          momentumFired: totalPagesGenerated > 0 ? counts.momentumFired / totalPagesGenerated : 0,
+        },
+      });
+    } catch (error) {
+      console.error('Error fetching AI quality stats:', error);
+      res.status(500).json({ error: 'Failed to fetch AI quality stats' });
     }
   });
 

@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.4.0**. Pre-launch audit Phases 1–5 (security, brand/domain, reliability, polish, cleanup) shipped 2026-05-11. AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, and typography wiring shipped 2026-05-12 (v1.2.x). **Concurrency hardening + UI polish** (Postgres-backed chat lock + rate limiter, `messages.created_at`, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool, drawer/footer spacing fixes) shipped 2026-05-12 (v1.3.0). **Current in-flight milestone:** Milestone 6 (Guide chatbot on bookshelf) — foundation components exist (`GuideConfirmDialog`, `GuideStoryCard`), chat UI + intent matcher + `POST /api/guide/chat` endpoint still TODO. **Completed:** Milestones 1–5 (Foundation, AI Memory, Page Structure pivot, Pacing, Polish + UX Overhaul) plus the Pre-launch Audit and the v1.3.0 concurrency/UI pass.
+> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.5.0**. Pre-launch audit Phases 1–5 (security, brand/domain, reliability, polish, cleanup) shipped 2026-05-11. AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, and typography wiring shipped 2026-05-12 (v1.2.x). **Concurrency hardening + UI polish** (Postgres-backed chat lock + rate limiter, `messages.created_at`, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool, drawer/footer spacing fixes) shipped 2026-05-12 (v1.3.0). **Current in-flight milestone:** Milestone 6 (Guide chatbot on bookshelf) — foundation components exist (`GuideConfirmDialog`, `GuideStoryCard`), chat UI + intent matcher + `POST /api/guide/chat` endpoint still TODO. **Completed:** Milestones 1–5 (Foundation, AI Memory, Page Structure pivot, Pacing, Polish + UX Overhaul) plus the Pre-launch Audit and the v1.3.0 concurrency/UI pass.
 >
 > *Last updated: 2026-05-12 · Maintenance rule at the bottom.*
 
@@ -113,6 +113,29 @@ Each canned response flows through a `GuideConfirmDialog` for confirmation befor
 ---
 
 ## Completed Milestones
+
+### AI Quality Pass — Chunk B + admin scroll fix (2026-05-13) — v1.5.0 ✅
+
+Chunk B from the AI quality pass plan. Shifts the strategy from "trust the prompt" to "validate the output and retry." Four heuristic detectors in a new `server/aiValidators.ts`:
+
+- **Stall detector.** Jaccard token overlap between new page and last 2 AI pages. >55% overlap AND no change-indicator vocabulary in the new page = stall. Retries once with a "previous attempt was a stall, write something forward" directive.
+- **Fake-choices detector.** Pairwise Jaccard between the 3 bulleted choices. Any pair >50% = orbital choices. Retries with a "two of three choices were the same action" directive.
+- **Final-page enforcement.** If `currentPage + 1 >= totalPages` and content contains "What do you do?" or bulleted choices, retry with the final-page directive emphasized.
+- **Story Momentum detector.** Looks at the reader's last 2–3 player inputs. If 2+ are semantically similar, injects a "the world must act on this page" directive into the *current* system prompt (does not retry; pretext-only). The reader's choice still goes through; the world responds by escalating the beat.
+
+**Wiring in `server/aiService.ts`:** Story Momentum runs before the AI call and appends its directive to the system prompt. The other three run after parse + em-dash strip and trigger one retry (sharing the existing retryAttempt budget of 2). All four detectors log to `event_log` as `ai_quality_violation` so admin can track rates over time.
+
+**Path A synonym patch** (same-day fix after the first smoke test exposed a hole): the v1 Story Momentum detector used raw token overlap, which missed obvious stalls when the reader used synonyms ("keep working" / "continue silently" / "ignore him"). New `STALL_PATTERNS` regex set collapses any matching input to a single canonical `{__stall__}` token before Jaccard, so synonyms read as identical. Threshold lowered from 0.4 to 0.25 to catch near-misses. Acknowledged band-aid; the real fix is Chunk D's narrative-state tracking, but Path A buys time and catches the most embarrassing failure mode.
+
+**Telemetry + admin:**
+- New `ai_quality_violation` event type in `eventLog.ts`. Per-response `{ stall, fakeChoices, finalPageBroken, momentumFired, retryAttempt }` properties.
+- New `GET /api/admin/ai-quality` endpoint. Returns 24h rolling counts + rates per detector against page-turn volume.
+- New "AI Quality" section in `AdminDashboard.tsx` with 4 cards (stalls, fake choices, final-page breaks, momentum fires).
+- Admin page got the `h-dvh overflow-y-auto` fix so it scrolls properly (same root cause as the bookshelf scroll fix in v1.3.0 — global `html, body { overflow: hidden }` from the game-view fixed layout was preventing scroll on other surfaces).
+
+**Cost impact in production:** No new AI calls in v1. Retry rate expected 5–15% after Chunk A's prompt fix landed. Per-story cost change: +$0.005 to +$0.015. Within the planned envelope.
+
+**Plan reference:** `docs/specs/ai-quality-pass-plan.md`. Chunks C (prose-tell post-process scrubbers + telemetry) and D (entity commitment tracking with cross-story-ready JSONB) remain. Sonnet 2-cell comparison still pending as a small follow-up PR.
 
 ### AI Quality Pass — Chunk A + Soft-Delete (2026-05-13) — v1.4.0 ✅
 

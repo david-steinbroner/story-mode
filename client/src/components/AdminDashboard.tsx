@@ -22,11 +22,34 @@ interface SessionStats {
   totalSessions: number;
 }
 
+// Chunk B: AI quality validator metrics. Counts of each violation kind over
+// the last 24h, plus rates against pages generated. Higher rates = the
+// validators are catching more bad output; rates trending down over time
+// after Chunk A's prompt restructure is the success signal we're after.
+interface AIQualityStats {
+  windowHours: number;
+  totalPagesGenerated: number;
+  totalViolationRows: number;
+  counts: {
+    stall: number;
+    fakeChoices: number;
+    finalPageBroken: number;
+    momentumFired: number;
+  };
+  rates: {
+    stall: number;
+    fakeChoices: number;
+    finalPageBroken: number;
+    momentumFired: number;
+  };
+}
+
 export default function AdminDashboard() {
   const [adminKey, setAdminKey] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [spendStats, setSpendStats] = useState<SpendStats | null>(null);
   const [sessionStats, setSessionStats] = useState<SessionStats | null>(null);
+  const [aiQualityStats, setAiQualityStats] = useState<AIQualityStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -40,28 +63,31 @@ export default function AdminDashboard() {
     try {
       const headers = { "x-admin-key": adminKey };
 
-      const [spendRes, sessionRes] = await Promise.all([
+      const [spendRes, sessionRes, qualityRes] = await Promise.all([
         fetch("/api/admin/spend", { headers }),
         fetch("/api/admin/sessions", { headers }),
+        fetch("/api/admin/ai-quality", { headers }),
       ]);
 
-      if (spendRes.status === 401 || sessionRes.status === 401) {
+      if (spendRes.status === 401 || sessionRes.status === 401 || qualityRes.status === 401) {
         setError("Invalid admin key");
         setIsAuthenticated(false);
         return;
       }
 
-      if (!spendRes.ok || !sessionRes.ok) {
+      if (!spendRes.ok || !sessionRes.ok || !qualityRes.ok) {
         throw new Error("Failed to fetch stats");
       }
 
-      const [spend, sessions] = await Promise.all([
+      const [spend, sessions, quality] = await Promise.all([
         spendRes.json(),
         sessionRes.json(),
+        qualityRes.json(),
       ]);
 
       setSpendStats(spend);
       setSessionStats(sessions);
+      setAiQualityStats(quality);
       setIsAuthenticated(true);
       setLastUpdated(new Date());
     } catch (err) {
@@ -130,9 +156,11 @@ export default function AdminDashboard() {
     );
   }
 
-  // Dashboard
+  // Dashboard. h-dvh + overflow-y-auto scopes scrolling to this container
+  // since `html, body { overflow: hidden }` is set globally for the game
+  // view's fixed layout. Mirrors the fix applied to Bookshelf in v1.3.0.
   return (
-    <div className="min-h-screen p-4 md:p-8" style={{ backgroundColor: "#FAF9F6" }}>
+    <div className="h-dvh overflow-y-auto p-4 md:p-8" style={{ backgroundColor: "#FAF9F6" }}>
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -234,7 +262,70 @@ export default function AdminDashboard() {
             <p className="text-sm" style={{ color: "#5C5470" }}>No session data yet</p>
           )}
         </div>
+
+        {/* AI Quality Stats (Chunk B). Rolling 24h window — counts of each
+            validator violation and their rate against pages generated.
+            Rates trending down over time after a prompt change is the
+            success signal. */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-lg font-semibold mb-1" style={{ color: "#5C5470" }}>
+            AI Quality (last {aiQualityStats?.windowHours ?? 24}h)
+          </h2>
+          <p className="text-xs mb-4" style={{ color: "#5C5470" }}>
+            {formatNumber(aiQualityStats?.totalPagesGenerated ?? 0)} pages generated,
+            {" "}
+            {formatNumber(aiQualityStats?.totalViolationRows ?? 0)} responses with at least one violation
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <QualityCard
+              title="Stalls"
+              count={aiQualityStats?.counts.stall ?? 0}
+              rate={aiQualityStats?.rates.stall ?? 0}
+              hint="Page didn't introduce a new entity, location, fact, or escalation"
+            />
+            <QualityCard
+              title="Fake Choices"
+              count={aiQualityStats?.counts.fakeChoices ?? 0}
+              rate={aiQualityStats?.rates.fakeChoices ?? 0}
+              hint="Two of three choices were variants of the same action"
+            />
+            <QualityCard
+              title="Final-Page Breaks"
+              count={aiQualityStats?.counts.finalPageBroken ?? 0}
+              rate={aiQualityStats?.rates.finalPageBroken ?? 0}
+              hint="Last page ended on a choice prompt instead of resolving"
+            />
+            <QualityCard
+              title="Momentum Fires"
+              count={aiQualityStats?.counts.momentumFired ?? 0}
+              rate={aiQualityStats?.rates.momentumFired ?? 0}
+              hint="Reader stalled; the world was forced to act on the next page"
+            />
+          </div>
+        </div>
       </div>
+    </div>
+  );
+}
+
+function QualityCard({
+  title,
+  count,
+  rate,
+  hint,
+}: {
+  title: string;
+  count: number;
+  rate: number;
+  hint: string;
+}) {
+  const pct = (rate * 100).toFixed(1);
+  return (
+    <div className="rounded-md p-3" style={{ backgroundColor: "#FAF9F6", border: "1px solid #DBD8E3" }}>
+      <p className="text-xs font-medium mb-1" style={{ color: "#5C5470" }}>{title}</p>
+      <p className="text-xl font-semibold" style={{ color: "#5C5470" }}>{count}</p>
+      <p className="text-xs" style={{ color: "#5C5470" }}>{pct}% of pages</p>
+      <p className="text-[10px] mt-1 leading-tight" style={{ color: "#5C5470", opacity: 0.7 }}>{hint}</p>
     </div>
   );
 }

@@ -13,7 +13,10 @@ export type ServerEventType =
   | "story_unarchived"
   | "story_deleted"
   | "ai_fallback"
-  | "ai_request_failed";
+  | "ai_request_failed"
+  // Chunk B: per-response quality validators. Logged once per generateResponse
+  // call, including retries. Properties carry the violation flags.
+  | "ai_quality_violation";
 
 export async function logEvent(
   sessionId: string,

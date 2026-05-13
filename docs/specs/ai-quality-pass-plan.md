@@ -84,23 +84,41 @@ Sized for "step away for an hour, come back and chew on this" — each chunk is 
 
 ---
 
-### Chunk B — Validate + retry on rule violations (real teeth, real cost)
+### Chunk B — Validate + retry on rule violations (real teeth, real cost) ✅ SHIPPED 2026-05-13 (v1.5.0)
 
-**Goal:** Stop trusting the model to follow the rules. Detect violations in the output and retry, the same way we strip em-dashes today.
+**Goal:** Stop trusting the model to follow the rules. Detect violations in the output and retry, the same way we strip em-dashes today. Plus a new detector that addresses a subtler failure mode surfaced during Chunk A testing: **orbital choices** where 3 options are different actions on the same object (e.g. "shake the box / pry the box / put it back") — technically distinct verbs, semantically the same dilemma.
 
-**Work:**
-- **"ONE THING must change" detector.** Compare the new page's content against the previous 2 pages. Check: did a new entity appear? A new location? A new fact established? A consequence shown? An escalation? If none of these — retry with a stronger directive ("the previous page already showed X; this page must introduce something new, specifically [examples]").
-- **Choice-distinctness detector.** When the AI emits 3 choices, run a cheap semantic similarity check. If two choices are paraphrases of each other, retry.
-- **Page-25 enforcement.** Hard assert that the final page doesn't end with "What do you do?" If it does, retry with the final-page directive emphasized.
-- **Telemetry.** Add per-response metrics: `ruleViolations: { stallDetected, fakeChoices, finalPageBroken, em-dashesStripped }`. Surface in admin. Track over time so we can see whether the prompt changes from Chunk A actually reduced violations.
+**What shipped:** All 4 detectors live in `server/aiValidators.ts`. Wired into `server/aiService.ts.generateResponse` — Story Momentum runs before the AI call (injects directive); the other 3 run after parse + em-dash strip and trigger one retry on violation. All violations log to `event_log` as `ai_quality_violation`. New admin section at `/admin?admin=1` surfaces 24h counts + rates. Story Momentum detector got a Path A patch (synonym canonicalization via `STALL_PATTERNS`) after initial testing showed the token-overlap heuristic missed "keep working / continue silently / ignore him" stalls. Known band-aid; the real fix is Chunk D's narrative-state tracking.
 
-**Files:** `server/aiService.ts` (post-process additions), possibly a new `server/aiValidators.ts`, `server/spendTracker.ts` or new telemetry hook, admin dashboard surfacing.
+**Four heuristic detectors (no extra AI calls in v1 — keeps cost down):**
 
-**Size:** ~3–5 days. Detection logic + retry plumbing + telemetry + testing. Single PR.
+1. **Page-novelty detector.** Compare new page's content against the previous 2 pages. Check: does a new entity name appear? A new location word? A new fact established? A new sensory beat? If none — retry with a stronger directive: "the previous page already showed X; this page must introduce something new."
 
-**Risk:** Medium. Retries double the cost on violation pages. If our detectors over-trigger, daily spend cap could become tight. Need to ship with conservative thresholds and monitor.
+2. **Choice-distinctness detector.** Extract action verbs and target objects from each of the 3 choices. If 2 of 3 share the same verb root OR target the same object — retry. Catches both the obvious false-choice pattern ("hold still / stay still") and the subtler orbital pattern ("shake box / pry box / put box back").
 
-**Cost impact:** Worst case (every page retries once): doubles cost from ~$0.003/page to ~$0.006/page → ~$0.09/story → $0.18/story. Still under $10/day cap for any realistic user count, but worth measuring.
+3. **Final-page enforcement.** If `storyComplete` is true and the content contains "What do you do?" or bulleted choices — retry with the final-page directive emphasized. Catches the page-25-ends-on-cliffhanger failure.
+
+4. **Story Momentum detector (the world doesn't wait).** Inspect the reader's last 2–3 inputs. If they're semantically similar (same object engaged repeatedly, same verb class repeated) — on the *next* page, inject a "the world must act" directive into the prompt. Does NOT retry the current page; injects pressure for the upcoming one. This addresses a brainstorm insight from 2026-05-13: when a reader stalls by repeatedly engaging the same beat, the world should respond by forcing progression (the box opens on its own, the moment passes, a new force enters the scene). Player agency is preserved — they can still choose — but stalling has narrative cost.
+   - **WRONG (current behavior — AI lets reader stall indefinitely):** Page 3 shake box → soft chirp. Page 4 shake box → louder chirp. Page 5 shake box → louder still. Three pages, no progression.
+   - **RIGHT (after this rule):** Page 3 shake box → soft chirp. Page 4 shake box → box trembles harder. Page 5 shake box → "Before you can shake it again, the lid splits. A small wing pushes through the gap." The world acted.
+
+**Retry mechanism.** Extends the existing em-dash retry path in `server/aiService.ts`. Max 1 retry per detector to avoid runaway cost. Story Momentum is the exception — it doesn't trigger retry, just injects the directive for the next call.
+
+**Telemetry.** Per-response `aiQualityViolations: { stallDetected, fakeChoices, finalPageBroken, momentumPressureFired, emdashesStripped }`. Logged to `eventLog`. New section on the admin dashboard (`/admin?admin=1`) surfacing rolling violation rates and rates over time so we can see whether Chunk A's prompt changes actually reduced violations.
+
+**Files:**
+- `server/aiValidators.ts` — new file. The 4 detector functions.
+- `server/aiService.ts` — wire validators into the response pipeline; inject momentum directive when triggered.
+- `server/eventLog.ts` — telemetry hooks (extends existing event types).
+- `client/src/components/AdminDashboard.tsx` — new "AI quality" section.
+
+**Size:** ~4–6 days. Detection logic + retry plumbing + telemetry + admin surfacing + testing. Single PR.
+
+**Risk:** Medium. Retries double the cost on violation pages. If detectors over-trigger, daily spend cap could become tight. Ship with conservative thresholds and monitor in admin.
+
+**Cost impact:** Purely heuristic in v1 = no new AI calls, only retry cost. Realistic retry rate after Chunk A: 5–15%. Adds ~$0.005–$0.015 per story. Aligns with the Cost Impact table above.
+
+**Out of scope for Chunk B v1:** semantic similarity via embeddings or sidecar AI calls. Start with heuristics. Escalate only if heuristics miss too much. (Same principle that got us here from Chunk A: try the cheap fix first.)
 
 ---
 

@@ -3,6 +3,8 @@ import { storage } from "./storage";
 import type { Character, Quest, Item, Message, GameState, StorySummary } from "@shared/schema";
 import { captureError } from "./sentry";
 import { generateStorySummary } from "./summaryService";
+import { logEvent } from "./eventLog";
+import { runValidators, detectStallPattern, buildRetryHint } from "./aiValidators";
 
 // Constants for rolling story summary
 const SUMMARY_THRESHOLD = 10; // Trigger summarization when this many unsummarized messages exist
@@ -412,7 +414,7 @@ Use the • character exactly. No "Option A" labels.`;
     }
   }
 
-  async generateResponse(sessionId: string, playerMessage: string, storyId?: string, retryAttempt: number = 0): Promise<AIResponse> {
+  async generateResponse(sessionId: string, playerMessage: string, storyId?: string, retryAttempt: number = 0, retryHint: string = ''): Promise<AIResponse> {
     const startTime = Date.now();
 
     try {
@@ -434,10 +436,18 @@ Use the • character exactly. No "Option A" labels.`;
       const context = await this.getGameContext(sessionId, storyId);
       const contextPrompt = this.createContextPrompt(context);
 
+      // Chunk B — Story Momentum: if the reader has repeated the same kind
+      // of action across recent turns, inject a directive that tells the AI
+      // to force the beat forward on this page. Player agency is preserved
+      // (their choice still goes through); the world responds by acting
+      // back. Stateless — recomputed from recent messages on each call.
+      const playerMessages = context.recentMessages.filter((m) => m.sender === "player");
+      const momentumDirective = detectStallPattern(playerMessages) ?? "";
+
       const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         {
           role: "system",
-          content: this.getSystemPrompt(context.gameState)
+          content: this.getSystemPrompt(context.gameState) + momentumDirective + retryHint
         },
         {
           role: "user",
@@ -637,6 +647,47 @@ Example Quest Actions:
         .replace(/\s*[—–]\s*/g, ', ')
         .replace(/ - /g, ', ')
         .replace(/,\s*,/g, ',');
+
+      // Chunk B — run quality validators against the cleaned content. Retries
+      // once if a fixable violation fires; logs all violations (including
+      // Story Momentum pretext fires) to event_log so admin can see how
+      // often each rule trips over time. Quality retries share the
+      // retryAttempt budget with parse-failure retries so total work is
+      // bounded at MAX_RETRIES (2).
+      const priorAiMessages = context.recentMessages.filter((m) => m.sender !== "player");
+      const isFinalPage = !!(
+        context.gameState?.totalPages &&
+        (context.gameState.currentPage || 0) + 1 >= context.gameState.totalPages
+      );
+      const violations = runValidators(cleanedContent, priorAiMessages, isFinalPage);
+      const momentumFired = momentumDirective.length > 0;
+
+      if (
+        violations.stallDetected ||
+        violations.fakeChoices ||
+        violations.finalPageBroken ||
+        momentumFired
+      ) {
+        // Best-effort logging; never block on telemetry.
+        logEvent(
+          sessionId,
+          "ai_quality_violation",
+          {
+            stall: violations.stallDetected,
+            fakeChoices: violations.fakeChoices,
+            finalPageBroken: violations.finalPageBroken,
+            momentumFired,
+            retryAttempt,
+          },
+          storyId,
+        ).catch(() => {});
+      }
+
+      const MAX_QUALITY_RETRIES = 1;
+      if (violations.shouldRetry && retryAttempt < MAX_QUALITY_RETRIES) {
+        const nextHint = buildRetryHint(violations);
+        return this.generateResponse(sessionId, playerMessage, storyId, retryAttempt + 1, nextHint);
+      }
 
       // Validate and sanitize the response
       const finalResponse: AIResponse = {
