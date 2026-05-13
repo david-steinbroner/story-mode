@@ -177,11 +177,13 @@ class SpendTracker {
     // Re-read after writing so warning thresholds account for the just-applied
     // increment without trusting our local snapshot.
     const today = await this.getDailyTotals();
-    console.log(
-      `[SpendTracker] Request tracked. Tokens: ${tokenUsage.promptTokens}+${tokenUsage.completionTokens}=${
-        tokenUsage.promptTokens + tokenUsage.completionTokens
-      }, Cost: $${cost.toFixed(6)}, Today: $${today.totalCost.toFixed(4)} (${today.requestCount} requests)`
-    );
+    if (process.env.NODE_ENV !== "production") {
+      console.log(
+        `[SpendTracker] Request tracked. Tokens: ${tokenUsage.promptTokens}+${tokenUsage.completionTokens}=${
+          tokenUsage.promptTokens + tokenUsage.completionTokens
+        }, Cost: $${cost.toFixed(6)}, Today: $${today.totalCost.toFixed(4)} (${today.requestCount} requests)`
+      );
+    }
 
     if (today.totalCost >= WARNING_THRESHOLD_USD && today.totalCost - cost < WARNING_THRESHOLD_USD) {
       captureError(new Error("Daily AI spend approaching limit"), {

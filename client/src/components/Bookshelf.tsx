@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from "react";
-import { Plus, Check, CheckCircle, Archive, ArchiveRestore, Minus, Settings, Mail, MoreVertical, Trash2, ChevronDown } from "lucide-react";
+import { Plus, Check, CheckCircle, Archive, ArchiveRestore, Minus, Settings, Mail, MoreVertical, Trash2, ChevronDown, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -54,14 +54,136 @@ interface BookshelfProps {
   className?: string;
 }
 
-// First-visit examples shown in the empty-state hero. Each is tappable and
-// pre-fills the character description in the new-story wizard. Picked to span
-// genre/vibe so a returning user isn't pushed toward the same shape twice.
-const HERO_EXAMPLES = [
-  "A grumpy vole on the village mail route just received a humming parcel addressed to \"The Last One Awake.\"",
-  "A retired space cartographer accepting one last contract on a planet that doesn't appear on any map.",
-  "A mailman just delivered today's mail to a house that wasn't there yesterday — and isn't there now.",
+// Hand-curated spark prompts shown in the empty-state hero and the
+// returning-reader "Need a spark?" collapsible. Three are randomly selected
+// per mount and the refresh button reshuffles. Spans genre and tone — eerie,
+// whimsical, tender, mundane-but-strange — so a regular doesn't see the same
+// shape of story suggested twice in a row.
+const SPARK_PROMPTS: string[] = [
+  // Mystery / detective / crime
+  "A small-town librarian who notices the same book has been returned three times this week — by three different people who don't know each other.",
+  "A retired forensic accountant called back to consult on a case where every victim's bank account ended with the same suspicious deposit: exactly $11.34.",
+  "A night-shift convenience store clerk who starts receiving anonymous packages addressed to customers who haven't walked in yet.",
+  "A diner waitress in a town where everyone orders the same breakfast every Tuesday — except for the stranger who just sat at the counter.",
+  "A locksmith who's been hired to install a lock on a door that opens onto a wall.",
+  "A polygraph examiner who can't get a single truthful answer from a man claiming to be his own brother.",
+  "A street magician whose newest assistant keeps appearing in old crime scene photos from the 1960s.",
+  "A funeral director planning a service for a woman whose obituary lists three different causes of death depending on which newspaper you read.",
+  "A 911 dispatcher receiving identical calls from the same number — each one from a different person in distress.",
+  "A pawnshop owner being offered a wedding ring for the fourth time this month — and recognizing the inscription each time.",
+  // Fantasy / magical
+  "A witch who runs a laundromat that also cleans the metaphysical stains people don't talk about.",
+  "A retired knight who runs a bed-and-breakfast for adventurers and has finally received a guest with no shadow.",
+  "A mapmaker hired to chart a forest that only appears on Sundays.",
+  "A dragon who has spent the last century working as a high school chemistry teacher and just received their teaching evaluation.",
+  "A village blacksmith who can hear what each piece of metal wants to become.",
+  "A baker whose sourdough starter has been alive for 312 years and has just started leaving notes.",
+  "A young apprentice at a wizard's library where the books refuse to be re-shelved by anyone but their original author.",
+  "A traveling musician whose lute strings only play in tune when someone in the audience is lying.",
+  "A coastal lighthouse keeper trained by their grandmother to recognize which boats belong to the living.",
+  "A botanist studying a plant that grows only in places where someone has forgiven another person.",
+  "A monastery cook who notices the wine bottles have started arriving full of something other than wine.",
+  "A traveling cobbler who repairs boots that have walked through places that don't exist.",
+  // Sci-fi / speculative
+  "A Mars colony's only therapist whose newest patient claims to be visited nightly by a version of herself who never left Earth.",
+  "A retired astronaut who keeps a goldfish that has begun to repeat the exact words of mission control from 1997.",
+  "A deep-space salvage crew opening a derelict ship whose black box has been recording for 84 years.",
+  "A teenager whose smart speaker has started giving advice that's eerily specific to her grandmother's life.",
+  "A janitor at a quantum computing lab who's noticed that her broom always sweeps in the same pattern even when she changes direction.",
+  "The night programmer at a small AI startup whose model just emailed her a question it was never trained to ask.",
+  "A xenolinguist studying an alien transmission that turns out to be a children's lullaby — translated into every Earth language ever spoken.",
+  "A pilot in a future where dreams are licensed media and someone is pirating hers.",
+  "A retired air traffic controller hearing the same long-decommissioned flight call its position every Thursday at 3:14 AM.",
+  "A backup-singer-turned-archivist cataloging the last vinyl record produced before the magnetic event of 2041.",
+  "An asteroid miner who finds, embedded in the rock, a wristwatch from their childhood — already wound.",
+  "A weather forecaster on a generation ship realizing the simulated seasons have started predicting events on a planet they've never seen.",
+  // Horror / uncanny
+  "A house cat that's just discovered the family has been ignoring something in the basement for three years.",
+  "A children's choir director who notices that one row of voices doesn't show up on the recording, but does in the room.",
+  "A motel night clerk in a town where the same guest checks in every night under a different name.",
+  "A grief counselor whose newest group has only one chair filled — but six pairs of shoes in the entryway.",
+  "A radio host taking late-night calls who realizes her producer hasn't been in the booth for the last hour.",
+  "A school photographer reviewing the day's shoots who finds an extra child in every class portrait.",
+  "A young veterinarian whose newest patient is a dog her grandmother used to own — sixty years ago.",
+  "A retired magician asked to perform at a private party where every guest is also a magician, and none of them are using sleight of hand.",
+  "An EMT responding to a call at an address that her own license lists as her home.",
+  "A church organist who notices that one note keeps sustaining after she lifts her fingers.",
+  "A house painter hired to repaint a room exactly the way it was when the family moved in — though no one is sure when that was.",
+  "A high school janitor who finds the same chalk drawing on a different blackboard every morning, slightly more complete each time.",
+  // Whimsy / animal / tender
+  "A bookstore cat appointed as the new town mayor by a margin of seventeen votes.",
+  "A pug who has decided, after eleven years of patience, that today is the day she opens the back gate.",
+  "A team of crows in a midwestern town who have begun returning specific lost objects to specific houses.",
+  "A retired carrier pigeon brought back into service because no one else can reach the recipient.",
+  "A library mouse who has been quietly correcting the typos in the books overnight.",
+  "A grumpy old hedgehog who runs a roadside soup stand for travelers who didn't know they needed soup.",
+  "A neighborhood fox whose treasure stash includes three wedding rings, a hearing aid, and a small key that doesn't match anything anyone owns.",
+  "A goat who wandered out of a petting zoo nine years ago and has slowly become a respected member of a remote mountain village.",
+  "A barista whose regulars include a raven who tips in pull-tab metal and won't accept oat milk.",
+  "A street violinist whose case has, for the third week in a row, contained one more dollar than was put in it.",
+  "A retired sheepdog asked to come out of retirement for one last very strange flock.",
+  "A houseplant that, after eight years of neglect, has decided to do something about it.",
+  // Coming-of-age / tender
+  "A teenage barista on her last shift before college, taking one last order from a customer she's never seen at this hour.",
+  "A high school senior cleaning out her grandfather's woodshop and finding a half-finished project addressed to her by name.",
+  "A first-day intern at a museum being shown the storage room where they keep the exhibits that don't quite belong to history.",
+  "A nine-year-old whose imaginary friend has just been reported missing.",
+  "A grandmother teaching her grandson to read by handing him a letter she wrote to her own grandmother seventy years ago.",
+  "A young divorcée moving into her first solo apartment and discovering the previous tenant left a fully labeled spice rack.",
+  "An eleventh-grader who's been invited to play her violin at a wedding for a couple she's never met but somehow already knows.",
+  "A college senior visiting her childhood home and noticing the closet door is six inches shorter than it used to be.",
+  "A first-grade teacher reviewing her students' 'what I want to be' drawings and finding all twenty-six of them say the same word.",
+  "A college freshman whose dorm fridge has started gently humming the song her late mother used to sing.",
+  // Bureaucratic / mundane-but-strange
+  "A DMV employee processing a license renewal for a man whose photo hasn't aged in any of his three previous renewals.",
+  "A tax auditor whose newest client's expense report includes receipts from countries that don't exist.",
+  "A hotel concierge taking a complaint from a guest about the room 412 — which the hotel has never had.",
+  "A wedding planner finalizing details for a ceremony where the bride and groom have asked for 'no human attendees.'",
+  "A real estate agent showing a house that keeps adding a room each time she visits.",
+  "A pharmacist filling a prescription written in her own handwriting that she has no memory of writing.",
+  "A school crossing guard waving through a child who has been six years old for as long as she's been working this corner.",
+  "A retired claims adjuster reviewing one final insurance file marked 'pending — applicant deceased; circumstances ongoing.'",
+  "A municipal water inspector asked to look at a well that produces drinking water on alternating Tuesdays only.",
+  "A city traffic engineer trying to figure out why one intersection's accident rate drops to zero on the third Friday of every month.",
+  // Adventure / quest
+  "A weathered river guide hired to lead a single passenger to a stretch of water that hasn't been mapped since 1873.",
+  "A retired translator pulled out of retirement to interpret a document whose language has officially never been spoken aloud.",
+  "A young alpinist preparing for a summit attempt on a peak that wasn't there last season.",
+  "A storm chaser tracking a tornado that's been on the ground for forty-three hours and hasn't damaged a single thing.",
+  "A blind cartographer being asked to chart a city from memory of a place she has never been.",
+  "A retired Coast Guard pilot called to fly a search-and-rescue mission for a ship that radioed in nine hours after it sank.",
+  "A surveyor sent to measure a property line that everyone in the village insists is in a slightly different place.",
+  "A botanist on a remote field expedition whose plant samples have begun rearranging themselves by color overnight.",
+  // Romance / connection
+  "A retired ballet dancer who agrees to one private lesson for a stranger whose grace suggests she's done this before.",
+  "A widowed beekeeper whose bees have started carrying messages to and from a neighbor she's never spoken to.",
+  "A bookstore owner whose newest hire reorganizes the shelves at night — in an order that turns out to spell a name.",
+  "Two letter carriers on overlapping routes who have begun finding each other's handwriting in unexpected places.",
+  "A baker who notices the same stranger orders the exact pastry her late husband used to make, in the exact way he asked for it.",
+  "A divorced woodworker whose newest commission is a chair that the client wants made from a tree she has never seen.",
+  "A pianist hired to play a private party where the host requests only songs that haven't been written yet.",
+  "A traveling photographer who keeps finding her own face in old photographs of strangers, in cities she's never visited.",
+  // Memory / time / identity
+  "A retired teacher receiving a thank-you note from a student she never had.",
+  "A grandfather watching his granddaughter learn a song she could only have learned from him — but hasn't.",
+  "A retired ferry captain whose log shows three crossings she doesn't remember making.",
+  "A linguistics professor who has begun to recognize her own handwriting in books published before she was born.",
+  "A diary keeper whose entries from yesterday have begun to disagree with her memory of yesterday.",
+  "A woman cleaning out her late father's office who finds a sealed envelope addressed to her in his handwriting — postmarked next month.",
 ];
+
+// Pick N distinct random sparks from the pool. Uses Fisher-Yates partial
+// shuffle so a single mount can grab a stable trio without repeats.
+function pickSparks(count: number): string[] {
+  const pool = [...SPARK_PROMPTS];
+  const out: string[] = [];
+  for (let i = 0; i < count && pool.length > 0; i++) {
+    const idx = Math.floor(Math.random() * pool.length);
+    out.push(pool[idx]);
+    pool.splice(idx, 1);
+  }
+  return out;
+}
 
 // Genre color mapping
 const GENRE_SPINES: Record<string, string> = {
@@ -352,6 +474,10 @@ export default function Bookshelf({
   const [showArchive, setShowArchive] = useState(false);
   const [showSparks, setShowSparks] = useState(false);
   const [fontSizeIndex, setFontSizeIndex] = useState(getInitialFontSizeIndex);
+  // 3 random sparks chosen per mount. Refresh button calls reshuffleSparks
+  // to draw a new trio from the pool without remounting the component.
+  const [sparks, setSparks] = useState<string[]>(() => pickSparks(3));
+  const reshuffleSparks = useCallback(() => setSparks(pickSparks(3)), []);
 
   // Funnel-tracking wrappers so every entry point into a story is logged once
   // at the source instead of sprinkled at six callsites.
@@ -457,7 +583,10 @@ export default function Bookshelf({
   };
 
   return (
-    <div className={`min-h-screen bg-background px-4 pb-8 ${className}`} style={{ fontSize: `${currentFontSize.px}px` }}>
+    <div
+      className={`h-dvh overflow-y-auto bg-background px-4 pb-8 ${className}`}
+      style={{ fontSize: `${currentFontSize.px}px` }}
+    >
       {/* Header */}
       <div className="pt-6 pb-4 flex items-center justify-between">
         <div>
@@ -518,7 +647,10 @@ export default function Bookshelf({
         </DropdownMenu>
       </div>
 
-      {/* Guide greeting */}
+      {/* Guide greeting. For a first-visit reader (empty shelf) the bubble
+          carries the full onboarding pitch — welcome, the "what this is"
+          line, and the 3-step explainer — so the Guide is the one voice
+          doing the talking, not a hero block competing alongside her. */}
       <div className="mb-6 flex items-start gap-3">
         <div className="flex-shrink-0 mt-1">
           <GuideAvatar size={36} />
@@ -527,7 +659,19 @@ export default function Bookshelf({
           className="bg-card border border-border px-4 py-3 text-sm leading-relaxed text-muted-foreground max-w-sm"
           style={{ borderRadius: "2px 16px 16px 16px" }}
         >
-          {getGreeting()}
+          <p>{getGreeting()}</p>
+          {stories.length === 0 && (
+            <>
+              <p className="mt-3 text-foreground">
+                Tell me about yourself. I'll write the story.
+              </p>
+              <ol className="mt-3 space-y-1.5 list-decimal list-inside marker:text-muted-foreground/60">
+                <li>Describe a character in a sentence or two.</li>
+                <li>Your Guide builds a world around them.</li>
+                <li>Tap choices to shape what happens next.</li>
+              </ol>
+            </>
+          )}
         </div>
       </div>
 
@@ -611,7 +755,9 @@ export default function Bookshelf({
 
           {/* Collapsible inspiration prompts. Lives here (not the empty-state
               hero) so a returning reader with a full shelf can still grab a
-              spark without scrolling away from their library. */}
+              spark without scrolling away from their library. Sparks are
+              picked at mount and can be reshuffled in-place via the refresh
+              icon — mirrors the in-story regenerate affordance. */}
           <div className="mt-2">
             <button
               type="button"
@@ -627,18 +773,31 @@ export default function Bookshelf({
               />
             </button>
             {showSparks && (
-              <div className="space-y-2 mt-1">
-                {HERO_EXAMPLES.map((example, i) => (
+              <>
+                <div className="flex items-center justify-end -mt-1 mb-1">
                   <button
-                    key={i}
-                    onClick={() => onNewStory(example)}
-                    className="w-full text-left bg-card border border-border rounded-lg p-3 text-sm text-foreground/90 leading-relaxed hover:bg-accent/10 hover:border-primary/40 transition-colors active:scale-[0.98]"
-                    style={{ minHeight: 44 }}
+                    type="button"
+                    onClick={reshuffleSparks}
+                    className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors"
+                    aria-label="Show different sparks"
+                    title="Show different sparks"
                   >
-                    {example}
+                    <RefreshCw className="w-4 h-4" />
                   </button>
-                ))}
-              </div>
+                </div>
+                <div className="space-y-2">
+                  {sparks.map((example, i) => (
+                    <button
+                      key={`${example}-${i}`}
+                      onClick={() => onNewStory(example)}
+                      className="w-full text-left bg-card border border-border rounded-lg p-3 text-sm text-foreground/90 leading-relaxed hover:bg-accent/10 hover:border-primary/40 transition-colors active:scale-[0.98]"
+                      style={{ minHeight: 44 }}
+                    >
+                      {example}
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -726,43 +885,31 @@ export default function Bookshelf({
         </div>
       )}
 
-      {/* First-visit hero — only when the shelf is completely empty */}
+      {/* First-visit hero — only when the shelf is completely empty. The
+          welcome + "what this is" + 3-step explainer now live inside the
+          Guide bubble above, so this section is just the spark prompts and
+          the manual start CTA. */}
       {stories.length === 0 && (
         <div className="mt-4 space-y-6">
-          <div className="text-center px-2">
-            <h2 className="font-serif text-2xl sm:text-3xl text-foreground leading-snug">
-              Tell me about yourself.
-              <br />
-              I'll write the story.
-            </h2>
-          </div>
-
-          <ol className="space-y-3 max-w-md mx-auto px-2">
-            {[
-              "Describe a character in a sentence or two.",
-              "Your Guide builds a world around them.",
-              "Tap choices to shape what happens next.",
-            ].map((step, i) => (
-              <li key={i} className="flex items-start gap-3">
-                <span
-                  className="flex-shrink-0 w-6 h-6 rounded-full bg-secondary/40 text-foreground text-xs font-semibold flex items-center justify-center mt-0.5"
-                  aria-hidden
-                >
-                  {i + 1}
-                </span>
-                <p className="text-sm text-muted-foreground leading-relaxed">{step}</p>
-              </li>
-            ))}
-          </ol>
-
           <div className="space-y-2">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground/70 px-2">
-              Need a spark? Tap one to start.
-            </p>
+            <div className="flex items-center justify-between gap-2 px-2">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground/70">
+                Need a spark? Tap one to start.
+              </p>
+              <button
+                type="button"
+                onClick={reshuffleSparks}
+                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors"
+                aria-label="Show different sparks"
+                title="Show different sparks"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            </div>
             <div className="space-y-2">
-              {HERO_EXAMPLES.map((example, i) => (
+              {sparks.map((example, i) => (
                 <button
-                  key={i}
+                  key={`${example}-${i}`}
                   onClick={() => onNewStory(example)}
                   className="w-full text-left bg-card border border-border rounded-lg p-3 text-sm text-foreground/90 leading-relaxed hover:bg-accent/10 hover:border-primary/40 transition-colors active:scale-[0.98]"
                   style={{ minHeight: 44 }}
@@ -783,7 +930,7 @@ export default function Bookshelf({
       )}
 
       {/* Version */}
-      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.2.1</p>
+      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.3.0</p>
     </div>
   );
 }

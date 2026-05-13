@@ -9,6 +9,7 @@ import {
   insertMessageSchema,
   insertGameStateSchema,
   storyCreationLocks as storyCreationLocksTable,
+  chatLocks as chatLocksTable,
   type Character,
   type Quest,
   type Item,
@@ -27,11 +28,9 @@ import OpenAI from "openai";
 // Long enough to span a slow first-page AI call on Render's cold start.
 const STORY_CREATION_LOCK_MS = 30_000;
 
-// Per-(session, story) lock for /api/ai/chat. Lives in memory because the
-// blast radius of a lost lock is small (worst case: a duplicate AI call from
-// a user with two tabs open) and the recovery is built in: locks expire after
-// 60s regardless of process state.
-const chatLocks = new Map<string, number>();
+// Per-(session, story) lock for /api/ai/chat. Backed by Postgres (chat_locks)
+// so the lock survives Render restarts and stays coherent across instances
+// when we scale horizontally. Mirrors the storyCreationLocks pattern below.
 const CHAT_LOCK_MS = 60_000;
 const chatLockKey = (sessionId: string, storyId?: string) => `${sessionId}:${storyId ?? "_"}`;
 
@@ -454,7 +453,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/story/new", aiLimiter, async (req, res) => {
     const sessionId = getSessionId(req);
-    console.log(`[Story New] REQUEST RECEIVED session=${sessionId} timestamp=${Date.now()}`);
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[Story New] REQUEST RECEIVED session=${sessionId} timestamp=${Date.now()}`);
+    }
 
     // Atomic deduplication via Postgres. The unique-on-conflict insert claims
     // the lock for this session if no live lock exists, or if the existing one
@@ -472,7 +473,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       .returning({ sessionId: storyCreationLocksTable.sessionId });
 
     if (claimed.length === 0) {
-      console.log(`[Story New] BLOCKED — creation already in progress for session=${sessionId}`);
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[Story New] BLOCKED — creation already in progress for session=${sessionId}`);
+      }
       return res.status(429).json({ success: false, error: "Story creation already in progress" });
     }
 
@@ -965,11 +968,22 @@ Return ONLY the character description. No preamble, no quotes.`,
 
     // Per-(session, story) lock: blocks the duplicate AI call a user produces
     // by opening two tabs of the same story and tapping a choice in each.
-    const heldSince = chatLocks.get(lockKey);
-    if (heldSince && Date.now() - heldSince < CHAT_LOCK_MS) {
+    // Atomic Postgres UPSERT — claims the lock if none exists or the existing
+    // one has already expired, otherwise returns nothing and we 429.
+    const expiresAt = new Date(Date.now() + CHAT_LOCK_MS);
+    const claimed = await db
+      .insert(chatLocksTable)
+      .values({ key: lockKey, expiresAt })
+      .onConflictDoUpdate({
+        target: chatLocksTable.key,
+        set: { expiresAt },
+        setWhere: lt(chatLocksTable.expiresAt, new Date()),
+      })
+      .returning({ key: chatLocksTable.key });
+
+    if (claimed.length === 0) {
       return res.status(429).json({ error: "A response is already being generated. Please wait." });
     }
-    chatLocks.set(lockKey, Date.now());
 
     try {
       const parsed = chatMessageSchema.safeParse(req.body);
@@ -1015,7 +1029,8 @@ Return ONLY the character description. No preamble, no quotes.`,
       }, storyId);
       res.status(500).json({ error: "Failed to process AI conversation" });
     } finally {
-      chatLocks.delete(lockKey);
+      // Release the lock no matter how this request ended.
+      await db.delete(chatLocksTable).where(eq(chatLocksTable.key, lockKey));
     }
   });
 

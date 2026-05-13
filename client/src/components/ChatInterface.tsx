@@ -26,6 +26,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { analytics } from "@/lib/posthog";
 import { useToast } from "@/hooks/use-toast";
 import { captureError, addBreadcrumb } from "@/lib/sentry";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface ChatInterfaceProps {
   messages: Message[];
@@ -109,7 +110,29 @@ export default function ChatInterface({
   const [fontSizeIndex, setFontSizeIndex] = useState(getInitialFontSizeIndex);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [endStorySentiment, setEndStorySentiment] = useState<"up" | "down" | null>(null);
-  const [finishedSentimentSubmitted, setFinishedSentimentSubmitted] = useState(false);
+  // Initialize from gameState so revisiting a story that already has sentiment
+  // (captured via the popup last time) doesn't show the footer's ask again.
+  const [finishedSentimentSubmitted, setFinishedSentimentSubmitted] = useState(
+    () => !!gameState?.sentiment
+  );
+  useEffect(() => {
+    if (gameState?.sentiment) setFinishedSentimentSubmitted(true);
+  }, [gameState?.sentiment]);
+
+  // Persist sentiment to gameState so popup and footer share the same source
+  // of truth. Optimistic local flip happens at the call site so the buttons
+  // disappear instantly; this just shapes the network write + cache refresh.
+  const persistSentiment = async (sentiment: "up" | "down") => {
+    try {
+      await apiRequest('PATCH', '/api/game-state', { sentiment });
+      queryClient.invalidateQueries({ queryKey: ['/api/game-state'] });
+    } catch (err) {
+      captureError(err instanceof Error ? err : new Error(String(err)), {
+        context: 'ChatInterface.persistSentiment',
+        sentiment,
+      });
+    }
+  };
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
@@ -148,8 +171,23 @@ export default function ChatInterface({
     }
   }, [isLoading]);
 
+  // On the FIRST messages payload we get, jump straight to the bottom so the
+  // user opens to the latest content (in-progress: their place; finished:
+  // the closing paragraph above the THE END footer). After that, the existing
+  // per-message logic runs: a new AI page scrolls its top into view so the
+  // reader sees it from the beginning; a player message pins to the bottom.
+  const initialScrollDone = useRef(false);
   useEffect(() => {
     if (messages.length === 0) return;
+    if (!initialScrollDone.current) {
+      initialScrollDone.current = true;
+      // rAF lets the layout settle (padding + footer height) before we measure.
+      requestAnimationFrame(() => {
+        const el = scrollRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+      return;
+    }
     const lastMsg = messages[messages.length - 1];
     if (lastMsg.sender === 'player') {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -522,14 +560,18 @@ ${JSON.stringify(debugInfo, null, 2)}
           <AlertDialogFooter>
             <AlertDialogCancel>Keep Reading</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => {
+              onClick={async () => {
                 analytics.buttonClicked('End Story Confirmed', 'Chat Interface');
                 if (endStorySentiment) {
                   analytics.trackEvent("story_sentiment_submitted", {
                     sentiment: endStorySentiment,
+                    source: "end_story_popup",
                     currentPage: gameState?.currentPage,
                     totalPages: gameState?.totalPages,
                   });
+                  // Persist before navigating away so the value lands on
+                  // gameState and the footer (if the reader revisits) sees it.
+                  await persistSentiment(endStorySentiment);
                 }
                 onEndAdventure?.();
               }}
@@ -540,11 +582,15 @@ ${JSON.stringify(debugInfo, null, 2)}
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Messages - flexible height, with bottom padding for drawer */}
+      {/* Messages - flexible height. Bottom padding has to clear whichever
+          chrome is anchored at the bottom: ~112px gives the drawer peek
+          (5rem) a comfortable air gap above the last paragraph, and ~240px
+          makes room for the taller story-complete footer (The End / How was
+          this / Back to library) so the closing paragraph isn't hidden. */}
       <div
         className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-4"
         ref={scrollRef}
-        style={{ paddingBottom: showDrawer ? 80 : 16 }}
+        style={{ paddingBottom: gameState?.storyComplete ? 240 : showDrawer ? 112 : 16 }}
       >
         <div className="space-y-3 sm:space-y-4 max-w-full">
             {messages.length === 0 ? (
@@ -622,12 +668,14 @@ ${JSON.stringify(debugInfo, null, 2)}
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Scroll to bottom button */}
+      {/* Scroll to bottom button. Has to float above whichever chrome is at
+          the bottom — story-complete footer is the tallest, drawer peek is
+          shorter. */}
       {isScrolledUp && (
         <button
           onClick={scrollToBottom}
           className="absolute z-20 right-4 bg-card border border-border rounded-full p-2 shadow-md hover:bg-accent/10 transition-colors"
-          style={{ bottom: showDrawer ? 92 : 20 }}
+          style={{ bottom: gameState?.storyComplete ? 252 : showDrawer ? 92 : 20 }}
           aria-label="Scroll to latest"
         >
           <ChevronDown className="w-5 h-5 text-muted-foreground" />
@@ -659,6 +707,7 @@ ${JSON.stringify(debugInfo, null, 2)}
                         totalPages: gameState?.totalPages,
                       });
                       setFinishedSentimentSubmitted(true);
+                      void persistSentiment("up");
                     }}
                     className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-border bg-background text-muted-foreground hover:border-primary/40 transition-colors"
                     style={{ minHeight: 44 }}
@@ -676,6 +725,7 @@ ${JSON.stringify(debugInfo, null, 2)}
                         totalPages: gameState?.totalPages,
                       });
                       setFinishedSentimentSubmitted(true);
+                      void persistSentiment("down");
                     }}
                     className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-border bg-background text-muted-foreground hover:border-destructive/40 transition-colors"
                     style={{ minHeight: 44 }}
@@ -718,10 +768,12 @@ ${JSON.stringify(debugInfo, null, 2)}
           }}
         >
           {/* Drawer handle / collapsed bar. Fills the full peek height so
-              that no content from below shows through when collapsed. */}
+              that no content from below shows through when collapsed.
+              gap-4 between the drag handle and the "What happens next?" row
+              keeps the two affordances visually distinct on small screens. */}
           <button
             onClick={() => setIsDrawerOpen(!isDrawerOpen)}
-            className="w-full flex flex-col items-center justify-center px-4 gap-2"
+            className="w-full flex flex-col items-center justify-center px-4 gap-4"
             style={{ height: '5rem' }}
           >
             <div className="w-10 h-1 bg-muted-foreground/30 rounded-full" />

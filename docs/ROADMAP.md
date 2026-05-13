@@ -1,6 +1,6 @@
 # Story Mode — Roadmap
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.2.1**. Pre-launch audit Phases 1–5 shipped 2026-05-11; AI voice rewrite + UX polish + parse-failure hardening + rate-limit fix shipped 2026-05-12; doc framework restructure (router pattern, ai-voice + api-and-cost split out) shipped 2026-05-12. **Next up:** Milestone 6 (Guide chatbot), monetization decision, `messages.created_at` migration, palette consolidation. **Not blocked on anything** — pick by appetite.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.3.0**. Pre-launch audit Phases 1–5 (2026-05-11); voice rewrite + UX polish + doc framework + typography (2026-05-12); concurrency hardening (Postgres chat lock + rate limiter), `messages.created_at` migration, hero rebrand into the Guide bubble + 100-prompt spark pool, drawer/footer spacing, sentiment dedup (2026-05-12, v1.3.0). **Next up:** AI feedback pass, Milestone 6 (Guide chatbot), monetization decision, palette consolidation. **Three big-direction brainstorms parked** under Maybe/TBD: audio drama, AI-generated puzzles, walk-to-earn. **Not blocked on anything** — pick by appetite.
 >
 > *Last updated: 2026-05-12 · Maintenance rule at the bottom.*
 
@@ -26,14 +26,15 @@ In rough priority order.
 - **Blocks on:** PM decision. Once chosen, enable the `pricing-strategy` skill and design the paywall flow with `paywall-upgrade-cro`.
 - **Done when:** at least one paid path exists in the codebase and a user can complete a purchase.
 
-### messages table needs `created_at`
-- **What:** Add `created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()` to the `messages` table.
-- **Why now:** Bit us during debugging on 2026-05-11 — we couldn't chronologically order messages because `id` is UUID (random) and `timestamp` is a string like "08:35 PM". One small migration.
-- **Done when:** migration ran, schema reflects it, `getMessages` queries order by `created_at` instead of returning unsorted.
+### AI feedback pass
+- **What:** Tuning conversation deferred from the 2026-05-12 PR — the user has accumulated AI-quality feedback after testing the v1.3.0 build on phone (story coherence, pacing, voice consistency, choice quality).
+- **Status:** Not yet captured in detail; planned next session.
+- **Why now:** All the bigger directional ideas (audio drama, puzzles) rest on the writing being good. Fix the foundation first.
+- **Done when:** the user's concrete feedback items are addressed in `server/aiService.ts` and/or `docs/ai-voice.md`, smoke-tested.
 
 ### Palette consolidation
 - **What:** Replace hardcoded hex strings (`#FFF9F0`, `#6C7A89`, etc.) sprinkled through components with Tailwind tokens (`bg-background`, `text-foreground`, `bg-primary`). All tokens already defined.
-- **Also:** remove the vestigial `darkMode: ["class"]` from `tailwind.config.ts` since we have no dark mode.
+- **Status:** Vestigial `darkMode: ["class"]` was removed in v1.3.0. ~61 hardcoded hex codes still remain across 6 components; `AdminDashboard.tsx` is the worst offender (~26 instances).
 - **Risk:** Visual regressions if a hex value doesn't map cleanly to a token.
 - **Why deferred:** Too risky for a no-behavior-change cleanup pass without a visual regression test setup.
 - **Done when:** `grep -rn '#[0-9A-Fa-f]\{6\}' client/src/components` returns zero hits.
@@ -47,7 +48,9 @@ Items raised but not committed to. Decide before doing.
 - **Cross-story character travel** — was Milestone 7. Lets a reader's character carry between stories. Open question: does it break the "fresh start" simplicity?
 - **Community story library** — was Milestone 8. Browse stories other readers have completed. Big scope; needs moderation/safety story.
 - **Adaptive genre theming** — was Milestone 9. UI shifts subtly based on inferred genre.
-- **Two-tab deduplication beyond rate limit** — the `/api/ai/chat` chat lock is in-memory. If Render scales to >1 instance, the lock becomes useless. Move to Postgres if/when scaling.
+- **Audio drama / SFX library** — turn the reading experience into an interactive audio drama via TTS narration + curated SFX triggered by AI-tagged cues. Cost framing: ~$0.30–$0.60/story for narration on top of writing. Brand shift from "interactive fiction" to "interactive audio drama" (Audible-adjacent). Deserves a dedicated brainstorm session.
+- **AI-generated puzzles on the fly** — small puzzles woven into stories, unique per playthrough. Tricky: LLMs are notoriously bad at solvability without rigid templates + validation. ~$0.005–0.02 per puzzle as an extra AI call. UX risk: must not interrupt narrative flow. Deserves a dedicated brainstorm session.
+- **Walk-to-earn / Pokemon-Go mechanics** — gamification idea floated 2026-05-12: users earn credits or unlock content via real-world activity. Open questions: how does this fit a story-reading product, what's the credit currency-vs-streak shape. Deserves a dedicated brainstorm session.
 - **Sentry sample rate** — currently 10% trace. Revisit if costs spike or we miss errors.
 - **AI retry budget + rate-limit ceiling revisit** — current is 3 attempts + 240/hr. Once we have real concurrent-user data, retune.
 - **Desktop UX polish for end-story / delete on active stories** — currently no path on desktop to end an in-progress story without long-press (mouse equivalent exists via the kebab, but UX is awkward).
@@ -59,6 +62,7 @@ Items raised but not committed to. Decide before doing.
 
 See `docs/MILESTONES.md` for the full history. Most recent (2026-05-11 / 2026-05-12):
 
+- **2026-05-12 — Concurrency hardening + UI polish (v1.3.0)** — Chat lock and rate-limiter migrated from in-memory Maps to Postgres so both survive restarts and stay coherent at multi-instance. Quest dedup now scoped by `storyId`. New `messages.created_at` column fixes same-minute timestamp ties that produced nondeterministic render order. Sentiment captured once across the End Story popup and THE END footer (new `gameState.sentiment`). Hero rebrand: welcome + tagline + 3 steps moved into the Guide chat bubble; 100-prompt hand-curated spark pool with a right-aligned refresh button. Drawer peek spacing, story-complete footer overlap, scroll-on-open, and `crypto.randomUUID` polyfill for plain-HTTP LAN testing. Phase 5 leftovers wrapped: dead `darkMode` config removed, 3 noisy per-request logs gated.
 - **2026-05-12 — Typography wired** — Cinzel and Crimson Pro now actually load from Google Fonts (were declared in CSS but never linked). `.story-prose` (Crimson Pro) applied to AI message paragraphs — story body text reads as a proper book serif now, not Inter sans. Repo cleanup: archived `story-mode-prototype.html`, gitignored `story-mode-plugin/`, deleted empty `story-mode-toolkit.plugin`.
 - **2026-05-12 — Doc framework restructure** — CLAUDE.md as router; new `ai-voice.md` and `api-and-cost.md`; design-system.md updated; stale docs deleted/archived
 - **2026-05-12 — UX polish** — drawer peek fix, regenerate moved to message header + confirm dialog, "Need a spark?" bookshelf collapsible, dev `tsx watch`

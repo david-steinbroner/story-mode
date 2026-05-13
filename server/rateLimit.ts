@@ -1,5 +1,6 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { Request } from 'express';
+import { PostgresRateLimitStore } from './rateLimitStore';
 
 // Each story page turn fans out to ~4-5 GET requests for character/quests/items/messages,
 // so a 25-page session burns ~125 reads on its own. The limit has to comfortably fit a
@@ -13,10 +14,12 @@ const AI_LIMIT = 240;
 // Key rate limiting by sessionId (which the client sends via x-session-id) so a shared
 // IP (NAT / public wifi) doesn't make multiple readers compete for the same bucket.
 // Falls back to IP when the header is missing — admin requests, healthchecks, etc.
+// ipKeyGenerator normalizes IPv6 so per-host buckets can't be bypassed by varying
+// the lower 64 bits of an IPv6 address.
 const keyBySession = (req: Request) => {
   const sessionId = req.headers['x-session-id'];
   if (typeof sessionId === 'string' && sessionId.length > 0) return `session:${sessionId}`;
-  return `ip:${req.ip}`;
+  return `ip:${ipKeyGenerator(req.ip ?? '')}`;
 };
 
 // express-rate-limit attaches state to req.rateLimit at runtime via module augmentation,
@@ -30,6 +33,7 @@ export const generalLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: GENERAL_LIMIT,
   keyGenerator: keyBySession,
+  store: new PostgresRateLimitStore('general'),
   message: { error: 'Too many requests. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -49,6 +53,7 @@ export const aiLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: AI_LIMIT,
   keyGenerator: keyBySession,
+  store: new PostgresRateLimitStore('ai'),
   message: { error: 'Too many AI requests. Please wait before trying again.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -73,6 +78,7 @@ export const aiLimiter = rateLimit({
 export const strictLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 5,
+  store: new PostgresRateLimitStore('strict'),
   message: { error: 'Rate limit exceeded for this operation.' },
   standardHeaders: true,
   legacyHeaders: false,

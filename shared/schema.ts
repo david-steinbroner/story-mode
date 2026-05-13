@@ -64,7 +64,11 @@ export const messages = pgTable("messages", {
   content: text("content").notNull(),
   sender: text("sender").notNull(),
   senderName: text("sender_name"),
+  // `timestamp` is the human-friendly "HH:MM AM/PM" display string and is
+  // *not* reliable for ordering — multiple messages in the same minute tie.
+  // `createdAt` is the monotonic sort key the UI orders by.
   timestamp: text("timestamp").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // Rolling summaries condense older message history so the AI can keep narrative
@@ -115,6 +119,11 @@ export const gameState = pgTable("game_state", {
   storyTitle: text("story_title"),
   storyArchived: boolean("story_archived").default(false).notNull(),
   storyComplete: boolean("story_complete").default(false).notNull(),
+  // Reader's sentiment about the finished story. Captured once — either inline
+  // in the End Story confirmation popup or in the THE END footer when
+  // revisiting a finished story from the bookshelf. Persisted so we don't
+  // ask twice across the two surfaces. "up" | "down" | null.
+  sentiment: text("sentiment"),
 });
 
 // Daily AI spend tally. Persisted (rather than in-memory) so the $10/day cap
@@ -135,6 +144,24 @@ export const dailySpend = pgTable("daily_spend", {
 export const storyCreationLocks = pgTable("story_creation_locks", {
   sessionId: varchar("session_id").primaryKey(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
+
+// Per-(session, story) lock for /api/ai/chat. Replaces the in-memory Map so
+// the lock survives across Render instances when we scale horizontally.
+// Key format: `${sessionId}:${storyId ?? "_"}` to match prior behavior.
+export const chatLocks = pgTable("chat_locks", {
+  key: varchar("key").primaryKey(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
+
+// Rate-limit buckets used by the express-rate-limit Postgres store. One row
+// per (limiter, session-or-ip) tuple. Key format: `${limiterPrefix}:${sessionId or ip}`.
+// Replaces the default in-memory MemoryStore so buckets survive restarts and
+// stay coherent across multiple instances.
+export const rateLimitBuckets = pgTable("rate_limit_buckets", {
+  key: varchar("key").primaryKey(),
+  count: integer("count").default(0).notNull(),
+  resetAt: timestamp("reset_at", { withTimezone: true }).notNull(),
 });
 
 // Append-only behavioral event stream. Used to derive funnel and survival
@@ -164,6 +191,8 @@ export const updateGameStateSchema = insertGameStateSchema.partial();
 
 export type DailySpend = typeof dailySpend.$inferSelect;
 export type StoryCreationLock = typeof storyCreationLocks.$inferSelect;
+export type ChatLock = typeof chatLocks.$inferSelect;
+export type RateLimitBucket = typeof rateLimitBuckets.$inferSelect;
 export type EventLog = typeof eventLog.$inferSelect;
 
 export type Character = typeof characters.$inferSelect;

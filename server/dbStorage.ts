@@ -182,17 +182,22 @@ export class DbStorage implements IStorage {
 
   async createQuest(quest: InsertQuest): Promise<Quest> {
     try {
-      // Check if a quest with the same title already exists (prevent duplicates)
+      // Dedup is scoped to the current story so two parallel stories in the
+      // same session can independently generate a "Find the Artifact" quest
+      // without one being silently replaced by the other. Falls back to a
+      // session-only check for any legacy quest rows missing a storyId.
+      const dedupConditions = [
+        eq(quests.sessionId, quest.sessionId),
+        eq(quests.title, quest.title),
+        eq(quests.status, "active"),
+      ];
+      if (quest.storyId) {
+        dedupConditions.push(eq(quests.storyId, quest.storyId));
+      }
       const existingQuests = await db
         .select()
         .from(quests)
-        .where(
-          and(
-            eq(quests.sessionId, quest.sessionId),
-            eq(quests.title, quest.title),
-            eq(quests.status, "active")
-          )
-        )
+        .where(and(...dedupConditions))
         .limit(1);
 
       // If duplicate found, return the existing quest instead of creating a new one
@@ -427,7 +432,7 @@ export class DbStorage implements IStorage {
         .select()
         .from(messages)
         .where(and(...conditions))
-        .orderBy(asc(messages.timestamp));
+        .orderBy(asc(messages.createdAt));
       return result;
     } catch (error) {
       throw new Error(`Failed to get messages: ${error instanceof Error ? error.message : error}`);
@@ -442,7 +447,7 @@ export class DbStorage implements IStorage {
         .select()
         .from(messages)
         .where(and(...conditions))
-        .orderBy(desc(messages.id))
+        .orderBy(desc(messages.createdAt))
         .limit(limit);
       return result.reverse();
     } catch (error) {

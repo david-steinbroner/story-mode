@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.2.1**. Pre-launch audit Phases 1–5 (security, brand/domain, reliability, polish, cleanup) shipped 2026-05-11 across five commits on `main`. AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, and the doc framework restructure (CLAUDE.md router + ai-voice.md + api-and-cost.md split) shipped 2026-05-12. **Current in-flight milestone:** Milestone 6 (Guide chatbot on bookshelf) — foundation components exist (`GuideConfirmDialog`, `GuideStoryCard`), chat UI + intent matcher + `POST /api/guide/chat` endpoint still TODO. **Completed:** Milestones 1–5 (Foundation, AI Memory, Page Structure pivot, Pacing, Polish + UX Overhaul) plus the Pre-launch Audit.
+> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.3.0**. Pre-launch audit Phases 1–5 (security, brand/domain, reliability, polish, cleanup) shipped 2026-05-11. AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, and typography wiring shipped 2026-05-12 (v1.2.x). **Concurrency hardening + UI polish** (Postgres-backed chat lock + rate limiter, `messages.created_at`, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool, drawer/footer spacing fixes) shipped 2026-05-12 (v1.3.0). **Current in-flight milestone:** Milestone 6 (Guide chatbot on bookshelf) — foundation components exist (`GuideConfirmDialog`, `GuideStoryCard`), chat UI + intent matcher + `POST /api/guide/chat` endpoint still TODO. **Completed:** Milestones 1–5 (Foundation, AI Memory, Page Structure pivot, Pacing, Polish + UX Overhaul) plus the Pre-launch Audit and the v1.3.0 concurrency/UI pass.
 >
 > *Last updated: 2026-05-12 · Maintenance rule at the bottom.*
 
@@ -113,6 +113,43 @@ Each canned response flows through a `GuideConfirmDialog` for confirmation befor
 ---
 
 ## Completed Milestones
+
+### Concurrency Hardening + UI Polish (2026-05-12) — v1.3.0 ✅
+
+One-day pass after a full BE/FE audit. The audit surfaced ~20 candidate findings across two parallel `Explore` agents; verification dropped several from CRITICAL to LOW (orphan endpoint, sub-pennies-impact race) and confirmed the rest. Shipped the top tier in a single PR.
+
+**Concurrency hardening:**
+- `chat_locks` table + Postgres-backed lock on `/api/ai/chat` (migration 006). Replaces an in-memory `Map` that was knowingly accepted as a single-instance tradeoff; now coherent at multi-instance.
+- `rate_limit_buckets` table + custom `PostgresRateLimitStore` for `express-rate-limit` (migration 006). Atomic UPSERT with CASE-guarded window reset. Fails open on Postgres hiccups so a brief DB stutter doesn't lock everyone out of the AI path. IPv6 keys normalized via `ipKeyGenerator`.
+- Quest dedup now scoped by `storyId` in `dbStorage.createQuest` — fixes cross-story collision where two parallel stories with the same quest title silently merged.
+
+**Message ordering:**
+- `messages.created_at TIMESTAMPTZ` column (migration 007). `getMessages` / `getRecentMessages` order by `createdAt`. Fixes a real bug observed on phone testing: 4 messages in the same minute string returned in nondeterministic order, rendering player-AI-AI-player instead of P-A-P-A.
+
+**Sentiment dedup:**
+- `gameState.sentiment` column (migration 008). Captured once via either the End Story popup or the revisit-finished footer; the other surface reads the persisted value and hides its prompt.
+
+**UI polish:**
+- Bookshelf now scrollable on phone (root `h-dvh overflow-y-auto`; the global `html, body { overflow: hidden }` is scoped to the game view's fixed-height layout).
+- Hero rebrand: welcome + "Tell me about yourself" tagline + 3 numbered steps moved INTO the Guide's chat bubble. Standalone serif hero block removed. One voice, one bubble.
+- 100 hand-curated spark prompts in a `SPARK_PROMPTS` pool, 3 random per mount, refresh button (RefreshCw) right-aligned on "Need a spark?" — mirrors the in-story regenerate affordance. Applied to BOTH the empty-shelf hero and the returning-user collapsible.
+- Drawer peek spacing: paragraph→peek gap 80→112px; inside `gap-2`→`gap-4` between drag handle and "What happens next?".
+- Story-complete footer no longer overlaps the closing paragraph: bottom padding bumps to 240px when `storyComplete`. Scroll-to-bottom button repositions above the footer.
+- Initial scroll on story open jumps to the bottom (in-progress: shows latest; finished: shows the ending above the footer).
+- `crypto.randomUUID()` polyfill in `main.tsx` so plain-HTTP LAN testing (phone on same wifi) doesn't crash.
+
+**Phase 5 leftovers wrapped:**
+- Removed dead `darkMode: ["class"]` from `tailwind.config.ts`.
+- Gated 3 per-request operational `console.log` calls on `NODE_ENV !== "production"` (`spendTracker.ts`, two in `routes.ts`).
+
+**Audit findings deferred to follow-up PRs:**
+- `applyAIResponse` not transactional (no observed bug, real consistency risk).
+- Daily-spend check-then-write race (real, but max overage is pennies).
+- DB indexes on hot paths (perf, not correctness).
+- Palette consolidation (61 hex codes; visual-regression risk too high for this PR).
+- `DELETE /api/messages` orphan endpoint (latent bug, no client caller).
+
+**Out-of-scope ideas the user wants dedicated brainstorm sessions for** (logged in ROADMAP Maybe/TBD): audio drama, AI-generated puzzles, walk-to-earn mechanics.
 
 ### Pre-launch Audit (2026-05-11 → 2026-05-12) ✅
 
