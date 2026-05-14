@@ -545,7 +545,11 @@ Your job: Create the opening page. Establish the world, introduce the reader's c
 
 Do NOT re-state the character description back to the reader. Instead, SHOW who they are through the opening scene.
 
-IMPORTANT: Include a "storyTitle" field in your JSON response — a short, evocative title for this story (2-5 words). Make it atmospheric and unique, not generic.`;
+IMPORTANT: Include a "storyTitle" field in your JSON response. Title rules:
+- 1 to 3 words. Short. Plain.
+- Concrete noun phrase. Name the central object, character, place, or event.
+- Examples of the right shape: "The Glass Suitcase", "Talking Cat", "The Vault Door", "Last Train Home", "The Wrong Coffee".
+- AVOID: "Whispers of...", "Echoes of...", "Shadows of...", "The Last Awakening", "Beneath the X", or any other poetic / atmospheric phrasing. Direct beats evocative every time.`;
 
       let aiResponse = await aiService.generateResponse(sessionId, firstPagePrompt, storyId);
 

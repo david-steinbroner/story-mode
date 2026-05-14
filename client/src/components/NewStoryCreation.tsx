@@ -1,12 +1,10 @@
 import { useState, useRef } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { ArrowLeft, Loader2, Info } from "lucide-react";
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { analytics } from "@/lib/posthog";
+import GuideAvatar from "./GuideAvatar";
 
 interface NewStoryCreationProps {
   onStartStory: (data: {
@@ -59,202 +57,162 @@ export default function NewStoryCreation({
 
   const selectedLength = STORY_LENGTHS.find((l) => l.id === storyLength);
 
+  // The Guide asks each step's question via the same chat-bubble pattern used
+  // on the bookshelf hero. Keeps the metaphor consistent: the Guide is always
+  // the one speaking.
+  const guideQuestion =
+    step === 1
+      ? "How long should your story be?"
+      : "Describe who you are in this story.";
+
   return (
     <div
-      className={`min-h-screen flex items-center justify-center px-4 py-6 ${className}`}
+      className={`h-dvh overflow-y-auto bg-background px-4 pb-8 ${className}`}
     >
-      <Card className="w-full max-w-2xl">
-        <CardHeader className="text-center space-y-2">
-          <CardTitle className="text-3xl font-bold">New Story</CardTitle>
-          <p className="text-muted-foreground text-base">
-            {step === 1
-              ? "How long should your story be?"
-              : "Describe who you are in this story"}
-          </p>
+      {/* Header: back button + "New Story" label + step indicator */}
+      <div className="pt-6 pb-4 flex items-center gap-3">
+        <button
+          onClick={() => (step > 1 ? setStep(1) : onBack())}
+          aria-label="Back"
+          className="flex-shrink-0 -ml-2 p-2 rounded-md hover:bg-accent/10 transition-colors"
+          style={{ minHeight: 44, minWidth: 44 }}
+          disabled={isLoading}
+        >
+          <ArrowLeft className="w-5 h-5 text-foreground" />
+        </button>
+        <div>
+          <h1 className="text-xl font-bold text-foreground">New Story</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">Step {step} of 2</p>
+        </div>
+      </div>
 
-          {/* Step indicator */}
-          <div className="flex items-center justify-center gap-2 pt-2">
-            {[1, 2].map((s) => (
-              <div
-                key={s}
-                className={`h-1.5 rounded-full transition-all ${
-                  s === step
-                    ? "w-8 bg-primary"
-                    : s < step
-                      ? "w-8 bg-primary/40"
-                      : "w-8 bg-muted"
+      {/* Guide bubble — the Guide asks the step's question. Mirrors the
+          empty-shelf welcome on the bookshelf so the experience reads as
+          one continuous conversation with the Guide. */}
+      <div className="mb-6 flex items-start gap-3">
+        <div className="flex-shrink-0 mt-1">
+          <GuideAvatar size={36} />
+        </div>
+        <div
+          className="bg-card border border-border px-4 py-3 text-sm leading-relaxed text-muted-foreground max-w-sm"
+          style={{ borderRadius: "2px 16px 16px 16px" }}
+        >
+          <p>{guideQuestion}</p>
+        </div>
+      </div>
+
+      {/* Step 1: Length selection. Tapping a length auto-advances to step 2. */}
+      {step === 1 && (
+        <div className="grid grid-cols-2 gap-3">
+          {STORY_LENGTHS.map((l) => {
+            const isSelected = storyLength === l.id;
+            return (
+              <button
+                key={l.id}
+                onClick={() => {
+                  setStoryLength(l.id);
+                  analytics.trackEvent("story_length_selected", { storyLength: l.id, pages: l.pages });
+                  setTimeout(() => setStep(2), 300);
+                }}
+                className={`p-4 rounded-lg border-2 transition-all text-center ${
+                  isSelected
+                    ? "border-primary bg-primary/5 shadow-sm"
+                    : "border-border hover:border-primary/40 hover:bg-muted/50"
                 }`}
-              />
-            ))}
-          </div>
-        </CardHeader>
+                style={{ minHeight: 44 }}
+              >
+                <p className="font-bold text-2xl text-primary">{l.pages}</p>
+                <p className="text-xs text-muted-foreground">pages</p>
+                <p className="font-semibold text-sm mt-2">{l.label}</p>
+                <p className="text-xs text-muted-foreground mt-1">{l.time}</p>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
-        <CardContent className="space-y-6 pt-4">
-          {/* Step 1: Story Length */}
-          {step === 1 && (
-            <div className="grid grid-cols-2 gap-3">
-              {STORY_LENGTHS.map((l) => {
-                const isSelected = storyLength === l.id;
-                return (
-                  <button
-                    key={l.id}
-                    onClick={() => {
-                      setStoryLength(l.id);
-                      analytics.trackEvent("story_length_selected", { storyLength: l.id, pages: l.pages });
-                      setTimeout(() => setStep(2), 300);
-                    }}
-                    className={`p-4 rounded-lg border-2 transition-all text-center ${
-                      isSelected
-                        ? "border-primary bg-primary/5 shadow-sm"
-                        : "border-border hover:border-primary/40 hover:bg-muted/50"
-                    }`}
-                  >
-                    <p className="font-bold text-2xl text-primary">
-                      {l.pages}
-                    </p>
-                    <p className="text-xs text-muted-foreground">pages</p>
-                    <p className="font-semibold text-sm mt-2">{l.label}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {l.time}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
+      {/* Step 2: Character description + Surprise me + Begin Story */}
+      {step === 2 && (
+        <div className="space-y-4">
+          {selectedLength && (
+            <p className="text-xs text-muted-foreground">
+              {selectedLength.pages} pages ({selectedLength.label}).{" "}
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="underline hover:text-foreground transition-colors"
+              >
+                Change length
+              </button>
+            </p>
           )}
 
-          {/* Step 2: Character Description */}
-          {step === 2 && (
-            <div className="space-y-4">
-              {/* Show selected length */}
-              {selectedLength && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <span>
-                    {selectedLength.pages} pages ({selectedLength.label})
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => setStep(1)}
-                  >
-                    Change
-                  </Button>
-                </div>
-              )}
+          <Textarea
+            id="character-desc"
+            placeholder="e.g., A curious inventor who discovers a hidden door in their workshop that leads somewhere impossible..."
+            value={characterDescription}
+            onChange={(e) => setCharacterDescription(e.target.value)}
+            className="text-base min-h-[140px] resize-none"
+            maxLength={1000}
+          />
 
-              <div className="space-y-2">
-                <div className="flex items-center gap-1.5">
-                  <Label
-                    htmlFor="character-desc"
-                    className="text-base font-semibold"
-                  >
-                    Your Character
-                  </Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <button
-                        type="button"
-                        className="text-muted-foreground hover:text-foreground transition-colors"
-                        aria-label="More info"
-                      >
-                        <Info className="w-4 h-4" />
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent className="text-sm text-muted-foreground leading-relaxed" side="top" align="start">
-                      The Guide will craft your story around this character. The more detail you give, the richer your experience will be.
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                <Textarea
-                  id="character-desc"
-                  placeholder="e.g., A curious inventor who discovers a hidden door in their workshop that leads somewhere impossible..."
-                  value={characterDescription}
-                  onChange={(e) => setCharacterDescription(e.target.value)}
-                  className="text-base min-h-[140px] resize-none"
-                  maxLength={1000}
-                />
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs"
-                    disabled={isSurprising || isLoading}
-                    onClick={async () => {
-                      analytics.trackEvent("surprise_me_clicked");
-                      setIsSurprising(true);
-                      try {
-                        const response = await apiRequest("POST", "/api/story/surprise-me", {});
-                        const data = await response.json();
-                        if (data.success && data.description) {
-                          setCharacterDescription(data.description);
-                        }
-                      } catch {
-                        // Silently fail — user can try again or type manually
-                      } finally {
-                        setIsSurprising(false);
-                      }
-                    }}
-                  >
-                    {isSurprising ? (
-                      <>
-                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                        Thinking...
-                      </>
-                    ) : (
-                      "Surprise me"
-                    )}
-                  </Button>
-                  <span
-                    className={
-                      characterDescription.length > 900 ? "text-amber-500" : ""
-                    }
-                  >
-                    {characterDescription.length}/1000
-                  </span>
-                </div>
-              </div>
-
-            </div>
-          )}
-
-          {/* Action Buttons */}
-          <div className="flex gap-3 pt-2">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
             <Button
               variant="outline"
-              onClick={() => {
-                if (step > 1) {
-                  setStep(1);
-                } else {
-                  onBack();
+              size="sm"
+              className="h-7 text-xs"
+              disabled={isSurprising || isLoading}
+              onClick={async () => {
+                analytics.trackEvent("surprise_me_clicked");
+                setIsSurprising(true);
+                try {
+                  const response = await apiRequest("POST", "/api/story/surprise-me", {});
+                  const data = await response.json();
+                  if (data.success && data.description) {
+                    setCharacterDescription(data.description);
+                  }
+                } catch {
+                  // Silently fail — user can try again or type manually
+                } finally {
+                  setIsSurprising(false);
                 }
               }}
-              className="flex items-center gap-2"
-              disabled={isLoading}
             >
-              <ArrowLeft className="w-4 h-4" />
-              Back
+              {isSurprising ? (
+                <>
+                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                  Thinking...
+                </>
+              ) : (
+                "Surprise me"
+              )}
             </Button>
-
-            {step === 2 && (
-              <Button
-                onClick={handleSubmit}
-                disabled={!isValid || isLoading}
-                className="flex-1 py-6 text-base font-semibold"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Starting your story...
-                  </>
-                ) : (
-                  "Begin Story"
-                )}
-              </Button>
-            )}
+            <span
+              className={
+                characterDescription.length > 900 ? "text-amber-500" : ""
+              }
+            >
+              {characterDescription.length}/1000
+            </span>
           </div>
-        </CardContent>
-      </Card>
+
+          <Button
+            onClick={handleSubmit}
+            disabled={!isValid || isLoading}
+            className="w-full py-6 text-base font-semibold"
+            style={{ minHeight: 44 }}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Starting your story...
+              </>
+            ) : (
+              "Begin Story"
+            )}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -759,74 +759,78 @@ export default function Bookshelf({
         </div>
       )}
 
-      {/* Start a new story — always visible when stories exist */}
-      {stories.length > 0 && (
+      {/* Decorative "+" book spine — shown when stories exist on other
+          shelves (completed/archived) but no active story to put a spine
+          next to. Pure visual scaffolding so the wooden shelf isn't empty. */}
+      {stories.length > 0 && activeStories.length === 0 && (
         <div className="mb-2">
-          {/* Show standalone shelf with + spine only when no active stories (active shelf already has one) */}
-          {activeStories.length === 0 && (
-            <div className="relative">
-              <div className="flex items-start gap-4 px-3 pb-3 pt-1">
-                <BookSpine isNew onClick={() => onNewStory()} />
-              </div>
-              <WoodenShelf />
+          <div className="relative">
+            <div className="flex items-start gap-4 px-3 pb-3 pt-1">
+              <BookSpine isNew onClick={() => onNewStory()} />
             </div>
-          )}
-          <button
-            onClick={() => onNewStory()}
-            className="w-full mt-4 bg-primary text-primary-foreground rounded-lg p-4 font-semibold text-base flex items-center justify-center hover:opacity-90 transition-opacity active:scale-[0.98]"
-          >
-            Start a New Story
-          </button>
-
-          {/* Collapsible inspiration prompts. Lives here (not the empty-state
-              hero) so a returning reader with a full shelf can still grab a
-              spark without scrolling away from their library. Sparks are
-              picked at mount and can be reshuffled in-place via the refresh
-              icon — mirrors the in-story regenerate affordance. */}
-          <div className="mt-2">
-            <button
-              type="button"
-              onClick={() => setShowSparks((s) => !s)}
-              className="w-full flex items-center justify-center gap-1.5 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              style={{ minHeight: 44 }}
-              aria-expanded={showSparks}
-            >
-              <span>Need a spark?</span>
-              <ChevronDown
-                className="w-3.5 h-3.5 transition-transform duration-200"
-                style={{ transform: showSparks ? "rotate(180deg)" : "rotate(0deg)" }}
-              />
-            </button>
-            {showSparks && (
-              <>
-                <div className="flex items-center justify-end -mt-1 mb-1">
-                  <button
-                    type="button"
-                    onClick={reshuffleSparks}
-                    className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors"
-                    aria-label="Show different sparks"
-                    title="Show different sparks"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  {sparks.map((example, i) => (
-                    <button
-                      key={`${example}-${i}`}
-                      onClick={() => onNewStory(example)}
-                      className="w-full text-left bg-card border border-border rounded-lg p-3 text-sm text-foreground/90 leading-relaxed hover:bg-accent/10 hover:border-primary/40 transition-colors active:scale-[0.98]"
-                      style={{ minHeight: 44 }}
-                    >
-                      {example}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
+            <WoodenShelf />
           </div>
         </div>
       )}
+
+      {/* Start a New Story — primary CTA, ALWAYS rendered. Sits between
+          active reading and the historical shelves on a populated bookshelf;
+          on an empty shelf it's the user's main action immediately below
+          the Guide bubble. */}
+      <button
+        onClick={() => onNewStory()}
+        className="w-full mt-2 bg-primary text-primary-foreground rounded-lg p-4 font-semibold text-base flex items-center justify-center hover:opacity-90 transition-opacity active:scale-[0.98]"
+        style={{ minHeight: 44 }}
+      >
+        Start a New Story
+      </button>
+
+      {/* Collapsible inspiration prompts. Default closed in every state so
+          the bookshelf isn't dominated by suggestion text. Used to be split
+          (always-visible on empty shelf, collapsed on populated); now
+          universally rendered + universally collapsed-by-default. */}
+      <div className="mt-2 mb-2">
+        <button
+          type="button"
+          onClick={() => setShowSparks((s) => !s)}
+          className="w-full flex items-center justify-center gap-1.5 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          style={{ minHeight: 44 }}
+          aria-expanded={showSparks}
+        >
+          <span>Need a spark?</span>
+          <ChevronDown
+            className="w-3.5 h-3.5 transition-transform duration-200"
+            style={{ transform: showSparks ? "rotate(180deg)" : "rotate(0deg)" }}
+          />
+        </button>
+        {showSparks && (
+          <>
+            <div className="flex items-center justify-end -mt-1 mb-1">
+              <button
+                type="button"
+                onClick={reshuffleSparks}
+                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors"
+                aria-label="Show different sparks"
+                title="Show different sparks"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-2">
+              {sparks.map((example, i) => (
+                <button
+                  key={`${example}-${i}`}
+                  onClick={() => onNewStory(example)}
+                  className="w-full text-left bg-card border border-border rounded-lg p-3 text-sm text-foreground/90 leading-relaxed hover:bg-accent/10 hover:border-primary/40 transition-colors active:scale-[0.98]"
+                  style={{ minHeight: 44 }}
+                >
+                  {example}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Completed shelf */}
       {completedStories.length > 0 && (
@@ -910,52 +914,8 @@ export default function Bookshelf({
         </div>
       )}
 
-      {/* First-visit hero — only when the shelf is completely empty. The
-          welcome + "what this is" + 3-step explainer now live inside the
-          Guide bubble above, so this section is just the spark prompts and
-          the manual start CTA. */}
-      {stories.length === 0 && (
-        <div className="mt-4 space-y-6">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2 px-2">
-              <p className="text-xs uppercase tracking-wider text-muted-foreground/70">
-                Need a spark? Tap one to start.
-              </p>
-              <button
-                type="button"
-                onClick={reshuffleSparks}
-                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors"
-                aria-label="Show different sparks"
-                title="Show different sparks"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="space-y-2">
-              {sparks.map((example, i) => (
-                <button
-                  key={`${example}-${i}`}
-                  onClick={() => onNewStory(example)}
-                  className="w-full text-left bg-card border border-border rounded-lg p-3 text-sm text-foreground/90 leading-relaxed hover:bg-accent/10 hover:border-primary/40 transition-colors active:scale-[0.98]"
-                  style={{ minHeight: 44 }}
-                >
-                  {example}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <button
-            onClick={() => onNewStory()}
-            className="w-full bg-primary text-primary-foreground rounded-lg p-4 font-semibold text-base flex items-center justify-center hover:opacity-90 transition-opacity active:scale-[0.98]"
-          >
-            Start from scratch
-          </button>
-        </div>
-      )}
-
       {/* Version */}
-      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.5.1</p>
+      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.6.0</p>
 
       {/* Delete-story confirmation. Soft delete with a 30-day server-side
           grace period — copy makes the recovery window explicit so a reader

@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.5.1**. Pre-launch audit Phases 1–5 (security, brand/domain, reliability, polish, cleanup) shipped 2026-05-11. AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, and typography wiring shipped 2026-05-12 (v1.2.x). **Concurrency hardening + UI polish** (Postgres-backed chat lock + rate limiter, `messages.created_at`, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool, drawer/footer spacing fixes) shipped 2026-05-12 (v1.3.0). **Current in-flight milestone:** Milestone 6 (Guide chatbot on bookshelf) — foundation components exist (`GuideConfirmDialog`, `GuideStoryCard`), chat UI + intent matcher + `POST /api/guide/chat` endpoint still TODO. **Completed:** Milestones 1–5 (Foundation, AI Memory, Page Structure pivot, Pacing, Polish + UX Overhaul) plus the Pre-launch Audit and the v1.3.0 concurrency/UI pass.
+> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.6.0**. Pre-launch audit Phases 1–5 (security, brand/domain, reliability, polish, cleanup) shipped 2026-05-11. AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, and typography wiring shipped 2026-05-12 (v1.2.x). **Concurrency hardening + UI polish** (Postgres-backed chat lock + rate limiter, `messages.created_at`, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool, drawer/footer spacing fixes) shipped 2026-05-12 (v1.3.0). **Current in-flight milestone:** Milestone 6 (Guide chatbot on bookshelf) — foundation components exist (`GuideConfirmDialog`, `GuideStoryCard`), chat UI + intent matcher + `POST /api/guide/chat` endpoint still TODO. **Completed:** Milestones 1–5 (Foundation, AI Memory, Page Structure pivot, Pacing, Polish + UX Overhaul) plus the Pre-launch Audit and the v1.3.0 concurrency/UI pass.
 >
 > *Last updated: 2026-05-12 · Maintenance rule at the bottom.*
 
@@ -113,6 +113,18 @@ Each canned response flows through a `GuideConfirmDialog` for confirmation befor
 ---
 
 ## Completed Milestones
+
+### Guide-chat wizard + universal sparks + in-story header + simplified titles (2026-05-13) — v1.6.0 ✅
+
+Five surface changes pulling the new-story wizard, the bookshelf, and the in-story header into a more cohesive "the Guide is always the one talking" pattern, plus a long-needed fix to AI-generated title quality.
+
+**Guide-chat wizard:** Both steps of `NewStoryCreation.tsx` now use the same `GuideAvatar` + chat bubble visual that the empty-shelf hero uses. Step 1's question ("How long should your story be?") and Step 2's question ("Describe who you are in this story.") are both spoken *by the Guide*, in a bubble with the Guide's avatar to the left. The previous Card-with-CardTitle layout is gone — the wizard now matches the bookshelf's open layout. Step indicator replaced with a "Step X of 2" caption next to the back arrow. Info popover on Step 2 removed since the Guide bubble is the question.
+
+**Universal collapsible sparks:** `Bookshelf.tsx` previously had two spark surfaces — an always-visible "Need a spark? Tap one to start." block in the first-visit hero, and a collapsible "Need a spark?" toggle on populated shelves. The first-visit hero block is deleted; the collapsible is now the only spark surface and renders universally regardless of whether stories exist. Default state: closed in all states. "Start a New Story" button also lifted out of its `stories.length > 0` conditional and now renders universally as the primary CTA right after the Guide bubble.
+
+**In-story header redesign:** `ChatInterface.tsx` top bar was a fixed `h-12` flex with "Story Mode" (left) + "Page X of Y" (center) + avatar (right). Replaced with a `grid-cols-[44px_1fr_44px]` layout: 44px spacer on the left (mirrors the avatar's footprint to keep the title centered), centered title block, avatar dropdown on the right. Title renders as `${storyTitle || "Story Mode"} (currentPage/totalPages)` with page count in muted color inline. Title is two-line capable via `break-words leading-snug`, no truncation, centered both lines. Header height is now content-sized (~48px for short titles, taller for long 2-line titles) instead of fixed.
+
+**Simplified AI title generation:** The title prompt in `server/routes.ts` (the `/api/story/new` first-page generation) previously asked for "a short, evocative title (2-5 words). Make it atmospheric and unique, not generic." This consistently produced purple titles like "Whispers of the Familiar" / "The Last Awakening." Rewritten to demand 1–3 words, concrete noun phrase, with explicit good examples ("The Glass Suitcase", "Talking Cat", "The Vault Door") and explicit anti-patterns ("Whispers of...", "Echoes of...", "Beneath the X"). "Direct beats evocative every time."
 
 ### Admin polish + welcome copy (2026-05-13) — v1.5.1 ✅
 

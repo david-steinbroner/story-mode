@@ -431,17 +431,28 @@ ${JSON.stringify(debugInfo, null, 2)}
 
   return (
     <div className={`h-full min-h-0 flex flex-col relative ${className}`} data-testid="chat-interface">
-      {/* Fixed top nav bar — sits outside the scroll container */}
+      {/* Fixed top nav bar — sits outside the scroll container. Title is
+          centered, two-line capable, no truncation. Pages display as
+          (currentPage/totalPages) in parens inline with the title. Avatar
+          dropdown is anchored right; a fixed-width spacer on the left keeps
+          the title centered without a back button there (back-to-library
+          lives in the avatar menu). */}
       <div className="z-30 border-b border-border shrink-0" style={{ backgroundColor: '#FFF9F0' }}>
-        <div className="flex items-center justify-between h-12 px-3">
-          <span className="font-bold text-sm text-primary">Story Mode</span>
-          <span className="text-xs text-muted-foreground">
-            {gameState?.totalPages && gameState.totalPages > 0
-              ? gameState.storyComplete
-                ? "Complete"
-                : `Page ${gameState.currentPage || 1} of ${gameState.totalPages}`
-              : ""}
-          </span>
+        <div className="grid items-center gap-2 px-3 py-2" style={{ gridTemplateColumns: "44px 1fr 44px", minHeight: 48 }}>
+          {/* Left spacer mirrors the avatar's footprint so the centered
+              title stays centered on the viewport. */}
+          <div aria-hidden />
+          <h1 className="text-center text-sm font-semibold text-foreground leading-snug break-words">
+            <span>{gameState?.storyTitle || "Story Mode"}</span>
+            {gameState?.totalPages && gameState.totalPages > 0 && (
+              <span className="text-muted-foreground font-normal">
+                {" "}
+                {gameState.storyComplete
+                  ? "(Complete)"
+                  : `(${gameState.currentPage || 1}/${gameState.totalPages})`}
+              </span>
+            )}
+          </h1>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="focus:outline-none flex items-center justify-center" style={{ minHeight: 44, minWidth: 44 }}>
