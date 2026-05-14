@@ -88,7 +88,7 @@ Sized for "step away for an hour, come back and chew on this" — each chunk is 
 
 **Goal:** Stop trusting the model to follow the rules. Detect violations in the output and retry, the same way we strip em-dashes today. Plus a new detector that addresses a subtler failure mode surfaced during Chunk A testing: **orbital choices** where 3 options are different actions on the same object (e.g. "shake the box / pry the box / put it back") — technically distinct verbs, semantically the same dilemma.
 
-**What shipped:** All 4 detectors live in `server/aiValidators.ts`. Wired into `server/aiService.ts.generateResponse` — Story Momentum runs before the AI call (injects directive); the other 3 run after parse + em-dash strip and trigger one retry on violation. All violations log to `event_log` as `ai_quality_violation`. New admin section at `/admin?admin=1` surfaces 24h counts + rates. Story Momentum detector got a Path A patch (synonym canonicalization via `STALL_PATTERNS`) after initial testing showed the token-overlap heuristic missed "keep working / continue silently / ignore him" stalls. Known band-aid; the real fix is Chunk D's narrative-state tracking.
+**What shipped:** All 4 detectors live in `server/aiValidators.ts`. Wired into `server/aiService.ts.generateResponse` — Story Momentum runs before the AI call (injects directive); the other 3 run after parse + em-dash strip and trigger one retry on violation. All violations log to `event_log` as `ai_quality_violation`. New admin section at `/admin` surfaces 24h counts + rates. Story Momentum detector got a Path A patch (synonym canonicalization via `STALL_PATTERNS`) after initial testing showed the token-overlap heuristic missed "keep working / continue silently / ignore him" stalls. Known band-aid; the real fix is Chunk D's narrative-state tracking.
 
 **Four heuristic detectors (no extra AI calls in v1 — keeps cost down):**
 
@@ -104,7 +104,7 @@ Sized for "step away for an hour, come back and chew on this" — each chunk is 
 
 **Retry mechanism.** Extends the existing em-dash retry path in `server/aiService.ts`. Max 1 retry per detector to avoid runaway cost. Story Momentum is the exception — it doesn't trigger retry, just injects the directive for the next call.
 
-**Telemetry.** Per-response `aiQualityViolations: { stallDetected, fakeChoices, finalPageBroken, momentumPressureFired, emdashesStripped }`. Logged to `eventLog`. New section on the admin dashboard (`/admin?admin=1`) surfacing rolling violation rates and rates over time so we can see whether Chunk A's prompt changes actually reduced violations.
+**Telemetry.** Per-response `aiQualityViolations: { stallDetected, fakeChoices, finalPageBroken, momentumPressureFired, emdashesStripped }`. Logged to `eventLog`. New section on the admin dashboard (`/admin`) surfacing rolling violation rates and rates over time so we can see whether Chunk A's prompt changes actually reduced violations.
 
 **Files:**
 - `server/aiValidators.ts` — new file. The 4 detector functions.
@@ -224,7 +224,7 @@ If we ship Chunks A+B+C and the stories feel substantially better, Chunk D may n
 1. **No Sonnet upgrade as default.** Sonnet is ~3.75× Haiku cost (~$0.28/story vs ~$0.075). Would blow up dev iteration cost ($2.80/test story) and drop the daily cap from ~133 to ~36 short stories. **But:** a 2-cell comparison (Sonnet + old prompt, Sonnet + new prompt) will run as a small follow-up PR after Chunk A ships. ~$1.68 one-time testing cost. Production decision (ship Sonnet for all / paid-tier only / length-gated / revert) follows the data.
 2. **Skip-choice escape hatch deferred.** Real UI design work + conflict with current "choices mandatory" invariant. Revisit after Chunks A+B; may be unnecessary if existing-rule enforcement makes false choices stop on its own.
 3. **Entity tracking schema (Chunk D):** JSONB column on `game_state`, with a JSON shape designed to migrate to a normalized cross-story characters table later. See Chunk D's "Cross-Story Migration Path" subsection.
-4. **Telemetry surfacing:** extend the existing admin dashboard (`/admin?admin=1`). New section for rule-violation metrics.
+4. **Telemetry surfacing:** extend the existing admin dashboard (`/admin`). New section for rule-violation metrics.
 5. **Chunk A first.** Restructure the prompt → ship → then the Sonnet env flag + 2-cell comparison → then Chunk B (validate + retry) → then Chunk C (prose tells) → then Chunk D (entity tracking).
 
 ## Cost impact (locked decisions, on Haiku)

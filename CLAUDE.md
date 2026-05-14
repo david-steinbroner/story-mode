@@ -166,7 +166,9 @@ Most recently shipped + what's queued → `docs/MILESTONES.md` TL;DR and `docs/R
 | `client/src/lib/queryClient.ts` | API helpers. Adds `x-session-id` and `x-story-id` headers. |
 | `client/src/lib/posthog.ts` | Client analytics. Event taxonomy is intentional — don't reorganize. |
 | `client/src/lib/sentry.ts` / `server/sentry.ts` | Error tracking config — don't modify without explicit ask. |
-| `client/src/components/AdminDashboard.tsx` | Internal admin UI at `/admin?admin=1`. Gated by query string + ADMIN_KEY. |
+| `server/adminAuth.ts` | **Single seam for all admin auth.** Exports `verifyAdminCredentials(key, totp)`. Today: env-var backed (`ADMIN_KEY` + `ADMIN_TOTP_SECRET`). Top-of-file comment documents the migration path to DB-backed multi-admin — touch THIS file, not the middleware in `routes.ts`. |
+| `client/src/components/AdminDashboard.tsx` | Internal admin UI at `/admin`. Gated by ADMIN_KEY + 2FA (TOTP). Login form takes a long secret key + a 6-digit code from any TOTP app (1Password etc.). |
+| `scripts/gen-admin-totp.ts` | One-time / rotation tool. `tsx scripts/gen-admin-totp.ts` generates a fresh TOTP secret + prints a scannable QR for 1Password and the base32 secret to paste into Render's `ADMIN_TOTP_SECRET` env. |
 | `.env.example` | All required env vars. Sync with code when adding new ones. |
 
 The `client/src/components/ui/` folder is shadcn primitives. Update via `npx shadcn add`, don't hand-edit.

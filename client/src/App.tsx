@@ -348,12 +348,7 @@ function GameApp() {
 }
 
 function App() {
-  // /admin is gated behind ?admin=1 so the route doesn't show up to a curious
-  // user who guesses the path. The Express admin endpoints behind it still
-  // require the ADMIN_KEY, but this hides the dashboard chrome entirely.
-  const isAdminRoute =
-    window.location.pathname === "/admin" &&
-    new URLSearchParams(window.location.search).get("admin") === "1";
+  const isAdminRoute = window.location.pathname === "/admin";
 
   if (isAdminRoute) {
     return <AdminDashboard />;

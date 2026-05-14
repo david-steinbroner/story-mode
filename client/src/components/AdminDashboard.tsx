@@ -59,6 +59,10 @@ interface RecentActivity {
 
 export default function AdminDashboard() {
   const [adminKey, setAdminKey] = useState("");
+  // 6-digit TOTP code from the admin's authenticator app (1Password, etc.).
+  // Sent on every admin request via the x-admin-totp header alongside the
+  // key. Verified server-side in server/adminAuth.ts.
+  const [totpCode, setTotpCode] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [spendStats, setSpendStats] = useState<SpendStats | null>(null);
   const [sessionStats, setSessionStats] = useState<SessionStats | null>(null);
@@ -69,34 +73,54 @@ export default function AdminDashboard() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const fetchStats = useCallback(async () => {
-    if (!adminKey) return;
+    if (!adminKey || !totpCode) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      const headers = { "x-admin-key": adminKey };
+      const headers = {
+        "x-admin-key": adminKey,
+        "x-admin-totp": totpCode.replace(/\s+/g, ""),
+      };
 
-      const [spendRes, sessionRes, qualityRes, activityRes] = await Promise.all([
+      const responses = await Promise.all([
         fetch("/api/admin/spend", { headers }),
         fetch("/api/admin/sessions", { headers }),
         fetch("/api/admin/ai-quality", { headers }),
         fetch("/api/admin/recent-activity", { headers }),
       ]);
+      const [spendRes, sessionRes, qualityRes, activityRes] = responses;
 
-      if (
-        spendRes.status === 401 ||
-        sessionRes.status === 401 ||
-        qualityRes.status === 401 ||
-        activityRes.status === 401
-      ) {
-        setError("Invalid admin key");
+      // 401 on any response = wrong key or wrong TOTP (server collapses both
+      // so the response doesn't leak which factor failed). Reset auth so the
+      // login screen reappears instead of leaving them on a half-loaded dash.
+      if (responses.some((r) => r.status === 401)) {
+        setError("Invalid credentials");
         setIsAuthenticated(false);
+        // Clear the TOTP code so a stale 6-digit doesn't sit in the field
+        // after its 30s window has expired. The key is usually right; the
+        // TOTP is what most often needs re-entering.
+        setTotpCode("");
         return;
       }
 
-      if (!spendRes.ok || !sessionRes.ok || !qualityRes.ok || !activityRes.ok) {
-        throw new Error("Failed to fetch stats");
+      // Any other non-OK: surface the server's actual error text. The admin
+      // endpoints return JSON like { error: "..." } — fall back to status text
+      // if the body isn't parseable (e.g. an HTML error page from a proxy).
+      const firstBad = responses.find((r) => !r.ok);
+      if (firstBad) {
+        let serverMessage = `Server error (${firstBad.status})`;
+        try {
+          const body = await firstBad.clone().json();
+          if (body && typeof body.error === "string" && body.error.trim()) {
+            serverMessage = body.error;
+          }
+        } catch {
+          // body wasn't JSON; keep the status-based fallback
+        }
+        setError(serverMessage);
+        return;
       }
 
       const [spend, sessions, quality, activity] = await Promise.all([
@@ -113,11 +137,17 @@ export default function AdminDashboard() {
       setIsAuthenticated(true);
       setLastUpdated(new Date());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      // fetch() throws on network failure (DNS, offline, CORS preflight reject).
+      // A JSON parse failure on a successful response would also land here but
+      // is much less likely than "the server didn't answer at all".
+      const isNetworkError =
+        err instanceof TypeError ||
+        (err instanceof Error && err.message.toLowerCase().includes("fetch"));
+      setError(isNetworkError ? "Couldn't reach the server" : err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
     }
-  }, [adminKey]);
+  }, [adminKey, totpCode]);
 
   // Auto-refresh every 30 seconds
   useEffect(() => {
@@ -161,12 +191,27 @@ export default function AdminDashboard() {
               placeholder="Enter admin key"
               autoFocus
             />
+            <label className="block text-sm font-medium mb-2" style={{ color: "#5C5470" }}>
+              2FA Code
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern="[0-9]*"
+              maxLength={7}
+              value={totpCode}
+              onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              className="w-full px-3 py-2 border rounded-md mb-4 focus:outline-none focus:ring-2 tracking-[0.5em] text-center font-mono"
+              style={{ borderColor: "#DBD8E3", color: "#5C5470", fontSize: "20px" }}
+              placeholder="123456"
+            />
             {error && (
               <p className="text-red-500 text-sm mb-4">{error}</p>
             )}
             <button
               type="submit"
-              disabled={loading || !adminKey}
+              disabled={loading || !adminKey || totpCode.length !== 6}
               className="w-full py-2 px-4 rounded-md font-medium transition-colors disabled:opacity-50"
               style={{ backgroundColor: "#5C5470", color: "white" }}
             >

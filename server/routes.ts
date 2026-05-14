@@ -1,6 +1,7 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
-import { randomUUID, timingSafeEqual } from "crypto";
+import { randomUUID } from "crypto";
+import { verifyAdminCredentials } from "./adminAuth";
 import { storage } from "./storage";
 import {
   insertCharacterSchema,
@@ -1110,27 +1111,28 @@ Return ONLY the character description. No preamble, no quotes.`,
   // Admin API endpoints (protected by ADMIN_KEY)
   // ============================================
 
+  // Thin pass-through to the verification service in `server/adminAuth.ts`.
+  // All credential logic — env-var reads, timing-safe compare, TOTP verify —
+  // lives there, so the future multi-admin DB migration is a one-file change.
   const adminAuth = (req: Request, res: any, next: any) => {
-    const adminKey = req.headers['x-admin-key'];
-    const expectedKey = process.env.ADMIN_KEY;
+    const key = req.headers['x-admin-key'];
+    const totp = req.headers['x-admin-totp'];
+    const result = verifyAdminCredentials(
+      typeof key === 'string' ? key : undefined,
+      typeof totp === 'string' ? totp : undefined,
+    );
 
-    if (!expectedKey) {
-      console.warn('[Admin] ADMIN_KEY not configured in environment');
-      return res.status(503).json({ error: 'Admin API not configured' });
+    if (result.ok) {
+      return next();
     }
 
-    // Compare in constant time so an attacker can't infer the key from response timing.
-    // Length-mismatched keys short-circuit; only equal-length buffers reach timingSafeEqual.
-    if (typeof adminKey !== 'string' || adminKey.length !== expectedKey.length) {
-      return res.status(401).json({ error: 'Invalid admin key' });
-    }
-    const provided = Buffer.from(adminKey);
-    const expected = Buffer.from(expectedKey);
-    if (!timingSafeEqual(provided, expected)) {
-      return res.status(401).json({ error: 'Invalid admin key' });
+    if (result.reason === 'not-configured') {
+      console.warn('[Admin] ADMIN_KEY or ADMIN_TOTP_SECRET not configured in environment');
+      return res.status(503).json({ error: 'Admin auth not configured on server' });
     }
 
-    next();
+    // Collapsed message so the response doesn't leak which factor failed.
+    return res.status(401).json({ error: 'Invalid credentials' });
   };
 
   // GET /api/admin/spend - Return spend metrics
