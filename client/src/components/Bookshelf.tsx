@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Plus, Check, CheckCircle, Archive, ArchiveRestore, Minus, Settings, Mail, MoreVertical, Trash2, ChevronDown, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -495,6 +495,25 @@ export default function Bookshelf({
   // AlertDialog pattern used in ChatInterface (End Story / Regenerate).
   const [storyToDelete, setStoryToDelete] = useState<{ id: string; title: string } | null>(null);
 
+  // "Welcome back." gate: prepended to the Guide greeting only when 12+
+  // hours have passed since we last greeted this user. Rolling window —
+  // anchored to the last time we said it (not to last visit), so users
+  // who check back every few hours don't see "welcome back" repeatedly.
+  // Stored in localStorage so it persists across sessions and tabs.
+  const WELCOME_BACK_GAP_MS = 12 * 60 * 60 * 1000;
+  const [showWelcomeBack] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const last = parseInt(localStorage.getItem("lastWelcomeAt") || "0", 10);
+    return Date.now() - last > WELCOME_BACK_GAP_MS;
+  });
+  useEffect(() => {
+    // Only mark "shown" when we actually rendered the welcome-back prefix
+    // (state 1 has its own welcome pitch and doesn't use the prefix).
+    if (showWelcomeBack && stories.length > 0) {
+      localStorage.setItem("lastWelcomeAt", Date.now().toString());
+    }
+  }, [showWelcomeBack, stories.length]);
+
   // Funnel-tracking wrappers so every entry point into a story is logged once
   // at the source instead of sprinkled at six callsites.
   const onNewStory = useCallback((seedDescription?: string) => {
@@ -586,25 +605,134 @@ export default function Bookshelf({
   const completedStories = stories.filter(s => s.storyComplete && !s.storyArchived);
   const archivedStories = stories.filter(s => s.storyArchived);
 
-  // Guide greeting based on library state. For the empty-shelf case we
-  // return only the first welcome paragraph here; the rest of the empty-shelf
-  // copy (the "I'm your personal Guide..." paragraph + the 3-step list) is
-  // rendered inline in the bubble below so the formatting is structural.
+  // Guide greeting based on library state. Ten distinct states (see
+  // docs/ROADMAP.md v1.7.5 entry for the full taxonomy and voice notes).
+  // For the empty-shelf case we return only the first welcome paragraph
+  // here; the rest of the empty-shelf copy (the "I'm your personal Guide…"
+  // paragraph + the 3-step list) is rendered inline in the bubble below
+  // so the formatting is structural.
+  //
+  // Active-story states personalize on activeStories[0].storyTitle —
+  // the array is sorted most-recent first, which is the same source the
+  // Continue CTA uses below, so "you were last in X" matches.
+  //
+  // States 1 and 2 are indistinguishable today (we can't tell a true
+  // first visit from a returning user who deleted everything without a
+  // server-side recently-deleted endpoint). Both fall through to the
+  // first-visit pitch.
+  //
+  // Pluralization: word "one" for n=1, digit for n>=2. Reads warmer.
+  const wordify = (n: number) => (n === 1 ? "one" : String(n));
+  const storyWord = (n: number) => (n === 1 ? "story" : "stories");
+
+  // Length-tier-up suggestion for state 9. If every completed story is the
+  // same length AND that length isn't already epic, suggest the next tier
+  // up. Mixed-length history → no suggestion (reader has already varied).
+  const LENGTH_ORDER = ["short", "novella", "novel", "epic"] as const;
+  const LENGTH_LABELS: Record<string, [string, string]> = {
+    short: ["short story", "short stories"],
+    novella: ["novella", "novellas"],
+    novel: ["novel", "novels"],
+    epic: ["epic", "epics"],
+  };
+  const lengthLabel = (tier: string, n: number) => {
+    const labels = LENGTH_LABELS[tier];
+    if (!labels) return storyWord(n);
+    return n === 1 ? labels[0] : labels[1];
+  };
+  const articleFor = (s: string) => (/^[aeiou]/i.test(s) ? "an" : "a");
+  const suggestNextLength = (): string | null => {
+    if (completedStories.length === 0) return null;
+    const tiers = new Set(completedStories.map((s) => s.storyLength || ""));
+    if (tiers.size !== 1) return null;
+    const tier = Array.from(tiers)[0];
+    const idx = LENGTH_ORDER.indexOf(tier as (typeof LENGTH_ORDER)[number]);
+    if (idx < 0 || idx >= LENGTH_ORDER.length - 1) return null;
+    return LENGTH_ORDER[idx + 1];
+  };
+
+  const prefix = showWelcomeBack && stories.length > 0 ? "Welcome back. " : "";
+
   const getGreeting = () => {
+    // State 1 (and indistinguishable State 2): first visit / returning empty.
     if (stories.length === 0) {
       return "Welcome! This is Story Mode, a place where you can be the hero of any story that you can imagine.";
     }
-    if (activeStories.length > 0 && completedStories.length > 0) {
-      return `You have ${activeStories.length} story in progress and ${completedStories.length} finished. What next?`;
+
+    // State 3: empty active + completed, archive has stuff.
+    if (
+      activeStories.length === 0 &&
+      completedStories.length === 0 &&
+      archivedStories.length > 0
+    ) {
+      const n = archivedStories.length;
+      return `${prefix}Nothing on the go right now, but you've got ${wordify(n)} ${storyWord(n)} in the archive. Want to revisit one, or start something new?`;
     }
-    if (activeStories.length > 0) {
-      const story = activeStories[0];
-      const pct = (story.currentPage || 0) / (story.totalPages || 1);
-      if (pct < 0.3) return "Your story is just beginning. Shall we continue?";
-      if (pct < 0.7) return "Things are getting interesting... pick up where you left off?";
-      return "You're nearing the end. The climax awaits!";
+
+    const recentStory = activeStories[0];
+    const recentTitle = recentStory ? getStoryTitle(recentStory) : null;
+
+    // States 4–6: one active in-progress, no completed. Progress-aware.
+    if (activeStories.length === 1 && completedStories.length === 0 && recentTitle) {
+      const pct = (recentStory.currentPage || 0) / (recentStory.totalPages || 1);
+      if (pct < 0.3) {
+        return (
+          <>{prefix}<em>{recentTitle}</em> is just getting started. Want to jump back in, or start something new?</>
+        );
+      }
+      if (pct < 0.7) {
+        return (
+          <>{prefix}<em>{recentTitle}</em> is right in the thick of it. Jump back in, or start something new?</>
+        );
+      }
+      return (
+        <>{prefix}<em>{recentTitle}</em> is almost done. Want to see how it ends, or start something new?</>
+      );
     }
-    return `You've finished ${completedStories.length} ${completedStories.length === 1 ? "story" : "stories"}! Ready for your next adventure?`;
+
+    // State 7: multiple active in-progress, no completed.
+    if (activeStories.length >= 2 && completedStories.length === 0 && recentTitle) {
+      return (
+        <>{prefix}You've got {activeStories.length} ongoing stories. You were last in <em>{recentTitle}</em>. Want to jump back in, pick up another, or start something new?</>
+      );
+    }
+
+    // State 8a: one active + completed. Restructured to avoid the awkward
+    // "1 ongoing" phrasing — leads with the in-progress story instead.
+    if (activeStories.length === 1 && completedStories.length > 0 && recentTitle) {
+      const m = completedStories.length;
+      return (
+        <>{prefix}You're partway through <em>{recentTitle}</em>. You've also finished {wordify(m)} {storyWord(m)}. Jump back in, or start something new?</>
+      );
+    }
+
+    // State 8b: multiple active + completed. All three options apply.
+    if (activeStories.length >= 2 && completedStories.length > 0 && recentTitle) {
+      return (
+        <>{prefix}You've got {activeStories.length} ongoing and {completedStories.length} finished. You were last in <em>{recentTitle}</em>. Want to jump back in, pick up another, or start something new?</>
+      );
+    }
+
+    // State 10: no active, all completed + archive.
+    if (
+      activeStories.length === 0 &&
+      completedStories.length > 0 &&
+      archivedStories.length > 0
+    ) {
+      const n = completedStories.length;
+      const m = archivedStories.length;
+      return `${prefix}You've finished ${wordify(n)} ${storyWord(n)}, with ${wordify(m)} more in the archive. Want to start another, or revisit one?`;
+    }
+
+    // State 9 (default): no active, all completed, no archive. May surface
+    // a "try a [next tier]" suggestion when their history is single-tier.
+    const n = completedStories.length;
+    const nextLength = suggestNextLength();
+    if (nextLength) {
+      const tier = completedStories[0].storyLength || "";
+      return `${prefix}You've finished ${wordify(n)} ${lengthLabel(tier, n)}. Ready for another? Maybe try ${articleFor(nextLength)} ${nextLength} this time.`;
+    }
+    return `${prefix}You've finished ${wordify(n)} ${storyWord(n)}. Ready for another?`;
   };
 
   return (
@@ -672,18 +800,15 @@ export default function Bookshelf({
         </DropdownMenu>
       </div>
 
-      {/* Guide greeting. For a first-visit reader (empty shelf) the bubble
-          carries the full onboarding pitch — welcome, the "what this is"
-          line, and the 3-step explainer — so the Guide is the one voice
+      {/* Guide greeting. Avatar sits on its own line above the bubble,
+          both left-aligned — gives the bubble full horizontal room for
+          longer onboarding copy. Matches the in-story messenger layout
+          (v1.7.3). For a first-visit reader (empty shelf) the bubble
+          carries the full onboarding pitch so the Guide is the one voice
           doing the talking, not a hero block competing alongside her. */}
-      <div className="mb-6 flex items-start gap-3">
-        <div className="flex-shrink-0 mt-1">
-          <GuideAvatar size={36} />
-        </div>
-        <div
-          className="bg-card border border-border px-4 py-3 text-sm leading-relaxed text-muted-foreground max-w-sm"
-          style={{ borderRadius: "2px 16px 16px 16px" }}
-        >
+      <div className="mb-6 space-y-2">
+        <GuideAvatar size={36} />
+        <div className="bg-card border border-border rounded-2xl px-4 py-3 text-sm leading-relaxed text-muted-foreground">
           <p>{getGreeting()}</p>
           {stories.length === 0 && (
             <>
@@ -915,7 +1040,7 @@ export default function Bookshelf({
       )}
 
       {/* Version */}
-      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.7.2</p>
+      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.7.5</p>
 
       {/* Delete-story confirmation. Soft delete with a 30-day server-side
           grace period — copy makes the recovery window explicit so a reader

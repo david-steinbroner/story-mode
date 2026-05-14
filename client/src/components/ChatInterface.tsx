@@ -613,22 +613,21 @@ ${JSON.stringify(debugInfo, null, 2)}
                 const isLast = index === messages.length - 1;
                 const canRegenerate = isLast && !isPlayer && !isLoading && !gameState?.storyComplete;
 
-                // Messenger layout. AI messages: avatar + left-aligned bubble.
-                // Player messages: right-aligned bubble, no avatar (alignment
-                // is the directional cue). Both bubbles cap at ~82% width so
-                // the asymmetry reads at a glance even on tight phone widths.
-                // Timestamp + regenerate sit below the bubble, aligned to the
-                // bubble's edge — keeps the bubble itself uncluttered.
+                // Messenger layout. AI messages: avatar on its own line ABOVE
+                // a left-aligned bubble. Player messages: right-aligned bubble,
+                // no avatar (alignment is the directional cue). Avatar-on-top
+                // lets the bubble use more horizontal space — the prose is
+                // long-form so a wide bubble reads better than the narrow
+                // bubble we'd get with the avatar sharing a row. Timestamp +
+                // regenerate sit below the bubble for both.
                 return (
                   <div key={message.id} ref={isLast ? lastMessageRef : undefined} className="space-y-1">
-                    <div className={`flex items-start gap-2 ${isPlayer ? 'justify-end' : 'justify-start'}`}>
-                      {!isPlayer && (
-                        <div className="shrink-0 pt-1">
-                          <GuideAvatar size={28} animate={false} />
-                        </div>
-                      )}
+                    {!isPlayer && (
+                      <GuideAvatar size={28} animate={false} />
+                    )}
+                    <div className={`flex ${isPlayer ? 'justify-end' : 'justify-start'}`}>
                       <div
-                        className={`px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl overflow-hidden max-w-[82%] ${
+                        className={`px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl overflow-hidden max-w-[88%] ${
                           isPlayer ? 'bg-primary/10' : 'bg-muted/50'
                         }`}
                       >
@@ -643,11 +642,10 @@ ${JSON.stringify(debugInfo, null, 2)}
                       </div>
                     </div>
                     {/* Below-bubble meta row: timestamp + (regenerate on the
-                        last AI page). Indented under the bubble's left edge
-                        for AI (past the avatar), right-aligned for player. */}
+                        last AI page). Aligned to the bubble's side. */}
                     <div
                       className={`flex items-center gap-2 text-xs text-muted-foreground ${
-                        isPlayer ? 'justify-end' : 'justify-start ml-9'
+                        isPlayer ? 'justify-end' : 'justify-start'
                       }`}
                     >
                       <span>{message.timestamp}</span>
@@ -670,13 +668,13 @@ ${JSON.stringify(debugInfo, null, 2)}
             {/* AI Thinking Indicator. Mirrors the AI message layout so the
                 typing bubble sits exactly where the next reply will appear. */}
             {isLoading && (
-              <div className="flex items-start gap-2 justify-start">
-                <div className="shrink-0 pt-1">
-                  <GuideAvatar size={28} animate={false} />
-                </div>
-                <div className="flex items-center gap-2 px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl bg-muted/50 animate-pulse max-w-[82%]">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <p className="text-sm text-muted-foreground">Your Guide is thinking...</p>
+              <div className="space-y-1">
+                <GuideAvatar size={28} animate={false} />
+                <div className="flex justify-start">
+                  <div className="flex items-center gap-2 px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl bg-muted/50 animate-pulse max-w-[88%]">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <p className="text-sm text-muted-foreground">Your Guide is thinking...</p>
+                  </div>
                 </div>
               </div>
             )}

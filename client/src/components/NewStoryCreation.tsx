@@ -86,17 +86,13 @@ export default function NewStoryCreation({
         </div>
       </div>
 
-      {/* Guide bubble — the Guide asks the step's question. Mirrors the
-          empty-shelf welcome on the bookshelf so the experience reads as
+      {/* Guide bubble — the Guide asks the step's question. Avatar above,
+          bubble below, both left-aligned (v1.7.3). Mirrors the bookshelf
+          hero and the in-story messenger layout so the experience reads as
           one continuous conversation with the Guide. */}
-      <div className="mb-6 flex items-start gap-3">
-        <div className="flex-shrink-0 mt-1">
-          <GuideAvatar size={36} />
-        </div>
-        <div
-          className="bg-card border border-border px-4 py-3 text-sm leading-relaxed text-muted-foreground max-w-sm"
-          style={{ borderRadius: "2px 16px 16px 16px" }}
-        >
+      <div className="mb-6 space-y-2">
+        <GuideAvatar size={36} />
+        <div className="bg-card border border-border rounded-2xl px-4 py-3 text-sm leading-relaxed text-muted-foreground">
           <p>{guideQuestion}</p>
         </div>
       </div>
