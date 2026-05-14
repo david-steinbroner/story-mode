@@ -1170,6 +1170,32 @@ Return ONLY the character description. No preamble, no quotes.`,
     }
   });
 
+  // GET /api/admin/recent-activity - Last 20 event_log rows with full
+  // session_id + story_id so support can look up a user's story by ID and
+  // search Supabase directly. Returns event_type and properties too so the
+  // log gives quick context for what happened.
+  app.get("/api/admin/recent-activity", adminAuth, async (_req, res) => {
+    try {
+      const rows = await db
+        .select({
+          id: eventLogTable.id,
+          sessionId: eventLogTable.sessionId,
+          storyId: eventLogTable.storyId,
+          eventType: eventLogTable.eventType,
+          properties: eventLogTable.properties,
+          createdAt: eventLogTable.createdAt,
+        })
+        .from(eventLogTable)
+        .orderBy(drizzleSql`${eventLogTable.createdAt} DESC`)
+        .limit(20);
+
+      res.json({ events: rows });
+    } catch (error) {
+      console.error('Error fetching recent activity:', error);
+      res.status(500).json({ error: 'Failed to fetch recent activity' });
+    }
+  });
+
   // GET /api/admin/ai-quality - Rolling AI quality metrics (Chunk B).
   // Reads from event_log: counts page_turned events as the denominator and
   // ai_quality_violation events as the numerators. Window defaults to 24h.

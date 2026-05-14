@@ -586,10 +586,13 @@ export default function Bookshelf({
   const completedStories = stories.filter(s => s.storyComplete && !s.storyArchived);
   const archivedStories = stories.filter(s => s.storyArchived);
 
-  // Guide greeting based on library state
+  // Guide greeting based on library state. For the empty-shelf case we
+  // return only the first welcome paragraph here; the rest of the empty-shelf
+  // copy (the "I'm your personal Guide..." paragraph + the 3-step list) is
+  // rendered inline in the bubble below so the formatting is structural.
   const getGreeting = () => {
     if (stories.length === 0) {
-      return "Welcome! Your shelf is empty — shall we start your first story?";
+      return "Welcome! This is Story Mode, a place where you can be the hero of any story that you can imagine.";
     }
     if (activeStories.length > 0 && completedStories.length > 0) {
       return `You have ${activeStories.length} story in progress and ${completedStories.length} finished. What next?`;
@@ -684,13 +687,13 @@ export default function Bookshelf({
           <p>{getGreeting()}</p>
           {stories.length === 0 && (
             <>
-              <p className="mt-3 text-foreground">
-                Tell me about yourself. I'll write the story.
+              <p className="mt-3">
+                I'm your personal Guide. Tell me what story you want to be in and I'll write it for you.
               </p>
               <ol className="mt-3 space-y-1.5 list-decimal list-inside marker:text-muted-foreground/60">
-                <li>Describe a character in a sentence or two.</li>
-                <li>Your Guide builds a world around them.</li>
-                <li>Tap choices to shape what happens next.</li>
+                <li>Describe your character in a sentence or two.</li>
+                <li>I build the world around what you've told me.</li>
+                <li>Tap or write choices to shape what happens next.</li>
               </ol>
             </>
           )}
@@ -952,7 +955,7 @@ export default function Bookshelf({
       )}
 
       {/* Version */}
-      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.5.0</p>
+      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.5.1</p>
 
       {/* Delete-story confirmation. Soft delete with a 30-day server-side
           grace period — copy makes the recovery window explicit so a reader

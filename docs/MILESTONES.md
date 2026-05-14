@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.5.0**. Pre-launch audit Phases 1–5 (security, brand/domain, reliability, polish, cleanup) shipped 2026-05-11. AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, and typography wiring shipped 2026-05-12 (v1.2.x). **Concurrency hardening + UI polish** (Postgres-backed chat lock + rate limiter, `messages.created_at`, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool, drawer/footer spacing fixes) shipped 2026-05-12 (v1.3.0). **Current in-flight milestone:** Milestone 6 (Guide chatbot on bookshelf) — foundation components exist (`GuideConfirmDialog`, `GuideStoryCard`), chat UI + intent matcher + `POST /api/guide/chat` endpoint still TODO. **Completed:** Milestones 1–5 (Foundation, AI Memory, Page Structure pivot, Pacing, Polish + UX Overhaul) plus the Pre-launch Audit and the v1.3.0 concurrency/UI pass.
+> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.5.1**. Pre-launch audit Phases 1–5 (security, brand/domain, reliability, polish, cleanup) shipped 2026-05-11. AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, and typography wiring shipped 2026-05-12 (v1.2.x). **Concurrency hardening + UI polish** (Postgres-backed chat lock + rate limiter, `messages.created_at`, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool, drawer/footer spacing fixes) shipped 2026-05-12 (v1.3.0). **Current in-flight milestone:** Milestone 6 (Guide chatbot on bookshelf) — foundation components exist (`GuideConfirmDialog`, `GuideStoryCard`), chat UI + intent matcher + `POST /api/guide/chat` endpoint still TODO. **Completed:** Milestones 1–5 (Foundation, AI Memory, Page Structure pivot, Pacing, Polish + UX Overhaul) plus the Pre-launch Audit and the v1.3.0 concurrency/UI pass.
 >
 > *Last updated: 2026-05-12 · Maintenance rule at the bottom.*
 
@@ -113,6 +113,27 @@ Each canned response flows through a `GuideConfirmDialog` for confirmation befor
 ---
 
 ## Completed Milestones
+
+### Admin polish + welcome copy (2026-05-13) — v1.5.1 ✅
+
+Same-day follow-up to v1.5.0 surfacing three small gaps that Chunk B testing exposed, plus a copy rewrite the PM requested separately.
+
+**Admin observability:**
+- Sessions table no longer truncates session IDs — full 36-character UUIDs are visible inline with a "copy" link next to each. Support workflow is now: see a session in admin → copy the ID → paste into Supabase SQL editor → search the row.
+- New "Recent Activity" section pulls the last 20 rows from `event_log` directly. Columns: timestamp, event_type, full session_id (with copy button), full story_id (with copy button). Story_id is the load-bearing add — `spendTracker.getSessionStats()` doesn't know about stories, but `event_log` records both IDs on every event, so this section surfaces what spend-tracking can't. Backed by new `GET /api/admin/recent-activity`.
+- `logEvent` now writes a dev-only console line on every successful event log: `[event_log] {eventType} session={prefix} story={prefix} {properties}`. Gated on `NODE_ENV !== "production"` so production stays clean. Added because during Chunk B testing it was hard to tell from the terminal alone whether validators were actually logging anything.
+
+**Empty-shelf welcome copy:**
+Rewritten to be more on-brand and explicit about what Story Mode is. Previous copy: *"Welcome! Your shelf is empty — shall we start your first story?"* with a separate "Tell me about yourself" paragraph. New copy:
+> Welcome! This is Story Mode, a place where you can be the hero of any story that you can imagine.
+>
+> I'm your personal Guide. Tell me what story you want to be in and I'll write it for you.
+>
+> 1. Describe your character in a sentence or two.
+> 2. I build the world around what you've told me.
+> 3. Tap or write choices to shape what happens next.
+
+Positions Story Mode as the product, the Guide as a character within it, and the 3 steps explicitly. Still inside the Guide chat bubble per the hero rebrand from v1.3.0.
 
 ### AI Quality Pass — Chunk B + admin scroll fix (2026-05-13) — v1.5.0 ✅
 

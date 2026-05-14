@@ -44,12 +44,26 @@ interface AIQualityStats {
   };
 }
 
+// 1.5.1: Recent event_log rows so support can look up a user's story by
+// session_id + story_id when they report an issue.
+interface RecentActivity {
+  events: Array<{
+    id: string;
+    sessionId: string;
+    storyId: string | null;
+    eventType: string;
+    properties: Record<string, unknown> | null;
+    createdAt: string;
+  }>;
+}
+
 export default function AdminDashboard() {
   const [adminKey, setAdminKey] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [spendStats, setSpendStats] = useState<SpendStats | null>(null);
   const [sessionStats, setSessionStats] = useState<SessionStats | null>(null);
   const [aiQualityStats, setAiQualityStats] = useState<AIQualityStats | null>(null);
+  const [recentActivity, setRecentActivity] = useState<RecentActivity | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -63,31 +77,39 @@ export default function AdminDashboard() {
     try {
       const headers = { "x-admin-key": adminKey };
 
-      const [spendRes, sessionRes, qualityRes] = await Promise.all([
+      const [spendRes, sessionRes, qualityRes, activityRes] = await Promise.all([
         fetch("/api/admin/spend", { headers }),
         fetch("/api/admin/sessions", { headers }),
         fetch("/api/admin/ai-quality", { headers }),
+        fetch("/api/admin/recent-activity", { headers }),
       ]);
 
-      if (spendRes.status === 401 || sessionRes.status === 401 || qualityRes.status === 401) {
+      if (
+        spendRes.status === 401 ||
+        sessionRes.status === 401 ||
+        qualityRes.status === 401 ||
+        activityRes.status === 401
+      ) {
         setError("Invalid admin key");
         setIsAuthenticated(false);
         return;
       }
 
-      if (!spendRes.ok || !sessionRes.ok || !qualityRes.ok) {
+      if (!spendRes.ok || !sessionRes.ok || !qualityRes.ok || !activityRes.ok) {
         throw new Error("Failed to fetch stats");
       }
 
-      const [spend, sessions, quality] = await Promise.all([
+      const [spend, sessions, quality, activity] = await Promise.all([
         spendRes.json(),
         sessionRes.json(),
         qualityRes.json(),
+        activityRes.json(),
       ]);
 
       setSpendStats(spend);
       setSessionStats(sessions);
       setAiQualityStats(quality);
+      setRecentActivity(activity);
       setIsAuthenticated(true);
       setLastUpdated(new Date());
     } catch (err) {
@@ -241,8 +263,17 @@ export default function AdminDashboard() {
                 <tbody>
                   {sessionStats.sessions.map((session) => (
                     <tr key={session.sessionId} className="border-t" style={{ borderColor: "#DBD8E3" }}>
-                      <td className="py-2 px-2 font-mono text-xs" style={{ color: "#5C5470" }}>
-                        {session.sessionId.substring(0, 8)}...
+                      <td className="py-2 px-2 font-mono text-xs break-all" style={{ color: "#5C5470" }}>
+                        <span>{session.sessionId}</span>
+                        <button
+                          type="button"
+                          onClick={() => navigator.clipboard?.writeText(session.sessionId)}
+                          className="ml-2 inline-block text-[10px] underline cursor-pointer"
+                          style={{ color: "#5C5470", opacity: 0.6 }}
+                          title="Copy full session ID"
+                        >
+                          copy
+                        </button>
                       </td>
                       <td className="py-2 px-2 text-right" style={{ color: "#5C5470" }}>
                         {formatNumber(session.requestCount)}
@@ -302,6 +333,77 @@ export default function AdminDashboard() {
               hint="Reader stalled; the world was forced to act on the next page"
             />
           </div>
+        </div>
+
+        {/* Recent Activity (1.5.1). Last 20 event_log rows with full
+            session_id + story_id so support can look up a user's story
+            for customer-support lookups. Both IDs have copy-to-clipboard
+            buttons and the table scrolls horizontally on narrow screens. */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-lg font-semibold mb-1" style={{ color: "#5C5470" }}>
+            Recent Activity
+          </h2>
+          <p className="text-xs mb-4" style={{ color: "#5C5470" }}>
+            Last {recentActivity?.events?.length ?? 0} events across all sessions
+          </p>
+          {recentActivity?.events && recentActivity.events.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ color: "#5C5470" }}>
+                    <th className="text-left py-2 px-2">When</th>
+                    <th className="text-left py-2 px-2">Event</th>
+                    <th className="text-left py-2 px-2">Session</th>
+                    <th className="text-left py-2 px-2">Story</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentActivity.events.map((evt) => (
+                    <tr key={evt.id} className="border-t" style={{ borderColor: "#DBD8E3" }}>
+                      <td className="py-2 px-2 text-xs whitespace-nowrap" style={{ color: "#5C5470" }}>
+                        {new Date(evt.createdAt).toLocaleString()}
+                      </td>
+                      <td className="py-2 px-2 text-xs font-mono" style={{ color: "#5C5470" }}>
+                        {evt.eventType}
+                      </td>
+                      <td className="py-2 px-2 font-mono text-[11px] break-all" style={{ color: "#5C5470" }}>
+                        <span>{evt.sessionId}</span>
+                        <button
+                          type="button"
+                          onClick={() => navigator.clipboard?.writeText(evt.sessionId)}
+                          className="ml-2 inline-block text-[10px] underline cursor-pointer"
+                          style={{ color: "#5C5470", opacity: 0.6 }}
+                          title="Copy session ID"
+                        >
+                          copy
+                        </button>
+                      </td>
+                      <td className="py-2 px-2 font-mono text-[11px] break-all" style={{ color: "#5C5470" }}>
+                        {evt.storyId ? (
+                          <>
+                            <span>{evt.storyId}</span>
+                            <button
+                              type="button"
+                              onClick={() => navigator.clipboard?.writeText(evt.storyId!)}
+                              className="ml-2 inline-block text-[10px] underline cursor-pointer"
+                              style={{ color: "#5C5470", opacity: 0.6 }}
+                              title="Copy story ID"
+                            >
+                              copy
+                            </button>
+                          </>
+                        ) : (
+                          <span style={{ opacity: 0.4 }}>—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm" style={{ color: "#5C5470" }}>No recent activity</p>
+          )}
         </div>
       </div>
     </div>

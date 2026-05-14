@@ -31,6 +31,17 @@ export async function logEvent(
       eventType,
       properties: properties ?? null,
     });
+    // Dev-only stream so the terminal shows events firing in real time.
+    // Gated on NODE_ENV so production logs stay clean. Added in 1.5.1 after
+    // Chunk B testing made it hard to tell whether validators were actually
+    // logging anything from the dev terminal alone.
+    if (process.env.NODE_ENV !== "production") {
+      console.log(
+        `[event_log] ${eventType} session=${sessionId.slice(0, 8)} story=${storyId?.slice(0, 8) ?? "—"}${
+          properties ? ` ${JSON.stringify(properties)}` : ""
+        }`,
+      );
+    }
   } catch (err) {
     // Logging must never fail the request that triggered it.
     captureError(err, { context: "logEvent", eventType, sessionId, storyId });
