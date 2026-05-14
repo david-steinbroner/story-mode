@@ -915,7 +915,7 @@ export default function Bookshelf({
       )}
 
       {/* Version */}
-      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.6.0</p>
+      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.6.1</p>
 
       {/* Delete-story confirmation. Soft delete with a 30-day server-side
           grace period — copy makes the recovery window explicit so a reader

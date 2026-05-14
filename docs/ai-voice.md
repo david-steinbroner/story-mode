@@ -1,8 +1,8 @@
 # Story Mode — AI Voice, Narration, & Storytelling
 
-> **TL;DR (read this first):** The Guide is the AI's persona. **Voice:** warm, playful, campfire-friend (not novelist). Second person. Plain words. Short sentences. **No em dashes** (stripped server-side; use `, ` instead). **No double quotes inside dialogue** (use single quotes — protects JSON parsing). **80–140 words per page.** One thing must change every page. **Choices must be different scenes/people/outcomes**, not three angles on the same beat. Pacing has milestone checkpoints (Setup → Rising Action → Escalation → Climax → Final). **Source code:** `server/aiService.ts → getSystemPrompt()` is the truth; this doc describes the rules and rationale.
+> **TL;DR (read this first):** The Guide is the AI's persona. **Voice:** warm, playful, campfire-friend (not novelist). Second person. Plain words. Short sentences. **No em dashes** (stripped server-side; use `, ` instead). **No double quotes inside dialogue** (use single quotes — protects JSON parsing). **80–140 words per page.** One thing must change every page. **Choices must be different scenes/people/outcomes**, not three angles on the same beat. Pacing has milestone checkpoints (Setup → Rising Action → Escalation → Climax → Final). **Three non-negotiables** sit at the end of the system prompt for attention recency: (1) every page introduces one concrete change, (2) choices lead to different directions, (3) the reader is the author of WHAT, the Guide is the author of HOW (follow off-script input, don't redirect). **Banned prose patterns:** "something" as antagonist after first appearance, three-item-list cadence, hedge adverbs (slightly / almost imperceptibly / softly), em dashes. **Story titles** must be 1–3 words, concrete noun phrases ("The Glass Suitcase"), never "Whispers of..." / "Echoes of..." / atmospheric phrasings. **Quality validators (Chunk B)** retry once when post-process detectors fire: stall, fake choices, final-page breach. **Story Momentum** injects a "world must act" directive when the reader's recent inputs stall on the same beat (synonym-canonicalized via STALL_PATTERNS regex set). **Source code:** `server/aiService.ts → getSystemPrompt()` is the truth; `server/aiValidators.ts` is the post-process; this doc describes the rules and rationale.
 >
-> *Last updated: 2026-05-12 · Maintenance rule at the bottom.*
+> *Last updated: 2026-05-14 · Maintenance rule at the bottom.*
 
 ---
 
@@ -177,4 +177,4 @@ Final-page narrative rules (in `getPacingGuidance()`):
 - **Update when:** voice rules, pacing, banned vocabulary, surprise-me examples, fallback text, or final-page behavior change. Same commit as the code change in `server/aiService.ts` / `server/routes.ts`.
 - **TL;DR refresh:** rewrite the top block whenever a core rule shifts (voice register, word target, choice format).
 - **Source of truth conflicts:** the code (`getSystemPrompt()` and friends) wins. If this doc disagrees, update this doc.
-- **Last updated:** 2026-05-12
+- **Last updated:** 2026-05-14

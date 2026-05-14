@@ -1,8 +1,8 @@
 # Story Mode — API, Rate Limits, & Cost
 
-> **TL;DR (read this first):** AI is **Claude 3.5 Haiku via OpenRouter**, ~**$0.003 per page** (short story ~$0.09, novel ~$0.35, epic ~$0.88). **Rate limits:** 240 AI calls/hr, 1000 general/hr, both keyed by `sessionId`. **Daily spend cap: $10** (hard ceiling, warns at $8). Max tokens 2000 per AI call, 3-attempt retry on parse failure. API responses use `{success, data}` / `{success: false, error}` shape. **Source of truth for current numbers:** `server/rateLimit.ts`, `server/spendTracker.ts`, `server/aiService.ts`.
+> **TL;DR (read this first):** AI is **Claude 3.5 Haiku via OpenRouter**, ~**$0.003 per page** (short story ~$0.09, novel ~$0.35, epic ~$0.88). **Rate limits:** 240 AI calls/hr, 1000 general/hr, both keyed by `sessionId`, Postgres-backed since v1.3.0. **Daily spend cap: $10** (hard ceiling, warns at $8). Max tokens 2000 per AI call. **Retry budget: 2 attempts max** — cap shared between parse-failure retries and Chunk B quality-validator retries (stall / fake choices / final-page breach). Realistic post-Chunk-A retry rate 5–15%, adding +$0.005 to +$0.015 per story. API responses use `{success, data}` / `{success: false, error}` shape. **Source of truth for current numbers:** `server/rateLimit.ts`, `server/spendTracker.ts`, `server/aiService.ts`, `server/aiValidators.ts`.
 >
-> *Last updated: 2026-05-12 · Maintenance rule at the bottom.*
+> *Last updated: 2026-05-14 · Maintenance rule at the bottom.*
 
 ---
 
@@ -185,4 +185,4 @@ Math floor when we do monetize: **a 100-page novel costs ~$0.35 in API**. Pricin
 - **Update when:** rate limits, max-tokens, model, daily cap, or pricing tier values change. Same commit as the code change.
 - **TL;DR refresh:** rewrite the top block whenever model swaps, rate-limit ceilings move materially, or the daily cap changes.
 - **Source of truth conflicts:** code (`rateLimit.ts`, `spendTracker.ts`, `aiService.ts`) wins. If this doc disagrees, update this doc.
-- **Last updated:** 2026-05-12
+- **Last updated:** 2026-05-14

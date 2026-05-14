@@ -2,7 +2,7 @@
 
 > **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.6.0**. Pre-launch audit Phases 1–5 (security, brand/domain, reliability, polish, cleanup) shipped 2026-05-11. AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, and typography wiring shipped 2026-05-12 (v1.2.x). **Concurrency hardening + UI polish** (Postgres-backed chat lock + rate limiter, `messages.created_at`, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool, drawer/footer spacing fixes) shipped 2026-05-12 (v1.3.0). **Current in-flight milestone:** Milestone 6 (Guide chatbot on bookshelf) — foundation components exist (`GuideConfirmDialog`, `GuideStoryCard`), chat UI + intent matcher + `POST /api/guide/chat` endpoint still TODO. **Completed:** Milestones 1–5 (Foundation, AI Memory, Page Structure pivot, Pacing, Polish + UX Overhaul) plus the Pre-launch Audit and the v1.3.0 concurrency/UI pass.
 >
-> *Last updated: 2026-05-12 · Maintenance rule at the bottom.*
+> *Last updated: 2026-05-14 · Maintenance rule at the bottom.*
 
 ---
 
