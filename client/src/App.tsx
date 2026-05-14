@@ -10,6 +10,7 @@ import ChatInterface from "./components/ChatInterface";
 import ColdStartLoader from "./components/ColdStartLoader";
 import Bookshelf from "./components/Bookshelf";
 import NewStoryCreation from "./components/NewStoryCreation";
+import TestModelBadge from "./components/TestModelBadge";
 import { useAnalytics, useSessionTracking } from "./hooks/useAnalytics";
 import { useToast } from "./hooks/use-toast";
 import { setUserContext, setGameContext } from "./lib/sentry";
@@ -351,12 +352,18 @@ function App() {
   const isAdminRoute = window.location.pathname === "/admin";
 
   if (isAdminRoute) {
-    return <AdminDashboard />;
+    return (
+      <>
+        <TestModelBadge />
+        <AdminDashboard />
+      </>
+    );
   }
 
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
+        <TestModelBadge />
         <Sentry.ErrorBoundary
           fallback={({ resetError }) => (
             <div className="min-h-dvh flex items-center justify-center px-6 bg-background">

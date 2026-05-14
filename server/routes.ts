@@ -113,7 +113,8 @@ async function applyAIResponse(
   sessionId: string,
   playerMessage: string,
   aiResponseData: AIResponse,
-  storyId?: string
+  storyId?: string,
+  modelOverride?: string
 ): Promise<Message> {
   // Store the player message
   await storage.createMessage({
@@ -150,7 +151,7 @@ async function applyAIResponse(
           try {
             const character = await storage.getCharacter(sessionId);
             const gameState = await storage.getGameState(sessionId);
-            const followUpQuest = await aiService.generateFollowUpQuest(updatedQuest, { character, gameState });
+            const followUpQuest = await aiService.generateFollowUpQuest(updatedQuest, { character, gameState }, modelOverride);
 
             if (followUpQuest) {
               // Ensure the completed quest has a chainId for consistency
@@ -245,7 +246,7 @@ async function applyAIResponse(
         character,
         gameState,
         recentMessages
-      });
+      }, modelOverride);
 
       if (sideQuest) {
         const questValidation = insertQuestSchema.safeParse(sideQuest);
@@ -275,6 +276,14 @@ function getSessionId(req: Request): string {
 
 function getStoryId(req: Request): string | undefined {
   return req.headers['x-story-id'] as string | undefined;
+}
+
+// Dev-only model override. The frontend sets this header when a tab has
+// a sessionStorage `testmodel` value (set via `?testmodel=sonnet`). Server
+// reads it; `resolveModel()` in server/aiModel.ts enforces the
+// NODE_ENV !== 'production' safety gate so this is harmless in prod.
+function getTestModel(req: Request): string | undefined {
+  return req.headers['x-test-model'] as string | undefined;
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -309,7 +318,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             appearance: character.appearance,
             backstory: character.backstory,
             class: character.class,
-          });
+          }, getTestModel(req));
 
           // Update game state with generated world
           const gameState = await storage.getGameState(sessionId);
@@ -552,14 +561,15 @@ IMPORTANT: Include a "storyTitle" field in your JSON response. Title rules:
 - Examples of the right shape: "The Glass Suitcase", "Talking Cat", "The Vault Door", "Last Train Home", "The Wrong Coffee".
 - AVOID: "Whispers of...", "Echoes of...", "Shadows of...", "The Last Awakening", "Beneath the X", or any other poetic / atmospheric phrasing. Direct beats evocative every time.`;
 
-      let aiResponse = await aiService.generateResponse(sessionId, firstPagePrompt, storyId);
+      const testModel = getTestModel(req);
+      let aiResponse = await aiService.generateResponse(sessionId, firstPagePrompt, storyId, 0, '', testModel);
 
       // If the first AI call failed with any error, retry once at the route
       // level after a short delay — handles cases where the DB write for the
       // new story hadn't yet settled before generateResponse read context.
       if (aiResponse.error) {
         await new Promise(resolve => setTimeout(resolve, 200));
-        aiResponse = await aiService.generateResponse(sessionId, firstPagePrompt, storyId);
+        aiResponse = await aiService.generateResponse(sessionId, firstPagePrompt, storyId, 0, '', testModel);
       }
 
       // Track token spend
@@ -569,7 +579,7 @@ IMPORTANT: Include a "storyTitle" field in your JSON response. Title rules:
 
       // Save the AI's first page and apply any actions (quests, items, etc.).
       // The player message is just the character description, no debug prefix.
-      const firstMessage = await applyAIResponse(sessionId, characterDescription, aiResponse, storyId);
+      const firstMessage = await applyAIResponse(sessionId, characterDescription, aiResponse, storyId, testModel);
 
       // Save AI-generated story title if provided
       if (aiResponse.storyTitle) {
@@ -1011,13 +1021,14 @@ Return ONLY the character description. No preamble, no quotes.`,
       }
 
       // Generate AI response scoped to current story
-      const aiResponse = await aiService.generateResponse(sessionId, message, storyId);
+      const testModel = getTestModel(req);
+      const aiResponse = await aiService.generateResponse(sessionId, message, storyId, 0, '', testModel);
 
       // Track request with actual token usage
       await spendTracker.trackRequest(sessionId, aiResponse.tokenUsage);
 
       // Apply AI response (store messages, apply actions, detect side quests)
-      const aiMessage = await applyAIResponse(sessionId, message, aiResponse, storyId);
+      const aiMessage = await applyAIResponse(sessionId, message, aiResponse, storyId, testModel);
 
       await logEvent(sessionId, "page_turned", {
         messageLength: message.length,
@@ -1088,13 +1099,14 @@ Return ONLY the character description. No preamble, no quotes.`,
 
       // Process the quick action as a regular chat message
       const storyId = getStoryId(req);
-      const aiResponse = await aiService.generateResponse(sessionId, actionMessage, storyId);
+      const testModel = getTestModel(req);
+      const aiResponse = await aiService.generateResponse(sessionId, actionMessage, storyId, 0, '', testModel);
 
       // Track request with actual token usage
       await spendTracker.trackRequest(sessionId, aiResponse.tokenUsage);
 
       // Apply AI response (store messages, apply actions, detect side quests)
-      const aiMessage = await applyAIResponse(sessionId, actionMessage, aiResponse, storyId);
+      const aiMessage = await applyAIResponse(sessionId, actionMessage, aiResponse, storyId, testModel);
 
       res.json({
         message: aiMessage,

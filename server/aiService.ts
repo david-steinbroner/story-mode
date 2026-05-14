@@ -5,6 +5,7 @@ import { captureError } from "./sentry";
 import { generateStorySummary } from "./summaryService";
 import { logEvent } from "./eventLog";
 import { runValidators, detectStallPattern, buildRetryHint } from "./aiValidators";
+import { resolveModel } from "./aiModel";
 
 // Constants for rolling story summary
 const SUMMARY_THRESHOLD = 10; // Trigger summarization when this many unsummarized messages exist
@@ -414,7 +415,7 @@ Use the • character exactly. No "Option A" labels.`;
     }
   }
 
-  async generateResponse(sessionId: string, playerMessage: string, storyId?: string, retryAttempt: number = 0, retryHint: string = ''): Promise<AIResponse> {
+  async generateResponse(sessionId: string, playerMessage: string, storyId?: string, retryAttempt: number = 0, retryHint: string = '', modelOverride?: string): Promise<AIResponse> {
     const startTime = Date.now();
 
     try {
@@ -511,7 +512,7 @@ Example Quest Actions:
       ];
 
       const response = await openai.chat.completions.create({
-        model: "anthropic/claude-3.5-haiku",
+        model: resolveModel(modelOverride),
         messages,
         response_format: { type: "json_object" },
         // 80-140 words of narrative + JSON wrapper + choices + actions block
@@ -624,7 +625,7 @@ Example Quest Actions:
           const MAX_RETRIES = 2;
           if (retryAttempt < MAX_RETRIES) {
             await new Promise(resolve => setTimeout(resolve, 150));
-            return this.generateResponse(sessionId, playerMessage, storyId, retryAttempt + 1);
+            return this.generateResponse(sessionId, playerMessage, storyId, retryAttempt + 1, '', modelOverride);
           }
 
           console.error('[AI Service] RETURNING FALLBACK RESPONSE DUE TO PARSE FAILURE (after all retries)');
@@ -686,7 +687,7 @@ Example Quest Actions:
       const MAX_QUALITY_RETRIES = 1;
       if (violations.shouldRetry && retryAttempt < MAX_QUALITY_RETRIES) {
         const nextHint = buildRetryHint(violations);
-        return this.generateResponse(sessionId, playerMessage, storyId, retryAttempt + 1, nextHint);
+        return this.generateResponse(sessionId, playerMessage, storyId, retryAttempt + 1, nextHint, modelOverride);
       }
 
       // Validate and sanitize the response
@@ -828,10 +829,10 @@ Example Quest Actions:
   async generateFollowUpQuest(completedQuest: Quest, context: {
     character: Character | undefined;
     gameState: GameState | undefined;
-  }): Promise<Quest | null> {
+  }, modelOverride?: string): Promise<Quest | null> {
     try {
       const response = await openai.chat.completions.create({
-        model: "anthropic/claude-3.5-haiku",
+        model: resolveModel(modelOverride),
         messages: [
           {
             role: "system",
@@ -924,7 +925,8 @@ Example Quest Actions:
       character: Character | undefined;
       gameState: GameState | undefined;
       recentMessages: Message[];
-    }
+    },
+    modelOverride?: string,
   ): Promise<Omit<Quest, 'id'> | null> {
     try {
       // Get conversation context
@@ -934,7 +936,7 @@ Example Quest Actions:
       }).join('\\n');
 
       const response = await openai.chat.completions.create({
-        model: "anthropic/claude-3.5-haiku",
+        model: resolveModel(modelOverride),
         messages: [
           {
             role: "system",
@@ -1005,7 +1007,7 @@ Format as JSON:
     appearance?: string | null;
     backstory?: string | null;
     class?: string;
-  }): Promise<{
+  }, modelOverride?: string): Promise<{
     worldSetting: string;
     worldTheme: string;
     worldDescription: string;
@@ -1045,7 +1047,7 @@ Respond in this EXACT JSON format (no other text):
 }`;
 
       const response = await openai.chat.completions.create({
-        model: "anthropic/claude-3.5-haiku",
+        model: resolveModel(modelOverride),
         messages: [
           {
             role: "system",

@@ -105,7 +105,6 @@ export default function ChatInterface({
   items = [],
   gameState
 }: ChatInterfaceProps) {
-  const [showCustomInput, setShowCustomInput] = useState(false);
   const [inputText, setInputText] = useState("");
   const [fontSizeIndex, setFontSizeIndex] = useState(getInitialFontSizeIndex);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
@@ -157,7 +156,6 @@ export default function ChatInterface({
     if (latestChoices.length > 0 && latestChoices !== prevChoicesRef.current) {
       const choicesChanged = latestChoices.join('|') !== prevChoicesRef.current.join('|');
       if (choicesChanged) {
-        setShowCustomInput(false);
         setInputText("");
       }
     }
@@ -240,7 +238,6 @@ export default function ChatInterface({
     });
     analytics.messageSent('action');
     setIsDrawerOpen(false);
-    setShowCustomInput(false);
     setInputText("");
     onSendMessage?.(option);
   };
@@ -250,7 +247,6 @@ export default function ChatInterface({
       analytics.messageSent('chat');
       onSendMessage?.(inputText);
       setInputText("");
-      setShowCustomInput(false);
       setIsDrawerOpen(false);
     }
   };
@@ -617,39 +613,71 @@ ${JSON.stringify(debugInfo, null, 2)}
                 const isLast = index === messages.length - 1;
                 const canRegenerate = isLast && !isPlayer && !isLoading && !gameState?.storyComplete;
 
+                // Messenger layout. AI messages: avatar + left-aligned bubble.
+                // Player messages: right-aligned bubble, no avatar (alignment
+                // is the directional cue). Both bubbles cap at ~82% width so
+                // the asymmetry reads at a glance even on tight phone widths.
+                // Timestamp + regenerate sit below the bubble, aligned to the
+                // bubble's edge — keeps the bubble itself uncluttered.
                 return (
-                  <div key={message.id} ref={isLast ? lastMessageRef : undefined} className="space-y-1.5 max-w-full">
-                    <div className="flex items-center gap-2">
-                      {getSenderBadge(message.sender, message.senderName)}
-                      <span className="text-xs text-muted-foreground">{message.timestamp}</span>
+                  <div key={message.id} ref={isLast ? lastMessageRef : undefined} className="space-y-1">
+                    <div className={`flex items-start gap-2 ${isPlayer ? 'justify-end' : 'justify-start'}`}>
+                      {!isPlayer && (
+                        <div className="shrink-0 pt-1">
+                          <GuideAvatar size={28} animate={false} />
+                        </div>
+                      )}
+                      <div
+                        className={`px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl overflow-hidden max-w-[82%] ${
+                          isPlayer ? 'bg-primary/10' : 'bg-muted/50'
+                        }`}
+                      >
+                        <p
+                          className={`leading-relaxed text-foreground whitespace-pre-line break-words ${
+                            isPlayer ? '' : 'story-prose'
+                          }`}
+                          style={{ fontSize: `${currentFontSize.px}px` }}
+                        >
+                          {text}
+                        </p>
+                      </div>
+                    </div>
+                    {/* Below-bubble meta row: timestamp + (regenerate on the
+                        last AI page). Indented under the bubble's left edge
+                        for AI (past the avatar), right-aligned for player. */}
+                    <div
+                      className={`flex items-center gap-2 text-xs text-muted-foreground ${
+                        isPlayer ? 'justify-end' : 'justify-start ml-9'
+                      }`}
+                    >
+                      <span>{message.timestamp}</span>
                       {canRegenerate && (
                         <button
                           onClick={() => setShowRegenConfirm(true)}
-                          className="ml-auto p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors"
+                          className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors"
                           aria-label="Regenerate this response"
                           title="Regenerate this response"
                         >
-                          <RefreshCw className="w-4 h-4" />
+                          <RefreshCw className="w-3.5 h-3.5" />
                         </button>
                       )}
-                    </div>
-                    <div className={`p-2.5 sm:p-3 rounded-lg max-w-full overflow-hidden ${
-                      isPlayer
-                        ? "bg-primary/10 border-l-4 border-primary ml-2 sm:ml-4"
-                        : "bg-muted/50"
-                    }`}>
-                      <p className={`leading-relaxed text-foreground whitespace-pre-line break-words ${isPlayer ? '' : 'story-prose'}`} style={{ fontSize: `${currentFontSize.px}px` }}>{text}</p>
                     </div>
                   </div>
                 );
               })
             )}
 
-            {/* AI Thinking Indicator */}
+            {/* AI Thinking Indicator. Mirrors the AI message layout so the
+                typing bubble sits exactly where the next reply will appear. */}
             {isLoading && (
-              <div className="flex items-center gap-2 p-2.5 sm:p-3 rounded-lg bg-muted/50 animate-pulse">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <p className="text-sm text-muted-foreground">Your Guide is thinking...</p>
+              <div className="flex items-start gap-2 justify-start">
+                <div className="shrink-0 pt-1">
+                  <GuideAvatar size={28} animate={false} />
+                </div>
+                <div className="flex items-center gap-2 px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl bg-muted/50 animate-pulse max-w-[82%]">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <p className="text-sm text-muted-foreground">Your Guide is thinking...</p>
+                </div>
               </div>
             )}
 
@@ -811,42 +839,33 @@ ${JSON.stringify(debugInfo, null, 2)}
                 <span className="text-sm leading-snug break-words">{option}</span>
               </Button>
             ))}
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full justify-start text-left h-auto py-2.5 px-3 min-h-[44px] whitespace-normal text-muted-foreground italic"
-              onClick={() => {
-                analytics.buttonClicked('Custom Input', 'Chat Interface');
-                setShowCustomInput(true);
-              }}
-              disabled={isLoading}
-            >
-              <span className="text-sm leading-snug break-words">I have something else in mind...</span>
-            </Button>
-            {showCustomInput && (
-              <div className="flex gap-2 mt-1">
-                <input
-                  type="text"
-                  placeholder="What would you do?"
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleCustomSubmit();
-                  }}
-                  autoFocus
-                  className="flex-1 px-3 py-2.5 bg-muted rounded-md text-base text-foreground placeholder:text-muted-foreground border border-input focus:outline-none focus:ring-2 focus:ring-primary min-h-[44px]"
-                  disabled={isLoading}
-                />
-                <Button
-                  size="icon"
-                  onClick={handleCustomSubmit}
-                  disabled={!inputText.trim() || isLoading}
-                  className="h-11 w-11 shrink-0"
-                >
-                  <Send className="w-4 h-4" />
-                </Button>
-              </div>
-            )}
+            {/* Custom input — always visible. The placeholder doubles as
+                the affordance: "I have something else in mind…" cues the
+                player that free-form text is welcome here. Typing replaces
+                the placeholder; no extra field spawns below. */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="I have something else in mind…"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCustomSubmit();
+                }}
+                onFocus={() => analytics.buttonClicked('Custom Input', 'Chat Interface')}
+                className="flex-1 px-3 py-2.5 bg-background rounded-md text-base text-foreground placeholder:text-muted-foreground placeholder:italic border border-input focus:outline-none focus:ring-2 focus:ring-primary min-h-[44px]"
+                disabled={isLoading}
+              />
+              <Button
+                size="icon"
+                onClick={handleCustomSubmit}
+                disabled={!inputText.trim() || isLoading}
+                className="h-11 w-11 shrink-0"
+                aria-label="Send"
+              >
+                <Send className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
         </div>
       )}

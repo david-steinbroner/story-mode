@@ -5,6 +5,7 @@ import "./index.css";
 // Initialize analytics and error tracking
 import { initSentry } from "./lib/sentry";
 import { initPostHog } from "./lib/posthog";
+import { initTestModelFromUrl } from "./lib/testModel";
 
 // crypto.randomUUID() only exists in secure contexts (HTTPS or localhost). On a
 // plain-HTTP LAN IP (phone testing on the same wifi) it's undefined, so we fall
@@ -30,5 +31,10 @@ initSentry();
 
 // Initialize PostHog
 initPostHog();
+
+// Dev tool: read `?testmodel=…` from the URL into sessionStorage so this
+// tab's API calls include the X-Test-Model header. No-op in prod (server
+// ignores the header).
+initTestModelFromUrl();
 
 createRoot(document.getElementById("root")!).render(<App />);

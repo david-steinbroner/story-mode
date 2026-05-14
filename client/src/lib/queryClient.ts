@@ -1,4 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { getTestModel } from "./testModel";
 
 // Helper to get session ID from localStorage
 function getSessionId(): string {
@@ -22,6 +23,12 @@ function getHeaders(): Record<string, string> {
   };
   if (_activeStoryId) {
     headers['x-story-id'] = _activeStoryId;
+  }
+  // Dev-only per-tab model override. Server gates on NODE_ENV !== 'production'
+  // so attaching this header in prod is harmless (server ignores it).
+  const testModel = getTestModel();
+  if (testModel) {
+    headers['x-test-model'] = testModel;
   }
   return headers;
 }
