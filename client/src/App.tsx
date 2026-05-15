@@ -54,23 +54,31 @@ function GameApp() {
     analytics.screenViewed(viewNames[currentView], { view: currentView });
   }, [currentView]);
 
-  // Fetch data from backend
+  // Fetch data from backend. Story-scoped queries are gated on activeStoryId
+  // (v1.8.7) so they don't fire during the optimistic new-story window when
+  // activeStoryId is still null — that previously caused the server to return
+  // cross-story session data and bleed an old story's messages into the new
+  // story view.
   const { data: character, isLoading: characterLoading, error: characterError } = useQuery<Character>({
     queryKey: ['/api/character'],
+    enabled: !!activeStoryId,
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 
   const { data: messages = [], isLoading: messagesLoading } = useQuery<Message[]>({
     queryKey: ['/api/messages', activeStoryId],
+    enabled: !!activeStoryId,
   });
 
   const { data: gameState } = useQuery<GameState>({
     queryKey: ['/api/game-state', activeStoryId],
+    enabled: !!activeStoryId,
   });
 
   const { data: quests = [] } = useQuery<Quest[]>({
     queryKey: ['/api/quests', activeStoryId],
+    enabled: !!activeStoryId,
   });
 
   // Fetch all stories for the bookshelf (not scoped by storyId)

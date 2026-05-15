@@ -107,7 +107,7 @@ The client uses `retryAfter` to display a countdown when applicable.
 
 ## Endpoints index
 
-Primary API surface (server/routes.ts). All require `x-session-id` header except `/api/admin/*` which requires `x-admin-key`.
+Primary API surface (server/routes.ts). All require `x-session-id` header except `/api/admin/*` which requires `x-admin-key`. **Story-scoped routes also require `x-story-id` (v1.8.7)** — `/api/character`, `/api/quests`, `/api/items`, `/api/messages`, `/api/game-state` (GET/PATCH), `/api/ai/chat`, `/api/ai/quick-action`. GETs return empty (`[]` or `null`) when the header is missing; writes return 400. Story-creation and listing endpoints don't need it (`/api/story/new`, `/api/story/surprise-me`, `/api/stories`).
 
 ### Story lifecycle
 | Method | Path | Notes |

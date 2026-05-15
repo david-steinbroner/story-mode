@@ -292,6 +292,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const sessionId = getSessionId(req);
       const storyId = getStoryId(req);
+      // No storyId means no story context — return null instead of falling
+      // through to a cross-story session lookup (v1.8.7 defensive fix).
+      if (!storyId) return res.json(null);
       const character = await storage.getCharacter(sessionId, storyId);
       res.json(character || null);
     } catch (error) {
@@ -768,6 +771,7 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
     try {
       const sessionId = getSessionId(req);
       const storyId = getStoryId(req);
+      if (!storyId) return res.json([]);
       const quests = await storage.getQuests(sessionId, storyId);
       res.json(quests);
     } catch (error) {
@@ -844,6 +848,7 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
     try {
       const sessionId = getSessionId(req);
       const storyId = getStoryId(req);
+      if (!storyId) return res.json([]);
       const items = await storage.getItems(sessionId, storyId);
       res.json(items);
     } catch (error) {
@@ -920,6 +925,7 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
     try {
       const sessionId = getSessionId(req);
       const storyId = getStoryId(req);
+      if (!storyId) return res.json([]);
       let limit: number | undefined;
       if (req.query.limit) {
         const parsed = parseInt(req.query.limit as string);
@@ -978,6 +984,7 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
     try {
       const sessionId = getSessionId(req);
       const storyId = getStoryId(req);
+      if (!storyId) return res.json(null);
       const gameState = await storage.getGameState(sessionId, storyId);
       res.json(gameState);
     } catch (error) {
@@ -1006,6 +1013,10 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
     try {
       const sessionId = getSessionId(req);
       const storyId = getStoryId(req);
+      // Writes without a storyId would update every gameState row in the
+      // session — refuse explicitly (v1.8.7) rather than silently mutating
+      // the wrong story.
+      if (!storyId) return res.status(400).json({ error: "Missing x-story-id header" });
       const gameState = await storage.updateGameState(sessionId, req.body, storyId);
       if (req.body?.storyComplete === true) {
         await logEvent(sessionId, "story_completed", {
@@ -1042,6 +1053,9 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
   app.post("/api/ai/chat", aiLimiter, async (req, res) => {
     const sessionId = getSessionId(req);
     const storyId = getStoryId(req);
+    // AI chat writes messages tied to a story; refuse without one (v1.8.7)
+    // so an orphan request can't write an unscoped message.
+    if (!storyId) return res.status(400).json({ error: "Missing x-story-id header" });
     const lockKey = chatLockKey(sessionId, storyId);
 
     // Per-(session, story) lock: blocks the duplicate AI call a user produces
@@ -1117,6 +1131,9 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
   app.post("/api/ai/quick-action", aiLimiter, async (req, res) => {
     try {
       const sessionId = getSessionId(req);
+      // Quick-action writes a player message + AI response; refuse without
+      // a storyId so we don't write unscoped messages (v1.8.7).
+      if (!getStoryId(req)) return res.status(400).json({ error: "Missing x-story-id header" });
       const parsed = quickActionSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: "Action is required and must be 1–100 characters" });
