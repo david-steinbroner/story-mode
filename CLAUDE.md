@@ -169,6 +169,7 @@ Most recently shipped + what's queued → `docs/MILESTONES.md` TL;DR and `docs/R
 | `client/src/lib/posthog.ts` | Client analytics. Event taxonomy is intentional — don't reorganize. |
 | `client/src/lib/sentry.ts` / `server/sentry.ts` | Error tracking config — don't modify without explicit ask. |
 | `server/adminAuth.ts` | **Single seam for all admin auth.** Exports `verifyAdminCredentials(key, totp)`. Today: env-var backed (`ADMIN_KEY` + `ADMIN_TOTP_SECRET`). Top-of-file comment documents the migration path to DB-backed multi-admin — touch THIS file, not the middleware in `routes.ts`. |
+| `server/index.ts` `CSP_DIRECTIVES` | **Single source of truth for Content Security Policy** (added v1.9.7, audit PR-A4). Defines which external origins the browser is allowed to load scripts/styles/fonts/images from, and which destinations it can fetch/connect to. Currently in **report-only mode** — violations log to the browser console but aren't blocked. **Adding any new external origin requires updating the relevant directive here** (see §10 trigger). |
 | `client/src/components/AdminDashboard.tsx` | Internal admin UI at `/admin`. Gated by ADMIN_KEY + 2FA (TOTP). Login form takes a long secret key + a 6-digit code from any TOTP app (1Password etc.). |
 | `scripts/gen-admin-totp.ts` | One-time / rotation tool. `tsx scripts/gen-admin-totp.ts` generates a fresh TOTP secret + prints a scannable QR for 1Password and the base32 secret to paste into Render's `ADMIN_TOTP_SECRET` env. |
 | `.env.example` | All required env vars. Sync with code when adding new ones. |
@@ -187,6 +188,7 @@ Stop and ask if any of the following are true:
 - Task changes how sessions or identity work
 - Task touches a service file + a route + a schema field together (real risk surface)
 - Task could break the smoke test (create story → read → end → archive)
+- **Task introduces a new external origin** (CDN, analytics tracker, font host, embedded widget, third-party script — anything the browser fetches at runtime). CSP in `server/index.ts` will block it once we promote out of report-only. Update `CSP_DIRECTIVES` in the same PR.
 - You're not sure if something is in or out of scope
 
 ---

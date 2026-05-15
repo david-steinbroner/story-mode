@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.9.6**. Milestones 1–5 shipped pre-launch (Foundation → AI Memory → Page Structure pivot → Pacing → Polish & UX Overhaul). Pre-launch audit Phases 1–5 (2026-05-11). **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; the AI-powered intent matcher + `POST /api/guide/chat` endpoint are still TODO. **Most recent meaningful push:** the 2026-05-15 audit is shipping in risk-isolated PRs — A1 (v1.9.3) + A2 (v1.9.4) + C (v1.9.5) + A3 (v1.9.6) so far. Full version-by-version detail in the "Completed Milestones" entries below.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.9.7**. Milestones 1–5 shipped pre-launch (Foundation → AI Memory → Page Structure pivot → Pacing → Polish & UX Overhaul). Pre-launch audit Phases 1–5 (2026-05-11). **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; the AI-powered intent matcher + `POST /api/guide/chat` endpoint are still TODO. **Most recent meaningful push:** the 2026-05-15 audit is shipping in risk-isolated PRs — A1 (v1.9.3) + A2 (v1.9.4) + C (v1.9.5) + A3 (v1.9.6) + A4 (v1.9.7) so far. Full version-by-version detail in the "Completed Milestones" entries below.
 >
 > *Last updated: 2026-05-15 · Maintenance rule at the bottom.*
 
@@ -39,6 +39,32 @@ The original Milestone 6 plan called for a slide-up `GuideChat.tsx` modal trigge
 ---
 
 ## Completed Milestones
+
+### Audit 2026-05-15 PR-A4: helmet + Content Security Policy in report-only mode (2026-05-15) — v1.9.7 ✅
+
+Closes #19. Adds `helmet({...})` to `server/index.ts` with a Content Security Policy defined in a named `CSP_DIRECTIVES` const (single source of truth — see CLAUDE.md §9). Currently in **report-only mode**: violations log to the browser console as warnings but the request is not blocked. Plan is to watch for ~24h of clean reports in prod, then flip `reportOnly: false` to enforce (separate one-line PR).
+
+**Why report-only first** — per Round 3's Gemini critique, the original audit doc undersold CSP risk by calling it "low risk + 30 min." A misconfigured CSP can silently break production (Shadcn inline styles, PostHog cross-origin beacons, Sentry, Safari quirks) for hours before getting noticed. Report-only is the standard safer onboarding: catches misconfig as console warnings without breaking the app.
+
+**Directives shipped:**
+- `default-src 'self'`
+- `script-src 'self' 'unsafe-inline' 'unsafe-eval'` — `unsafe-inline` covers Tailwind/Shadcn runtime style injection; `unsafe-eval` covers Vite HMR (harmless in prod since the prod bundle doesn't eval). Tighter version with nonces/hashes is a future enhancement.
+- `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`
+- `font-src 'self' https://fonts.gstatic.com data:`
+- `img-src 'self' data: https:` — permissive; tighten when user-supplied images ship
+- `connect-src 'self' ws: wss: https://*.sentry.io https://*.ingest.sentry.io https://*.posthog.com https://*.i.posthog.com` — Sentry SDK posts to `*.ingest.sentry.io`, PostHog to `*.posthog.com`. OpenRouter is server-side so no directive needed. `ws:`/`wss:` for Vite HMR in dev.
+- `worker-src 'self' blob:`
+- `frame-ancestors 'none'` — clickjacking protection (replaces X-Frame-Options)
+- `object-src 'none'`
+- `base-uri 'self'`
+
+**Other helmet defaults kept:** HSTS (max-age 180 days), `X-Content-Type-Options: nosniff`, `X-DNS-Prefetch-Control: off`, `Cross-Origin-Opener-Policy: same-origin`, plus the standard frameguard.
+
+**Helmet defaults overridden:**
+- `crossOriginEmbedderPolicy: false` — default is `require-corp`, which breaks third-party assets that don't set CORP headers (Sentry, PostHog, Fonts).
+- `referrerPolicy: strict-origin-when-cross-origin` — helmet's default of `no-referrer` breaks analytics referrer tracking.
+
+**Future-proofing:** if anyone adds a new external origin (CDN, analytics tracker, font host, embedded widget, third-party script — anything the browser fetches at runtime), they need to update `CSP_DIRECTIVES` in the same PR. Captured as a new stop-and-ask trigger in CLAUDE.md §10, and the seam itself is documented in §9.
 
 ### Audit 2026-05-15 PR-A3: reader_input delimiters on 3 AI call paths (2026-05-15) — v1.9.6 ✅
 
