@@ -248,14 +248,16 @@ Use the • character exactly. No "Option A" labels.`;
       prompt += `THEME: ${gameState.worldTheme}\\n\\n`;
     }
 
-    // Character info with narrative context
+    // Character info with narrative context. appearance + backstory are
+    // reader-typed text, so they go inside <reader_input> tags so the model
+    // treats them as in-story content rather than instructions (CLAUDE.md §5).
     if (character) {
       prompt += `CHARACTER: ${character.name}, Level ${character.level} ${character.class}\\n`;
       if (character.appearance) {
-        prompt += `Description: ${character.appearance}\\n`;
+        prompt += `Description: <reader_input>${character.appearance}</reader_input>\\n`;
       }
       if (character.backstory) {
-        prompt += `Backstory: ${character.backstory}\\n`;
+        prompt += `Backstory: <reader_input>${character.backstory}</reader_input>\\n`;
       }
       prompt += `HP: ${character.currentHealth}/${character.maxHealth}, Mana: ${character.currentMana}/${character.maxMana}\\n`;
       prompt += `Stats: STR ${character.strength}, DEX ${character.dexterity}, CON ${character.constitution}, INT ${character.intelligence}, WIS ${character.wisdom}, CHA ${character.charisma}\\n\\n`;
@@ -321,12 +323,18 @@ Use the • character exactly. No "Option A" labels.`;
       prompt += `${storySummary.summaryText}\\n\\n`;
     }
 
-    // Recent conversation for context
+    // Recent conversation for context. Player turns are reader-typed input,
+    // so they're wrapped in <reader_input> tags. DM/NPC turns are
+    // AI-generated and pass through unwrapped (CLAUDE.md §5).
     if (recentMessages.length > 0) {
       prompt += "RECENT CONVERSATION:\\n";
       recentMessages.slice(-5).forEach(msg => {
         const speaker = msg.sender === 'dm' ? 'DM' : msg.sender === 'npc' ? (msg.senderName || 'NPC') : 'Player';
-        prompt += `${speaker}: ${msg.content}\\n`;
+        if (msg.sender === 'player') {
+          prompt += `Player: <reader_input>${msg.content}</reader_input>\\n`;
+        } else {
+          prompt += `${speaker}: ${msg.content}\\n`;
+        }
       });
       prompt += "\\n";
     }
@@ -929,9 +937,14 @@ Example Quest Actions:
     modelOverride?: string,
   ): Promise<Omit<Quest, 'id'> | null> {
     try {
-      // Get conversation context
+      // Get conversation context. Player turns wrap in <reader_input> tags so
+      // the model treats them as in-story input, not instructions
+      // (CLAUDE.md §5). DM/NPC turns pass through unwrapped.
       const conversationContext = context.recentMessages.slice(-5).map(m => {
         const speaker = m.sender === 'dm' ? 'DM' : m.sender === 'npc' ? (m.senderName || 'NPC') : 'Player';
+        if (m.sender === 'player') {
+          return `Player: <reader_input>${m.content}</reader_input>`;
+        }
         return `${speaker}: ${m.content}`;
       }).join('\\n');
 
@@ -947,7 +960,7 @@ Example Quest Actions:
             content: `Recent conversation:
 ${conversationContext}
 
-Player's latest action: "${playerMessage}"
+Player's latest action: <reader_input>${playerMessage}</reader_input>
 
 Player Level: ${context.character?.level || 1}
 Current Scene: ${context.gameState?.currentScene || "Unknown"}
@@ -1019,12 +1032,15 @@ Format as JSON:
       const characterDesc = character.appearance || "a mysterious adventurer";
       const characterStory = character.backstory || "seeking their destiny";
 
+      // Reader-supplied character fields wrap in <reader_input> tags so the
+      // model treats them as in-story content rather than instructions
+      // (CLAUDE.md §5). Class is constrained to a small enum and not wrapped.
       const prompt = `Based on this character, create a unique and coherent game world that matches their vibe and story:
 
 CHARACTER:
-- Name: ${character.name}
-- Description: ${characterDesc}
-- Backstory: ${characterStory}
+- Name: <reader_input>${character.name}</reader_input>
+- Description: <reader_input>${characterDesc}</reader_input>
+- Backstory: <reader_input>${characterStory}</reader_input>
 - Class: ${character.class || "Adventurer"}
 
 TASK: Generate a complete world setting that feels authentic to this character. If they're a "ball of lint trying to find their lint family," create a whimsical lint universe with fabric creatures and dryer vent dungeons. If they're a dark knight, create a grim gothic world. Match the tone perfectly.
