@@ -174,7 +174,7 @@ Final-page narrative rules (in `getPacingGuidance()`):
 
 ## Maintenance
 
-- **Update when:** voice rules, pacing, banned vocabulary, surprise-me examples, fallback text, or final-page behavior change. Same commit as the code change in `server/aiService.ts` / `server/routes.ts`.
-- **TL;DR refresh:** rewrite the top block whenever a core rule shifts (voice register, word target, choice format).
+- **Update when:** voice rules, pacing, banned vocabulary, surprise-me examples, fallback text, or final-page behavior change. Same commit as the code change in `server/aiService.ts` / `server/routes.ts`. Bump "Last updated" below.
+- **TL;DR rule:** current-state-only — describes what the voice *is*, not what changed when. Rewrite the top block whenever a core rule shifts (voice register, word target, choice format). Never a running log of voice tweaks (those go in `docs/MILESTONES.md`).
 - **Source of truth conflicts:** the code (`getSystemPrompt()` and friends) wins. If this doc disagrees, update this doc.
 - **Last updated:** 2026-05-14

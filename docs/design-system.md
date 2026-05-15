@@ -157,8 +157,8 @@ Where the visually-distinctive components live (all in `client/src/components/`)
 
 ## Maintenance
 
-- **Update when:** palette, typography, spacing, shadow, animation, interaction model, or component inventory changes. Update *in the same commit* as the code change.
-- **TL;DR refresh:** rewrite the top block whenever palette, typography, or core interaction rules shift.
+- **Update when:** palette, typography, spacing, shadow, animation, interaction model, or component inventory changes. Update *in the same commit* as the code change. Bump "Last updated" below.
+- **TL;DR rule:** current-state-only — describes how the design system *is*, not what changed when. Rewrite the top block whenever palette, typography, or core interaction rules shift. Never a running log of changes (that belongs in `docs/MILESTONES.md`).
 - **Drift check:** the periodic cleanup pass in `CLAUDE.md §11` includes diffing `index.css` color tokens against the palette table above. If the table is wrong, this doc loses authority.
 - **Source of truth conflicts:** CSS wins. If this doc disagrees with `index.css`, update this doc.
 - **Last updated:** 2026-05-14

@@ -1,6 +1,6 @@
 # Story Mode — Roadmap
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.9.1**. Latest meaningful change: admin runtime AI-model toggle (Haiku ↔ Sonnet flippable from `/admin` with no redeploy, v1.9.0). **Next up (priority order):** Milestone 6 (AI-powered Guide chatbot — v1.8.1's hardcoded Q&A drawer is partial), monetization decision (elevated by the Sonnet quality gap), paid/free tier model routing (the v1.9.0 toggle is the seam), prompt caching via Anthropic Direct (~25–35% Sonnet cost cut), AI quality pass remaining (Chunks C + D + the Sonnet comparison — Chunk B shipped in v1.5.0), palette consolidation. **Deferred:** Chunk C (prose tells, minimal benefit on Sonnet), Chunk D (entity tracking, defer until novels are real product). **Maybe/TBD:** audio drama, AI-generated puzzles, walk-to-earn — each parked for a dedicated brainstorm. Full version-by-version history → `docs/MILESTONES.md`.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.9.2**. Latest meaningful change: admin runtime AI-model toggle (Haiku ↔ Sonnet flippable from `/admin` with no redeploy, v1.9.0). **Next up (priority order):** Milestone 6 (AI-powered Guide chatbot — v1.8.1's hardcoded Q&A drawer is partial), monetization decision (elevated by the Sonnet quality gap), paid/free tier model routing (the v1.9.0 toggle is the seam), prompt caching via Anthropic Direct (~25–35% Sonnet cost cut), AI quality pass remaining (Chunks C + D + the Sonnet comparison — Chunk B shipped in v1.5.0), palette consolidation. **Deferred:** Chunk C (prose tells, minimal benefit on Sonnet), Chunk D (entity tracking, defer until novels are real product). **Maybe/TBD:** audio drama, AI-generated puzzles, walk-to-earn — each parked for a dedicated brainstorm. Full version-by-version history → `docs/MILESTONES.md`.
 >
 > *Last updated: 2026-05-14 · Maintenance rule at the bottom.*
 
@@ -106,8 +106,8 @@ See `docs/MILESTONES.md` for the full history. Most recent:
 
 ## Maintenance
 
-- **Update when:** a new "next up" item is decided OR a planned item ships (move it to MILESTONES, leave a one-line entry under "Recently shipped" here).
-- **TL;DR rule (v1.9.1):** The TL;DR is **current-state-only**, not a version log. Cap ~80 words. Cover: live version, latest meaningful change, next-up priority order, deferred items, Maybe/TBD pointers. **Do not** append a new version mention every push — that's what `## Recently shipped` and `docs/MILESTONES.md` are for. The version in the TL;DR must match `package.json`; if they disagree, update this doc.
+- **Update when:** a new "next up" item is decided OR a planned item ships (move it to MILESTONES, leave a one-line entry under "Recently shipped" here). Bump "Last updated" below.
+- **TL;DR rule:** current-state-only, not a version log. Cap ~80 words. Cover: live version, latest meaningful change, next-up priority order, deferred items, Maybe/TBD pointers. **Do not** append a new version mention every push — that's what `## Recently shipped` and `docs/MILESTONES.md` are for. The version in the TL;DR must match `package.json`; if they disagree, update this doc.
 - **Stale check:** if "Maybe / TBD" items have sat untouched for 2+ weeks, prune or promote them. They're decisions in-flight, not graveyards.
 - **Same commit as code:** doc updates ride along with the code commit.
 - **Last updated:** 2026-05-14

@@ -196,21 +196,33 @@ Stop and ask if any of the following are true:
 Three layers.
 
 ### Per-task (every commit)
-When a code change touches a living doc's concern, **update the doc in the same commit**.
+When a code change touches a living doc's concern, **update the doc in the same commit**. Also bump the doc's "Last updated" date in its footer.
 
-- Shipped a milestone → `docs/MILESTONES.md` entry + TL;DR refresh
-- Decided a future direction or shipped a roadmap item → `docs/ROADMAP.md` update + TL;DR refresh
+- Shipped a milestone → `docs/MILESTONES.md` entry + TL;DR refresh (current-state only — see footer rule)
+- Decided a future direction or shipped a roadmap item → `docs/ROADMAP.md` update + TL;DR refresh (current-state only)
 - Changed brand language, palette, voice, interaction model → `docs/design-system.md` (visual) or `docs/ai-voice.md` (AI) + TL;DR refresh
 - Changed rate limits, model, cost behavior, daily cap → `docs/api-and-cost.md` + TL;DR refresh
 - Changed §9 territory (new service, deleted component) → §9 here
-- Changed env vars, schema → `.env.example`, §9 here
+- Changed env vars → `.env.example` **AND** `README.md` (env vars are documented in both — keep them in sync)
+- Changed npm scripts, deploy steps, or onboarding flow → `README.md`
+- Changed `shared/schema.ts` → migration file in `migrations/` + §9 here
+- Wrote a new design spec → `docs/specs/<name>.md`. Reference it from the ROADMAP entry that drove it. Archive (move to `docs/specs/archive/` or delete) once the work it described has shipped and been folded into MILESTONES.
+
+### Updating CLAUDE.md itself
+- §0 Document Map → when a new doc is added to `docs/` (or removed)
+- §9 Files to know → when a service file is added/deleted/renamed, or a load-bearing constraint changes
+- §10 Questions to ask before starting → when a new class of "stop and ask" trigger surfaces (a recurring footgun, a new high-risk area)
+- §11 (this protocol) → when the maintenance shape itself shifts (new doc, new trigger class, new rhythm)
+
+### Every commit (Definition of Done; see §3)
+`tsc --noEmit` passes. Pre-existing console errors in the browser don't count; new ones do.
 
 ### End-of-session ritual
-When I say "we're done" or after a push, refresh any TL;DRs that drifted and log chat-only decisions to `docs/ROADMAP.md`. ~5 lines of writes max.
+When the user says "we're done" or after a push, refresh any TL;DRs that drifted, audit `docs/ROADMAP.md` Next Up / Maybe for stale items, and verify the working tree is clean and pushed. Log chat-only decisions (ideas decided in conversation that weren't yet captured) to `docs/ROADMAP.md`. ~5–10 lines of writes max.
 
 ### Before each milestone push
-Run `tsc --noEmit` and `npm audit`. If either fails, fix before push.
+Beyond every-commit `tsc`, also run `npm audit`. If it fails or surfaces new high-severity issues, fix before push.
 
 ---
 
-*Living docs (the ones in `docs/`) each have their own TL;DR + maintenance footer specifying when to update them. The per-task rule above is the universal trigger; each doc's footer adds specifics.*
+*Living docs (the ones in `docs/`) each have their own TL;DR + maintenance footer specifying when to update them. The per-task rule above is the universal trigger; each doc's footer adds specifics. **TL;DRs are current-state-only across every living doc** — never a running version log. Version-by-version history belongs in MILESTONES body entries.*

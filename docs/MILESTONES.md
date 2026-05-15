@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.9.1**. Milestones 1–5 shipped pre-launch (Foundation → AI Memory → Page Structure pivot → Pacing → Polish & UX Overhaul). Pre-launch audit Phases 1–5 (2026-05-11). **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; the AI-powered intent matcher + `POST /api/guide/chat` endpoint are still TODO. **Most recent meaningful push:** v1.9.0 admin runtime AI-model toggle. Full version-by-version detail in the "Completed Milestones" entries below.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.9.2**. Milestones 1–5 shipped pre-launch (Foundation → AI Memory → Page Structure pivot → Pacing → Polish & UX Overhaul). Pre-launch audit Phases 1–5 (2026-05-11). **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; the AI-powered intent matcher + `POST /api/guide/chat` endpoint are still TODO. **Most recent meaningful push:** v1.9.0 admin runtime AI-model toggle. Full version-by-version detail in the "Completed Milestones" entries below.
 >
 > *Last updated: 2026-05-14 · Maintenance rule at the bottom.*
 
@@ -8,107 +8,33 @@
 
 ## Current Milestone
 
-### Milestone 6: Your Guide — Interactive Chatbot + Bookshelf Nav
+### Milestone 6: Your Guide — Interactive Chatbot
 
-**Goal:** Two things: (1) Turn the static Guide mascot on the bookshelf into a real conversational character that helps users navigate the app and get inspired. (2) Add a proper nav bar / menu to the bookshelf screen, mirroring the menu already in the story reading screen.
+**Goal:** Turn the static Guide mascot on the bookshelf into a real conversational character that helps users navigate, get inspired, and resolve common intents (resume, start new, delete, explain, etc.) — falling back to AI for freeform questions.
 
-#### Work completed this session
+#### Shipped (partial progress — pivoted from the original plan)
 
-**Bug fixes shipped:**
-- **Story view "No messages yet"** ✅ — `queryClient.ts` URL fix (`queryKey[0]` only) + `_activeStoryId` timing fix (set synchronously in `enterStory`/`navigateToBookshelf`).
-- **New story button missing when all stories archived** ✅ — Filter condition fix (`stories.length > 0` instead of `completedStories.length > 0`).
-- **Nav bar not fixed on mobile** ✅ — `h-screen` → `h-dvh` for mobile Safari viewport, plus `overflow: hidden` on `html`/`body`.
-- **Player messages appearing out of order** ✅ — Optimistic cache update added to `aiChatMutation.onMutate` so player choices appear immediately.
-- **End Story not persisting** ✅ — Route-level retry expanded to catch all error types (was only catching `parse_failure`). Captured `storyIdToEnd` before async state changes.
-- **Duplicate story creation** ✅ — Server-side creation lock (`Map<sessionId, timestamp>`, 30s window, 429 on duplicates). Client-side: `isSubmitting` ref guard (no timeout reset) + `isCreatingStory` state check at top of `onStartStory`.
-- **AI fallback showing D&D text** ✅ — All fallback messages updated to brand voice ("Your Guide"), removed DM/NPC/combat/quest/weapon/magical weave references. Updated `generateFollowUpQuest` system prompt.
+The original Milestone 6 plan called for a slide-up `GuideChat.tsx` modal triggered by tapping the Guide avatar. Through v1.8.x we instead landed on the **sticky-drawer pattern** — the same drawer affordance now appears on every screen (bookshelf, wizard, in-story), so the chatbot uses an interaction grammar the user already knows from elsewhere in the app rather than introducing a fourth modal model. Several Milestone 6 outcomes already ship in production:
 
-**Features shipped:**
-- **AI-generated story titles** ✅ — `storyTitle` column on `gameState`, parsed from AI opening response. Bookshelf displays real titles, fallback to "Untitled Story".
-- **Always-visible "Start a New Story" button** ✅ — Shows whenever stories exist, not only when Currently Reading is empty.
-- **Scroll-to-bottom button** ✅ — Floating ChevronDown button appears when scrolled >100px from bottom in story reading screen.
-- **Long-press end/archive on active stories** ✅ — Active book spines now show End Story + Archive popover on long-press.
-- **Text selection disabled on book spines** ✅ — `select-none` prevents highlighting on long-press.
-- **Loading button copy** ✅ — Changed from "The Guide is writing..." to "Starting your story..."
-- **Archive moved to database** ✅ — `storyArchived` boolean column on `gameState`, `PATCH /api/stories/:storyId/archive` endpoint. Replaces localStorage.
-- **Guide avatar as universal menu icon** ✅ — Extracted `GuideAvatar.tsx` as shared component. Replaces three-dot icon on story screen. Bookshelf avatar is now a DropdownMenu trigger with font size, archive toggle, and admin link.
-- **Version number on bookshelf** ✅ — Small text at bottom of library page, bumped with each deploy. (Current version is in `package.json` and the footer; bumped many times since this milestone.)
-- **Content freedom in AI prompts** ✅ — Added CONTENT FREEDOM section to system prompt allowing mature themes when reader-initiated.
-- **AI model swap** ✅ — Claude 3.5 Haiku → Mistral Small Creative → DeepSeek V3. DeepSeek had best JSON reliability at this milestone. **Later reverted to Claude 3.5 Haiku** for writing quality (commit `2621f8c`, 2026-05-11). Current model is documented in `docs/api-and-cost.md`.
-- **Choice drawer always visible** ✅ — Drawer shows whenever story is active (not gated on parsed choices), so "I have something else in mind..." is always available.
-- **Choice parser expanded** ✅ — `parseMessageContent()` now handles bullets, numbered lists, and "Option A:" labels. Strips all prefixes.
-- **Book spine labels improved** ✅ — Removed unreadable 7px spine text, widened label area to 110px, 2-line clamp instead of truncate.
+- **Bookshelf drawer Q&A (v1.8.1)** — sticky drawer at the bottom of the bookshelf. Peek copy "What do you want to do?". Expanded: primary CTA "Start a New Story" + two `ChoiceButton`s ("Tell me how this works", "What kinds of stories?"). Tapping a question appends a `PlayerBubble` + a hardcoded Guide reply to the scroll area above. Q&A history is ephemeral per visit.
+- **Wizard drawer Q&A (v1.8.2, v1.8.4, v1.8.6)** — same pattern on Step 1 (AI-generated character suggestions via `/api/story/surprise-me?count=3`) and Step 2 ("Tell me about these lengths" + "Can I keep going after a story is done?" with canned replies; the CTA bubble "How long should your story be?" auto-re-appends after every reply so the call to action stays at the bottom).
+- **Shared Guide primitives (v1.8.0–v1.8.1)** — `GuideBubble`, `PlayerBubble`, `ChoiceButton`, `TypingDots`, `CenteredHeader`. The interaction grammar for the chatbot is now consistent everywhere the Guide speaks.
+- **Bookshelf greeting + state-aware copy (v1.7.4–v1.7.5)** — `getGreeting()` in `Bookshelf.tsx` produces 10 state-aware Guide bubbles personalized on most-recent story title, with a 12h "Welcome back" gate and length-tier-up suggestion. This is the Guide already speaking to the user; the chatbot just turns it bidirectional.
+- **Foundation components (pre-milestone, still available)** — `GuideConfirmDialog.tsx` (confirmation modal) and `GuideStoryCard.tsx` (story info card with genre badge + progress bar). Not currently wired into the drawer flow; can host the story-action intents (resume / delete / reset) when those land.
 
-**Infrastructure & reliability shipped:**
-- **Rate limits increased** ✅ — General: 100 → 500/hr, AI: 20 → 60/hr (each page turn fires 4-5 fetches). **Later bumped again** during the 2026-05-12 pass; current values in `docs/api-and-cost.md`.
-- **Trust proxy** ✅ — `app.set('trust proxy', 1)` for Render reverse proxy compatibility with rate limiter.
-- **DB connection pool** ✅ — Increased pool from default 10 → max 20 with idle/connect timeouts. Fixes `MaxClientsInSessionMode`.
-- **DeepSeek JSON compatibility** ✅ — Removed `response_format: { type: "json_object" }` (DeepSeek returns 400). Added markdown code fence stripping for ```json wrappers.
-- **Production log privacy** ✅ — Removed raw prompt/response log blocks, truncated all content previews to 50 chars.
+#### Remaining
 
-**Code cleanup shipped:**
-- Deleted: `CharacterQuestionnaire.tsx`, `AbilityScoreRoller.tsx`, `CampaignManager.tsx`
-- Deleted: `MemStorage` class (~665 lines)
-- Deleted: Enemy routes, combat routes, campaign routes (~350 lines)
-- Net: **-1,362 lines** removed during this milestone's cleanup (Phase 5 of the pre-launch audit on 2026-05-11 removed an additional -1,059 lines; see below).
-- Fixed duplicate `aiResponseReceived` key in `posthog.ts` (kept enhanced version)
-- Fixed PostHog `disabled` → `opt_out_capturing_by_default` (eliminated TS error)
-- Updated caniuse-lite browserslist database
-- `npm audit fix`: 24 → 6 vulnerabilities (remaining 6 require Vite 8.0 breaking change)
+1. **AI fallback endpoint** — `POST /api/guide/chat` with a short Guide-specific system prompt (~200 tokens, "helpful librarian" persona). Lightweight Haiku call (~$0.001–0.002 per interaction), no `x-story-id` required since it's a bookshelf-context helper. Spend tracking via the existing `spendTracker.trackRequest` path; per-call `ai_call` event_log row matches the v1.9.0 attribution shape.
+2. **Freeform input on the bookshelf drawer** — currently the drawer only exposes two `ChoiceButton`s. Add an always-visible text input (mirroring the in-story drawer's "I have something else in mind…" field). Tapping send routes through (3).
+3. **Client-side intent matcher** — keyword match the freeform input against canned intents first (resume, new story, delete, help, reset). On match: surface the appropriate confirmation flow using `GuideConfirmDialog` + `GuideStoryCard` (already built). On no match: forward to the AI endpoint from (1).
+4. **Story-action canned intents in the drawer** — add "Continue last story" (jump to most-recent active), "Delete a story" (with `GuideConfirmDialog` + `GuideStoryCard`), "Reset everything" (clear session) as drawer `ChoiceButton`s alongside the existing two. Also closes the no-delete-UI gap that's been on the backlog since pre-launch.
+5. **Decide: ephemeral vs persistent thread.** Currently the drawer Q&A is ephemeral per bookshelf visit. The AI freeform path needs a decision: ephemeral (matches today's pattern) or persistent in localStorage / DB with a cap (e.g. last 10 messages). Lean ephemeral until there's a reason — it's the simpler shape and matches user expectation set by v1.8.x.
 
-#### Bookshelf nav / menu — completed ✅
-
-The Guide avatar in the bookshelf header is now a DropdownMenu trigger. Menu items: font size controls (shared `storymode-font-size` localStorage key), archive toggle (only when archived stories exist), admin link. The same Guide avatar replaces the three-dot icon on the story reading screen for consistency.
-
-This sets up the Guide chatbot — when we build it, the avatar tap will open the chat instead of the menu, and settings will move into the chat.
-
-#### Guide chatbot — not yet built
-
-**Foundation (already built before this milestone):**
-- `GuideConfirmDialog.tsx` — Reusable modal dialog (cream background, pastel palette, min 44px tap targets). Props: title, description, children slot, confirm/cancel labels, callbacks.
-- `GuideStoryCard.tsx` — Presentational card showing story info (genre badge with color coding, page progress, character description, progress bar). Slots into GuideConfirmDialog.
-
-**Canned responses (no AI call, handled client-side):**
-
-Each canned response flows through a `GuideConfirmDialog` for confirmation before taking action.
-
-| Intent | Trigger phrases | Confirmation screen | Action |
-|---|---|---|---|
-| Resume story | "resume", "continue", "keep reading" | GuideConfirmDialog with GuideStoryCard showing the story | Navigate to story view |
-| Start new story | "new story", "start", "begin" | GuideConfirmDialog: "Start a new adventure?" | Navigate to story creation |
-| Delete a story | "delete", "remove" | GuideConfirmDialog with GuideStoryCard: "Remove this story?" | DELETE `/api/stories/:storyId`, refresh bookshelf |
-| How it works | "how does this work", "help", "what is this" | No confirmation needed — display canned explainer directly in chat | Show hardcoded explanation |
-| Clear all data | "delete my data", "reset everything", "start over" | GuideConfirmDialog: "This will remove all your stories. Are you sure?" | Clear session data |
-
-**AI-powered responses (one Haiku call each):**
-- "What kind of story should I write?" / open-ended creative prompts → AI generates personalized suggestions based on reading history
-- "Tell me about my stories" → AI summarizes their bookshelf
-- Any freeform message that doesn't match a canned intent
-
-**Architecture:**
-- New component: `GuideChat.tsx` — slide-up modal triggered by tapping the Guide mascot on the bookshelf
-- New API route: `POST /api/guide/chat` — lightweight endpoint with its own short system prompt (~200 tokens, "helpful librarian" persona)
-- Intent matching: client-side keyword matching first; if no canned match, forward to AI endpoint
-- Max 10 messages per conversation before auto-clearing (this is a helper, not a persistent chat)
-- The Guide only appears on the bookshelf for now (not during active stories)
-
-**Cost estimate:** ~$0.001-0.002 per AI-powered Guide interaction. Most interactions will be canned (free).
-
-#### Remaining tasks
-
-1. Build `GuideChat.tsx` — slide-up modal UI with message list, text input, Guide avatar
-2. Implement client-side intent matcher — keyword matching for canned intents
-3. Wire canned intents to confirmation dialogs using existing `GuideConfirmDialog` + `GuideStoryCard`
-4. Build `POST /api/guide/chat` endpoint with short Guide-specific system prompt
-5. Connect AI fallback for unmatched intents
-6. Wire GuideChat to the Guide mascot tap on Bookshelf (replace current menu — settings move into chat)
-7. Test all flows: resume, new story, delete, help, clear data, AI freeform
-
-**Out of scope:**
-- Guide appearing during active stories
-- Guide remembering past conversations across sessions
-- Voice or audio
+#### Out of scope (explicitly deferred)
+- Guide appearing during active stories (the in-story drawer is a different surface)
+- Voice / audio narration
 - Guide avatar customization
+- Cross-session memory of prior Guide conversations
 
 ---
 
@@ -504,7 +430,7 @@ These were removed during milestones 5–6:
 
 ## Maintenance
 
-- **Update when:** any milestone work ships (committed code) — add a section under "Completed Milestones" or extend the current one. Also append to "Already deleted" when meaningful dead code is removed.
-- **TL;DR rule (v1.9.1):** Current-state-only, ~60 words. Cover: live version, milestones 1–5 status, active milestone (Milestone 6) status, latest push pointer. **Do not** append a sentence per shipped version — version-by-version detail lives in the "Completed Milestones" entries below, and that's the format readers should reach for when they want history.
+- **Update when:** any milestone work ships (committed code) — add a section under "Completed Milestones" or extend the current one. Also append to "Already deleted" when meaningful dead code is removed. Bump "Last updated" below.
+- **TL;DR rule:** current-state-only, ~60 words. Cover: live version, milestones 1–5 status, active milestone (Milestone 6) status, latest push pointer. **Do not** append a sentence per shipped version — version-by-version detail lives in the "Completed Milestones" entries below, and that's the format readers should reach for when they want history.
 - **Same commit as code:** the doc update rides along with the milestone commit, not as a separate hygiene commit.
 - **Last updated:** 2026-05-14

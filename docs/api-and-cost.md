@@ -186,7 +186,7 @@ Math floor when we do monetize: **a 100-page novel costs ~$0.35 in API**. Pricin
 
 ## Maintenance
 
-- **Update when:** rate limits, max-tokens, model, daily cap, or pricing tier values change. Same commit as the code change.
-- **TL;DR refresh:** rewrite the top block whenever model swaps, rate-limit ceilings move materially, or the daily cap changes.
+- **Update when:** rate limits, max-tokens, model, daily cap, or pricing tier values change. Same commit as the code change. Bump "Last updated" below.
+- **TL;DR rule:** current-state-only — describes what the cost/limits *are*, not what changed when. Rewrite the top block whenever model swaps, rate-limit ceilings move materially, or the daily cap changes. Never a running log of rate-limit tweaks (those go in `docs/MILESTONES.md`).
 - **Source of truth conflicts:** code (`rateLimit.ts`, `spendTracker.ts`, `aiService.ts`) wins. If this doc disagrees, update this doc.
 - **Last updated:** 2026-05-14
