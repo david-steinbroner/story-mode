@@ -1,6 +1,6 @@
 # Story Mode — Roadmap
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.9.0**. Pre-launch audit Phases 1–5 (2026-05-11); v1.2.x polish (2026-05-12); concurrency hardening + hero rebrand + sentiment dedup (2026-05-12, v1.3.0); AI quality pass Chunk A + soft-delete (2026-05-13, v1.4.0); AI quality pass Chunk B + admin scroll fix (2026-05-13, v1.5.0); admin Recent Activity + session-ID untruncation + dev event-log visibility + empty-shelf welcome copy (2026-05-13, v1.5.1); Guide-chat wizard + universal sparks + in-story header redesign + simplified titles (2026-05-13, v1.6.0); voice/cost TL;DR refresh (2026-05-13, v1.6.1); admin URL simplified to `/admin` + production-ready error messaging + TOTP 2FA on admin login (2026-05-14, v1.7.0); per-tab dev-only AI model override for Haiku-vs-Sonnet side-by-side testing (2026-05-14, v1.7.1); **in-story Guide-avatar messenger treatment + always-visible custom-input field (2026-05-14, v1.7.2); **avatar-above-bubble layout across all three Guide surfaces (2026-05-14, v1.7.3); **bookshelf Guide copy expanded from 4 states to 10, personalized on most-recent story title (2026-05-14, v1.7.4); **Guide copy revoiced warmer + welcome-back gating + length-tier-up suggestions (2026-05-14, v1.7.5); **texting-app UX pass: centered headers, shared Guide-bubble components, optimistic new-story flow, animated typing dots (2026-05-14, v1.8.0); **Bookshelf becomes a conversation: tabbed shelves, sticky drawer with primary CTA + Q&A, shared ChoiceButton/PlayerBubble primitives (2026-05-14, v1.8.1); **shelf anchored to top + step order swap + drawer on both wizard steps with 3-suggestion surprise-me (2026-05-14, v1.8.2); **wizard Step 3 confirmation page with edit-from-drawer routes (2026-05-14, v1.8.3); **Bookshelf default-tab fix + wizard layout swap (action above Guide, mirrors library page) + smaller length tiles + new "Can I keep going?" canned answer (2026-05-14, v1.8.4); **Step 2 length tiles anchored above the scroll area (mirrors library shelf) + tile copy centered + pages/time on one line (2026-05-14, v1.8.5); **Step 2 Q&A wipes on re-entry + Guide re-asks "How long should your story be?" after every drawer reply so the CTA is always the last bubble (2026-05-14, v1.8.6); **new-story optimistic flow no longer bleeds messages from previous stories: client gates story-scoped queries on activeStoryId, server refuses every story-scoped route when x-story-id is missing (2026-05-14, v1.8.7); **admin AI-model toggle: flip Haiku ↔ Sonnet from `/admin` and the next AI call uses the new model (no redeploy). DB-backed via `app_config` table; per-call `ai_call` event in event_log for historical attribution (2026-05-14, v1.9.0)**. **Next up:** monetization decision (now elevated — Sonnet quality gap forces the conversation), tier model selection paid/free, prompt caching via Anthropic Direct (~25–35% Sonnet cost cut), Milestone 6 (Guide chatbot). **Deferred:** Chunk C (prose tells; minimal benefit on Sonnet) and Chunk D (entity tracking; defer until novels are real product). **Three big-direction brainstorms parked** under Maybe/TBD: audio drama, AI-generated puzzles, walk-to-earn.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.9.1**. Latest meaningful change: admin runtime AI-model toggle (Haiku ↔ Sonnet flippable from `/admin` with no redeploy, v1.9.0). **Next up (priority order):** Milestone 6 (AI-powered Guide chatbot — v1.8.1's hardcoded Q&A drawer is partial), monetization decision (elevated by the Sonnet quality gap), paid/free tier model routing (the v1.9.0 toggle is the seam), prompt caching via Anthropic Direct (~25–35% Sonnet cost cut), AI quality pass remaining (Chunks C + D + the Sonnet comparison — Chunk B shipped in v1.5.0), palette consolidation. **Deferred:** Chunk C (prose tells, minimal benefit on Sonnet), Chunk D (entity tracking, defer until novels are real product). **Maybe/TBD:** audio drama, AI-generated puzzles, walk-to-earn — each parked for a dedicated brainstorm. Full version-by-version history → `docs/MILESTONES.md`.
 >
 > *Last updated: 2026-05-14 · Maintenance rule at the bottom.*
 
@@ -26,11 +26,22 @@ In rough priority order.
 - **Blocks on:** PM decision. Once chosen, enable the `pricing-strategy` skill and design the paywall flow with `paywall-upgrade-cro`.
 - **Done when:** at least one paid path exists in the codebase and a user can complete a purchase.
 
-### AI quality pass — remaining chunks (B, C, D) + Sonnet comparison
-- **What:** Chunk A (system prompt restructure + agency clause + banned-patterns expansion) shipped 2026-05-13 as v1.4.0. Three chunks remain: Chunk B (validate + retry on rule violations), Chunk C (prose-tell post-process scrubbers + telemetry), Chunk D (entity commitment tracking via JSONB with cross-story-ready shape).
-- **Plus:** Sonnet 2-cell comparison as a small follow-up PR after the v1.4.0 prompt has run on real users for a bit. Test matrix in `docs/specs/ai-quality-pass-plan.md`.
-- **Status:** Chunk A live in production. Awaiting real-user signal before B/C/D and Sonnet test.
-- **Done when:** all four chunks have shipped + Sonnet decision made (ship/paid-tier/length-gated/revert).
+### AI quality pass — remaining chunks (C, D) + Sonnet comparison
+- **What:** Chunk A (system prompt restructure + agency clause + banned-patterns expansion) shipped 2026-05-13 as v1.4.0. Chunk B (validate-and-retry on stall / fake choices / final-page breach + Story Momentum) shipped 2026-05-13 as v1.5.0. Two chunks remain: Chunk C (prose-tell post-process scrubbers + telemetry), Chunk D (entity commitment tracking via JSONB with cross-story-ready shape).
+- **Plus:** Sonnet vs Haiku comparison — much cheaper now that v1.9.0 lets us flip the live model from `/admin` and `ai_call` event_log rows attribute every call. Test matrix in `docs/specs/ai-quality-pass-plan.md`.
+- **Status:** Chunks A + B live in production. C and D deferred (C minimal benefit on Sonnet; D defer until novels are real product). Sonnet comparison can now run incrementally instead of as a planned PR.
+- **Done when:** Sonnet decision made (ship as default / paid-tier only / length-gated / revert to Haiku). C and D have no scheduled commitment.
+
+### Paid/free tier model routing
+- **What:** Use the v1.9.0 admin toggle infrastructure (`server/aiModel.ts`'s resolution chain + `app_config`) to route different user tiers to different models — e.g. free users on Haiku, paid on Sonnet; or shorts on Haiku, novels/epics on Sonnet regardless of payment status. The file header in `aiModel.ts` calls this out as the next step on the same seam.
+- **Status:** Enabling infra shipped (v1.9.0). Tier logic not built. Blocked on monetization decision (the tier definitions come from that).
+- **Done when:** the model resolver looks at user/story attributes (paid?, story length tier?) and picks the model accordingly, and the choice is reflected in the admin's `ai_call` event_log attribution.
+
+### Prompt caching via Anthropic Direct
+- **What:** Switch the Anthropic call path from OpenRouter to Anthropic Direct so we can take advantage of [prompt caching](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching). Our system prompt is 1.5–2K tokens of mostly static content (voice rules, pacing, banned patterns); caching it brings per-call cost down ~25–35% on Sonnet specifically.
+- **Status:** Not started. Requires an Anthropic API key + a parallel client config so we can A/B against the OpenRouter path before swapping over.
+- **Risk:** OpenRouter's failover across providers goes away. If Anthropic Direct rate-limits or errors, we'd need our own retry/circuit-breaker shape.
+- **Done when:** Sonnet calls hit Anthropic Direct with `cache_control` on the system prompt, observed cost-per-page drops on the spend dashboard, and a kill-switch back to OpenRouter exists (a config toggle or env var).
 
 ### Palette consolidation
 - **What:** Replace hardcoded hex strings (`#FFF9F0`, `#6C7A89`, etc.) sprinkled through components with Tailwind tokens (`bg-background`, `text-foreground`, `bg-primary`). All tokens already defined.
@@ -55,6 +66,8 @@ Items raised but not committed to. Decide before doing.
 - **AI retry budget + rate-limit ceiling revisit** — current is 3 attempts + 240/hr. Once we have real concurrent-user data, retune.
 - **Desktop UX polish for end-story / delete on active stories** — currently no path on desktop to end an in-progress story without long-press (mouse equivalent exists via the kebab, but UX is awkward).
 - **`subagent-driven-development` discipline** — skill enabled but pattern not consistently used. Try on the next multi-task chunk.
+- **Sonnet-active warning in admin** — v1.9.0 toggles between Haiku and Sonnet at runtime, but Sonnet is ~10–15× pricier per call and the $10/day cap will fire much faster if it's left on. Could add a "Sonnet has been active for Xh, $Y spent so far today" highlight on the admin dashboard. Decide once we have real Sonnet-vs-Haiku usage signal.
+- **Multi-instance cache invalidation for admin override** — `server/aiModel.ts` holds the override in a module-level variable, fine for single-instance Render. If we ever scale horizontally, flips would only land on the instance handling the POST. Solutions: Postgres `LISTEN/NOTIFY`, short cache TTL (~30s), or a per-call DB read. Defer until horizontal scale is actually a thing.
 
 ---
 
@@ -94,7 +107,7 @@ See `docs/MILESTONES.md` for the full history. Most recent:
 ## Maintenance
 
 - **Update when:** a new "next up" item is decided OR a planned item ships (move it to MILESTONES, leave a one-line entry under "Recently shipped" here).
-- **TL;DR refresh:** rewrite the top block whenever "next up" priorities shift, a milestone ships, or the version bumps. The version in the TL;DR must match `package.json` — if they ever disagree, update this doc.
+- **TL;DR rule (v1.9.1):** The TL;DR is **current-state-only**, not a version log. Cap ~80 words. Cover: live version, latest meaningful change, next-up priority order, deferred items, Maybe/TBD pointers. **Do not** append a new version mention every push — that's what `## Recently shipped` and `docs/MILESTONES.md` are for. The version in the TL;DR must match `package.json`; if they disagree, update this doc.
 - **Stale check:** if "Maybe / TBD" items have sat untouched for 2+ weeks, prune or promote them. They're decisions in-flight, not graveyards.
 - **Same commit as code:** doc updates ride along with the code commit.
 - **Last updated:** 2026-05-14
