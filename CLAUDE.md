@@ -158,11 +158,12 @@ Most recently shipped + what's queued → `docs/MILESTONES.md` TL;DR and `docs/R
 | `server/eventLog.ts` | Server-side funnel analytics ground truth. |
 | `server/rateLimit.ts` | Rate limits live here; current values in the file. Keyed by `sessionId`. See `docs/api-and-cost.md`. |
 | `client/src/App.tsx` | 3-view routing: bookshelf → newStory → game. **Don't reorder the `setActiveStoryId` / `invalidateQueries` calls in `enterStory` / `navigateToBookshelf`** — they must be synchronous before the invalidation. |
-| `client/src/components/Bookshelf.tsx` | Landing screen. First-visit hero, Guide dropdown, book spines with long-press + `MoreVertical` button. |
-| `client/src/components/NewStoryCreation.tsx` | 2-step wizard. Accepts `seedDescription` from bookshelf hero. |
-| `client/src/components/ChatInterface.tsx` | Story reading screen. Drawer for choices (5rem peek). Story-complete footer when `storyComplete: true`. |
+| `client/src/components/Bookshelf.tsx` | Landing screen. Anchored shelf section (tabs: Currently Reading / Finished / Archive) above a scrolling chat area with Guide welcome bubble + ephemeral Q&A history + sticky drawer with primary CTA + canned-answer `ChoiceButton`s. Book spines still long-press + `MoreVertical` button for archive/end/delete. |
+| `client/src/components/NewStoryCreation.tsx` | 3-step wizard: description → length → confirm. Accepts `seedDescription` from bookshelf. Each step has a sticky drawer; Step 1's lazy-loads 3 AI character suggestions via `/api/story/surprise-me?count=3`. |
+| `client/src/components/ChatInterface.tsx` | Story reading screen. Messenger-style layout (`GuideBubble` for AI, `PlayerBubble` for player, `TypingDots` while generating). Drawer for choices (5rem peek) + always-visible custom-input field. Story-complete footer when `storyComplete: true`. |
 | `client/src/components/GuideAvatar.tsx` | Shared Guide mascot SVG. |
-| `client/src/components/GuideConfirmDialog.tsx`, `GuideStoryCard.tsx` | Foundation for Milestone 6 chatbot (not yet wired). |
+| `client/src/components/GuideBubble.tsx`, `PlayerBubble.tsx`, `ChoiceButton.tsx`, `TypingDots.tsx`, `CenteredHeader.tsx` | Shared Guide-surface primitives introduced in v1.8.0–v1.8.1. Used everywhere the Guide speaks (bookshelf, wizard, in-story). `TypingDots` uses `@keyframes typing-dot` in `index.css`. |
+| `client/src/components/GuideConfirmDialog.tsx`, `GuideStoryCard.tsx` | Foundation for Milestone 6 chatbot (not yet wired — the v1.8.1 Q&A drawer uses hardcoded help copy, not the planned AI Guide chat). |
 | `client/src/lib/queryClient.ts` | API helpers. Adds `x-session-id` and `x-story-id` headers. |
 | `client/src/lib/posthog.ts` | Client analytics. Event taxonomy is intentional — don't reorganize. |
 | `client/src/lib/sentry.ts` / `server/sentry.ts` | Error tracking config — don't modify without explicit ask. |

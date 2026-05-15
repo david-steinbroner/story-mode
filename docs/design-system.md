@@ -1,8 +1,8 @@
 # Story Mode — Design System
 
-> **TL;DR (read this first):** Pastel Playground palette (cream background, soft teal primary, warm peach secondary, sage accent, terracotta destructive). Light-only, no dark mode. **Inter** for UI, **Cinzel** for hero headers, **Crimson Pro** for story body via `.story-prose` (applied to AI message paragraphs). All three webfonts load from Google Fonts. Mobile-first at 375px. Tap targets ≥44px. Tap-first interaction model — every long-press action also has a visible button. **Source of truth for color/typography is `client/src/index.css` + `client/index.html`.** AI voice and banned vocabulary live in `docs/ai-voice.md`.
+> **TL;DR (read this first):** Pastel Playground palette (cream background, soft teal primary, warm peach secondary, sage accent, terracotta destructive). Light-only, no dark mode. **Inter** for UI, **Cinzel** for hero headers (incl. Bookshelf title), **Crimson Pro** for story body via `.story-prose`. All three webfonts load from Google Fonts. Mobile-first at 375px. Tap targets ≥44px. Tap-first interaction model — every long-press action also has a visible button. **Messenger grammar across every Guide surface** (bookshelf, wizard, in-story) — shared primitives `GuideBubble` / `PlayerBubble` / `ChoiceButton` / `TypingDots` / `CenteredHeader` teach the user the affordance once. **Source of truth for color/typography is `client/src/index.css` + `client/index.html`.** AI voice and banned vocabulary live in `docs/ai-voice.md`.
 >
-> *Last updated: 2026-05-12 · Maintenance rule at the bottom.*
+> *Last updated: 2026-05-14 · Maintenance rule at the bottom.*
 
 ---
 
@@ -130,10 +130,15 @@ Where the visually-distinctive components live (all in `client/src/components/`)
 
 | File | What it is |
 |---|---|
-| `Bookshelf.tsx` | Landing screen. Virtual shelves, book spines, first-visit hero with example prompts, Guide dropdown. |
-| `NewStoryCreation.tsx` | 2-step wizard. Page count → character description. |
-| `ChatInterface.tsx` | Story reading screen. Nav bar, message list with regenerate, bottom drawer for choices. |
+| `Bookshelf.tsx` | Landing screen. Anchored shelf section (tabs: Currently Reading / Finished / Archive — only the tabs with content show) above a scrolling chat area: Guide welcome bubble + ephemeral Q&A history + sticky drawer ("What do you want to do?") with primary CTA + canned Q&A `ChoiceButton`s. |
+| `NewStoryCreation.tsx` | 3-step wizard: character description → length → confirm. Each step has a sticky drawer affordance — Step 1's lazy-fetches 3 AI character suggestions, Step 2's explains length tiers, Step 3's offers edit-back / start-over. Step dots indicate progress. |
+| `ChatInterface.tsx` | Story reading screen. `CenteredHeader` nav bar with story title + page count. Message list with iMessage-style asymmetric bubbles — `GuideBubble` for AI, `PlayerBubble` for player; `TypingDots` while the Guide is generating. Bottom drawer for choices; always-visible custom-input field ("I have something else in mind…"). |
 | `GuideAvatar.tsx` | Shared Guide mascot SVG. The glowing orb. |
+| `GuideBubble.tsx` | Avatar-above + left-aligned bubble — the canonical "Guide is speaking" surface across bookshelf hero, wizard steps, in-story AI pages, and the typing indicator. |
+| `PlayerBubble.tsx` | Right-aligned player bubble (`bg-primary/10`, `rounded-2xl`). Used for in-story player turns, the optimistic new-story bubble, and Q&A questions on the bookshelf. |
+| `ChoiceButton.tsx` | Outline button — the single visual primitive for "pick one of these" across the app. Used in the in-story drawer, bookshelf drawer Q&A, and wizard suggestion lists. |
+| `TypingDots.tsx` | iMessage-style three-dot indicator with a staggered `@keyframes typing-dot` animation in `index.css`. Shown wherever the Guide is generating. |
+| `CenteredHeader.tsx` | 3-column grid (`44px | 1fr | 44px`) used by Bookshelf, `NewStoryCreation`, and `ChatInterface` top bars so titles render center-aligned regardless of side controls. |
 | `GuideConfirmDialog.tsx` | Reusable confirmation modal (cream background, pastel palette, ≥44px targets). |
 | `GuideStoryCard.tsx` | Presentational story info card (genre badge, page progress, character description). |
 | `ColdStartLoader.tsx` | Full-screen loader for Render cold starts. |
@@ -156,4 +161,4 @@ Where the visually-distinctive components live (all in `client/src/components/`)
 - **TL;DR refresh:** rewrite the top block whenever palette, typography, or core interaction rules shift.
 - **Drift check:** the periodic cleanup pass in `CLAUDE.md §11` includes diffing `index.css` color tokens against the palette table above. If the table is wrong, this doc loses authority.
 - **Source of truth conflicts:** CSS wins. If this doc disagrees with `index.css`, update this doc.
-- **Last updated:** 2026-05-12
+- **Last updated:** 2026-05-14

@@ -309,5 +309,13 @@
 }
 .animate-slide-up { animation: slide-up 0.4s ease-out forwards; }
 
+/* Typing-dot animation — used by TypingDots.tsx for the "Guide is typing"
+   indicator. Three dots, each with its own delay applied inline. */
+@keyframes typing-dot {
+  0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-2px); }
+}
+.animate-typing-dot { animation: typing-dot 1.2s ease-in-out infinite; }
+
 /* Story page serif font */
 .story-prose { font-family: 'Crimson Pro', Georgia, serif; }

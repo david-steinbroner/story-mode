@@ -1,10 +1,13 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, ChevronUp, RefreshCw } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { analytics } from "@/lib/posthog";
-import GuideAvatar from "./GuideAvatar";
+import GuideBubble from "./GuideBubble";
+import CenteredHeader from "./CenteredHeader";
+import ChoiceButton from "./ChoiceButton";
+import PlayerBubble from "./PlayerBubble";
 
 interface NewStoryCreationProps {
   onStartStory: (data: {
@@ -25,6 +28,12 @@ const STORY_LENGTHS = [
   { id: "epic", pages: 250, label: "Epic", desc: "Grand saga", time: "~3 hours" },
 ];
 
+// Hardcoded reply for the Step 2 drawer's "Tell me about these lengths"
+// option. Matches the Guide voice from docs/ai-voice.md — short sentences,
+// no em dashes, plain words, concrete.
+const LENGTH_EXPLAINER =
+  "Short stories run 25 pages, about 15 minutes. Quick and tight. Novellas double that, around 30 minutes, with room for a twist. Novels are 100 pages, a full hour, a whole arc. Epics run 250 pages, about 3 hours. A grand journey.";
+
 export default function NewStoryCreation({
   onStartStory,
   onBack,
@@ -34,181 +43,421 @@ export default function NewStoryCreation({
 }: NewStoryCreationProps) {
   const [storyLength, setStoryLength] = useState<string>("");
   const [characterDescription, setCharacterDescription] = useState(seedDescription);
-  const [step, setStep] = useState<1 | 2>(1);
-  const [isSurprising, setIsSurprising] = useState(false);
+  // v1.8.3: 3-step wizard. Step 1: description, Step 2: length, Step 3:
+  // confirmation. Tapping a length on Step 2 advances to Step 3 where
+  // the user reviews the choices and taps Begin to actually submit.
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const isSubmitting = useRef(false);
+
+  // Drawer state — sticky bottom drawer with peek/expand, same pattern as
+  // the bookshelf and in-story drawers. Drawer contents change per step.
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const drawerRef = useRef<HTMLDivElement>(null);
+
+  // Step 1 drawer payload — AI-generated character suggestions. Lazy
+  // fetched on first drawer open. Cached across drawer open/close until
+  // the user taps regenerate.
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+
+  // Step 2 drawer payload — ephemeral Q&A bubbles. Same shape and
+  // ephemeral semantics as the bookshelf Q&A history.
+  type QaMessage = { id: string; sender: "player" | "guide"; content: string };
+  const [step2Qa, setStep2Qa] = useState<QaMessage[]>([]);
+  const qaEndRef = useRef<HTMLDivElement>(null);
 
   const isValid =
     storyLength && characterDescription.trim().length >= 5;
 
-  const handleSubmit = () => {
-    if (!isValid || isSubmitting.current) return;
+  const handleSubmit = (lengthOverride?: string) => {
+    const finalLength = lengthOverride ?? storyLength;
+    if (!finalLength || characterDescription.trim().length < 5) return;
+    if (isSubmitting.current) return;
     isSubmitting.current = true;
     analytics.trackEvent("story_creation_submitted", {
-      storyLength,
+      storyLength: finalLength,
       characterDescriptionLength: characterDescription.trim().length,
     });
     onStartStory({
       genre: "auto",
-      storyLength,
+      storyLength: finalLength,
       characterDescription: characterDescription.trim(),
     });
   };
 
+  const advanceToStep2 = () => {
+    if (characterDescription.trim().length < 5) return;
+    setStep(2);
+    setIsDrawerOpen(false);
+  };
+
+  const advanceToStep3 = () => {
+    if (!storyLength || characterDescription.trim().length < 5) return;
+    setStep(3);
+    setIsDrawerOpen(false);
+  };
+
+  const goBack = () => {
+    if (step === 3) {
+      setStep(2);
+      setIsDrawerOpen(false);
+    } else if (step === 2) {
+      setStep(1);
+      setIsDrawerOpen(false);
+    } else {
+      onBack();
+    }
+  };
+
+  // Step 3 drawer handlers — "Need to change anything?" routes.
+  const editLengthFromStep3 = () => {
+    setStep(2);
+    setIsDrawerOpen(false);
+  };
+  const editPromptFromStep3 = () => {
+    setStep(1);
+    setIsDrawerOpen(false);
+  };
+  const startOverFromStep3 = () => {
+    setCharacterDescription("");
+    setStoryLength("");
+    setSuggestions([]);
+    setStep2Qa([]);
+    setStep(1);
+    setIsDrawerOpen(false);
+  };
+
+  const fetchSuggestions = async () => {
+    setIsLoadingSuggestions(true);
+    try {
+      const response = await apiRequest("POST", "/api/story/surprise-me?count=3", {});
+      const data = await response.json();
+      if (data.success && Array.isArray(data.descriptions)) {
+        setSuggestions(data.descriptions);
+      }
+    } catch {
+      // Silent fail — user can tap regenerate to retry.
+    } finally {
+      setIsLoadingSuggestions(false);
+    }
+  };
+
+  // Auto-fetch suggestions the first time the user opens the Step 1 drawer.
+  // Avoids spending an AI call if they never need inspiration.
+  const handleToggleDrawer = () => {
+    const willOpen = !isDrawerOpen;
+    setIsDrawerOpen(willOpen);
+    if (willOpen && step === 1 && suggestions.length === 0 && !isLoadingSuggestions) {
+      fetchSuggestions();
+    }
+  };
+
+  const handleSuggestionTap = (suggestion: string) => {
+    setCharacterDescription(suggestion);
+    setIsDrawerOpen(false);
+    analytics.trackEvent("surprise_me_clicked");
+  };
+
+  const handleAboutLengths = () => {
+    const stamp = Date.now();
+    setStep2Qa((prev) => [
+      ...prev,
+      { id: `q-${stamp}`, sender: "player", content: "Tell me about these lengths" },
+      { id: `a-${stamp}`, sender: "guide", content: LENGTH_EXPLAINER },
+    ]);
+    setIsDrawerOpen(false);
+    requestAnimationFrame(() => {
+      qaEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    });
+  };
+
+  // Close drawer when tapping outside (mirrors in-story drawer behavior).
+  useEffect(() => {
+    if (!isDrawerOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (drawerRef.current && !drawerRef.current.contains(e.target as Node)) {
+        setIsDrawerOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isDrawerOpen]);
+
   const selectedLength = STORY_LENGTHS.find((l) => l.id === storyLength);
 
-  // The Guide asks each step's question via the same chat-bubble pattern used
-  // on the bookshelf hero. Keeps the metaphor consistent: the Guide is always
-  // the one speaking.
-  const guideQuestion =
+  const drawerPeekLabel =
     step === 1
-      ? "How long should your story be?"
-      : "Describe who you are in this story.";
+      ? "Need suggestions?"
+      : step === 2
+      ? "What do you want to do?"
+      : "Need to change anything?";
 
   return (
-    <div
-      className={`h-dvh overflow-y-auto bg-background px-4 pb-8 ${className}`}
-    >
-      {/* Header: back button + "New Story" label + step indicator */}
-      <div className="pt-6 pb-4 flex items-center gap-3">
-        <button
-          onClick={() => (step > 1 ? setStep(1) : onBack())}
-          aria-label="Back"
-          className="flex-shrink-0 -ml-2 p-2 rounded-md hover:bg-accent/10 transition-colors"
-          style={{ minHeight: 44, minWidth: 44 }}
-          disabled={isLoading}
+    <div className={`h-dvh flex flex-col bg-background relative ${className}`}>
+      {/* Header: back button (left) + centered "New Story" + step dots (right). */}
+      <CenteredHeader
+        className="px-4 pt-4 pb-2 shrink-0"
+        title="New Story"
+        left={
+          <button
+            onClick={goBack}
+            aria-label="Back"
+            className="p-2 rounded-md hover:bg-accent/10 transition-colors"
+            style={{ minHeight: 44, minWidth: 44 }}
+            disabled={isLoading}
+          >
+            <ArrowLeft className="w-5 h-5 text-foreground" />
+          </button>
+        }
+        right={
+          <div className="flex items-center gap-1.5" aria-label={`Step ${step} of 3`}>
+            <span
+              className={`w-2 h-2 rounded-full transition-colors ${
+                step === 1 ? "bg-foreground" : "bg-foreground/25"
+              }`}
+            />
+            <span
+              className={`w-2 h-2 rounded-full transition-colors ${
+                step === 2 ? "bg-foreground" : "bg-foreground/25"
+              }`}
+            />
+            <span
+              className={`w-2 h-2 rounded-full transition-colors ${
+                step === 3 ? "bg-foreground" : "bg-foreground/25"
+              }`}
+            />
+          </div>
+        }
+      />
+
+      {/* Scrollable content. paddingBottom leaves room for the drawer peek. */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-4" style={{ paddingBottom: "6rem" }}>
+        {/* Guide question bubble. On Steps 1 & 2 it's a one-line question.
+            On Step 3 (confirmation) it's a multi-line recap of the choices. */}
+        <GuideBubble
+          avatarSize={36}
+          bubbleClassName="bg-card border border-border"
+          className="mt-2 mb-6"
         >
-          <ArrowLeft className="w-5 h-5 text-foreground" />
-        </button>
-        <div>
-          <h1 className="text-xl font-bold text-foreground">New Story</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">Step {step} of 2</p>
-        </div>
-      </div>
-
-      {/* Guide bubble — the Guide asks the step's question. Avatar above,
-          bubble below, both left-aligned (v1.7.3). Mirrors the bookshelf
-          hero and the in-story messenger layout so the experience reads as
-          one continuous conversation with the Guide. */}
-      <div className="mb-6 space-y-2">
-        <GuideAvatar size={36} />
-        <div className="bg-card border border-border rounded-2xl px-4 py-3 text-sm leading-relaxed text-muted-foreground">
-          <p>{guideQuestion}</p>
-        </div>
-      </div>
-
-      {/* Step 1: Length selection. Tapping a length auto-advances to step 2. */}
-      {step === 1 && (
-        <div className="grid grid-cols-2 gap-3">
-          {STORY_LENGTHS.map((l) => {
-            const isSelected = storyLength === l.id;
-            return (
-              <button
-                key={l.id}
-                onClick={() => {
-                  setStoryLength(l.id);
-                  analytics.trackEvent("story_length_selected", { storyLength: l.id, pages: l.pages });
-                  setTimeout(() => setStep(2), 300);
-                }}
-                className={`p-4 rounded-lg border-2 transition-all text-center ${
-                  isSelected
-                    ? "border-primary bg-primary/5 shadow-sm"
-                    : "border-border hover:border-primary/40 hover:bg-muted/50"
-                }`}
-                style={{ minHeight: 44 }}
-              >
-                <p className="font-bold text-2xl text-primary">{l.pages}</p>
-                <p className="text-xs text-muted-foreground">pages</p>
-                <p className="font-semibold text-sm mt-2">{l.label}</p>
-                <p className="text-xs text-muted-foreground mt-1">{l.time}</p>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Step 2: Character description + Surprise me + Begin Story */}
-      {step === 2 && (
-        <div className="space-y-4">
-          {selectedLength && (
-            <p className="text-xs text-muted-foreground">
-              {selectedLength.pages} pages ({selectedLength.label}).{" "}
-              <button
-                type="button"
-                onClick={() => setStep(1)}
-                className="underline hover:text-foreground transition-colors"
-              >
-                Change length
-              </button>
+          {step === 1 && (
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Describe who you are in this story.
             </p>
           )}
+          {step === 2 && (
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              How long should your story be?
+            </p>
+          )}
+          {step === 3 && (
+            <div className="text-sm leading-relaxed text-muted-foreground space-y-3">
+              <p>Great choices! Your prompt:</p>
+              <p className="italic text-foreground">{characterDescription.trim()}</p>
+              <p>
+                {selectedLength?.label} ({selectedLength?.pages} pages,{" "}
+                {selectedLength?.time})
+              </p>
+              <p>Ready?</p>
+            </div>
+          )}
+        </GuideBubble>
 
-          <Textarea
-            id="character-desc"
-            placeholder="e.g., A curious inventor who discovers a hidden door in their workshop that leads somewhere impossible..."
-            value={characterDescription}
-            onChange={(e) => setCharacterDescription(e.target.value)}
-            className="text-base min-h-[140px] resize-none"
-            maxLength={1000}
-          />
-
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
+        {/* Step 1: Character description */}
+        {step === 1 && (
+          <div className="space-y-4">
+            <Textarea
+              id="character-desc"
+              placeholder="e.g., A curious inventor who discovers a hidden door in their workshop that leads somewhere impossible..."
+              value={characterDescription}
+              onChange={(e) => setCharacterDescription(e.target.value)}
+              className="text-base min-h-[140px] resize-none"
+              maxLength={1000}
+            />
+            <div className="flex items-center justify-end text-xs text-muted-foreground">
+              <span className={characterDescription.length > 900 ? "text-amber-500" : ""}>
+                {characterDescription.length}/1000
+              </span>
+            </div>
             <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-              disabled={isSurprising || isLoading}
-              onClick={async () => {
-                analytics.trackEvent("surprise_me_clicked");
-                setIsSurprising(true);
-                try {
-                  const response = await apiRequest("POST", "/api/story/surprise-me", {});
-                  const data = await response.json();
-                  if (data.success && data.description) {
-                    setCharacterDescription(data.description);
-                  }
-                } catch {
-                  // Silently fail — user can try again or type manually
-                } finally {
-                  setIsSurprising(false);
-                }
-              }}
+              onClick={advanceToStep2}
+              disabled={characterDescription.trim().length < 5 || isLoading}
+              className="w-full py-6 text-base font-semibold"
+              style={{ minHeight: 44 }}
             >
-              {isSurprising ? (
+              Next
+            </Button>
+          </div>
+        )}
+
+        {/* Step 2: Length selection (auto-submits on tap) + Q&A history */}
+        {step === 2 && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              {STORY_LENGTHS.map((l) => {
+                const isSelected = storyLength === l.id;
+                return (
+                  <button
+                    key={l.id}
+                    onClick={() => {
+                      setStoryLength(l.id);
+                      analytics.trackEvent("story_length_selected", {
+                        storyLength: l.id,
+                        pages: l.pages,
+                      });
+                      // Selection style animates briefly, then we advance
+                      // to Step 3 for the user to confirm before submit.
+                      setTimeout(() => {
+                        setStep(3);
+                        setIsDrawerOpen(false);
+                      }, 200);
+                    }}
+                    disabled={isLoading || isSubmitting.current}
+                    className={`p-4 rounded-lg border-2 transition-all text-center ${
+                      isSelected
+                        ? "border-primary bg-primary/5 shadow-sm"
+                        : "border-border hover:border-primary/40 hover:bg-muted/50"
+                    }`}
+                    style={{ minHeight: 44 }}
+                  >
+                    <p className="font-bold text-2xl text-primary">{l.pages}</p>
+                    <p className="text-xs text-muted-foreground">pages</p>
+                    <p className="font-semibold text-sm mt-2">{l.label}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{l.time}</p>
+                  </button>
+                );
+              })}
+            </div>
+
+            {isLoading && (
+              <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Starting your story...
+              </div>
+            )}
+
+            {/* Step 2 Q&A history (from the drawer's "Tell me about these
+                lengths" option). Same bubble pattern as Bookshelf Q&A. */}
+            {step2Qa.map((msg) =>
+              msg.sender === "player" ? (
+                <PlayerBubble key={msg.id} className="mt-3">
+                  {msg.content}
+                </PlayerBubble>
+              ) : (
+                <GuideBubble
+                  key={msg.id}
+                  avatarSize={36}
+                  bubbleClassName="bg-card border border-border"
+                  className="mt-3"
+                >
+                  <p className="text-sm leading-relaxed text-muted-foreground">{msg.content}</p>
+                </GuideBubble>
+              ),
+            )}
+            <div ref={qaEndRef} />
+          </div>
+        )}
+
+        {/* Step 3: Confirmation. The Guide bubble above the scroll area
+            recaps the choices; this block is just the Begin CTA. The
+            drawer offers the "Need to change anything?" routes. */}
+        {step === 3 && (
+          <div className="space-y-4">
+            <Button
+              onClick={() => handleSubmit()}
+              disabled={!isValid || isLoading}
+              className="w-full py-6 text-base font-semibold"
+              style={{ minHeight: 44 }}
+            >
+              {isLoading ? (
                 <>
-                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                  Thinking...
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Starting your story...
                 </>
               ) : (
-                "Surprise me"
+                "Begin"
               )}
             </Button>
-            <span
-              className={
-                characterDescription.length > 900 ? "text-amber-500" : ""
-              }
-            >
-              {characterDescription.length}/1000
-            </span>
           </div>
+        )}
+      </div>
 
-          <Button
-            onClick={handleSubmit}
-            disabled={!isValid || isLoading}
-            className="w-full py-6 text-base font-semibold"
-            style={{ minHeight: 44 }}
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Starting your story...
-              </>
-            ) : (
-              "Begin Story"
-            )}
-          </Button>
+      {/* Sticky drawer — same pattern as bookshelf + in-story.
+          Contents vary by step:
+          - Step 1: "Need suggestions?" → AI-generated character descriptions
+          - Step 2: "What do you want to do?" → "Tell me about these lengths"
+          - Step 3: "Need to change anything?" → Length / Prompt / Start over */}
+      <div
+        ref={drawerRef}
+        className="absolute bottom-0 left-0 right-0 z-20 rounded-t-xl border-t border-border shadow-[0_-4px_12px_rgba(0,0,0,0.08)] transition-all duration-300 ease-in-out"
+        style={{
+          backgroundColor: "#FFF9F0",
+          maxHeight: isDrawerOpen ? "50vh" : "5rem",
+          overflow: "hidden",
+        }}
+      >
+        <button
+          onClick={handleToggleDrawer}
+          className="w-full flex flex-col items-center justify-center px-4 gap-4"
+          style={{ height: "5rem" }}
+        >
+          <div className="w-10 h-1 bg-muted-foreground/30 rounded-full" />
+          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <span>{drawerPeekLabel}</span>
+            <ChevronUp
+              className="w-4 h-4 transition-transform duration-300"
+              style={{ transform: isDrawerOpen ? "rotate(180deg)" : "rotate(0deg)" }}
+            />
+          </div>
+        </button>
+        <div
+          className="px-4 pb-4 pt-1 space-y-2 overflow-y-auto"
+          style={{ maxHeight: "calc(50vh - 5rem)" }}
+        >
+          {step === 1 && (
+            <>
+              {/* Regenerate icon at the top of the suggestion list. Only
+                  shows once we have at least one suggestion loaded. */}
+              {suggestions.length > 0 && (
+                <div className="flex items-center justify-end -mt-1 mb-1">
+                  <button
+                    type="button"
+                    onClick={fetchSuggestions}
+                    disabled={isLoadingSuggestions}
+                    className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors disabled:opacity-50"
+                    aria-label="Show different suggestions"
+                    title="Show different suggestions"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isLoadingSuggestions ? "animate-spin" : ""}`} />
+                  </button>
+                </div>
+              )}
+              {isLoadingSuggestions && suggestions.length === 0 && (
+                <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Thinking up some ideas...
+                </div>
+              )}
+              {suggestions.map((s, i) => (
+                <ChoiceButton key={`${i}-${s.slice(0, 20)}`} onClick={() => handleSuggestionTap(s)}>
+                  {s}
+                </ChoiceButton>
+              ))}
+            </>
+          )}
+          {step === 2 && (
+            <ChoiceButton onClick={handleAboutLengths}>
+              Tell me about these lengths
+            </ChoiceButton>
+          )}
+          {step === 3 && (
+            <>
+              <ChoiceButton onClick={editLengthFromStep3}>Length</ChoiceButton>
+              <ChoiceButton onClick={editPromptFromStep3}>Prompt</ChoiceButton>
+              <ChoiceButton onClick={startOverFromStep3}>Start over</ChoiceButton>
+            </>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

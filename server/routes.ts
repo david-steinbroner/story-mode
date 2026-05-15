@@ -652,6 +652,12 @@ IMPORTANT: Include a "storyTitle" field in your JSON response. Title rules:
     try {
       const sessionId = getSessionId(req);
 
+      // count: how many descriptions to return. Defaults to 1 for backwards
+      // compatibility with the old single-result shape. Capped at 5 so a
+      // malicious client can't ask for hundreds in one call.
+      const requestedCount = parseInt(String(req.query.count ?? "1"), 10);
+      const count = Math.max(1, Math.min(5, Number.isNaN(requestedCount) ? 1 : requestedCount));
+
       // Check spend limits
       const spendCheck = await spendTracker.canMakeRequest();
       if (!spendCheck.allowed) {
@@ -667,13 +673,7 @@ IMPORTANT: Include a "storyTitle" field in your JSON response. Title rules:
         },
       });
 
-      const response = await openai.chat.completions.create({
-        model: "anthropic/claude-3.5-haiku",
-        max_tokens: 90,
-        messages: [
-          {
-            role: "user",
-            content: `Generate a character description for an interactive story. 1 to 2 short sentences. Plain language. No em dashes. No abstract words like "destiny," "ethical implications," "fabric of reality," "wrestling with." Write in second person.
+      const singlePrompt = `Generate a character description for an interactive story. 1 to 2 short sentences. Plain language. No em dashes. No abstract words like "destiny," "ethical implications," "fabric of reality," "wrestling with." Write in second person.
 
 Formula: a specific job or role, plus one weird thing that just happened or is happening. Lean toward the mundane meeting the surprising. Quirky and accessible, like an 80s choose-your-own-adventure book, not literary fiction.
 
@@ -684,12 +684,39 @@ Examples of the vibe:
 - You're a vole on the village mail route. A humming parcel just arrived addressed to "The Last One Awake."
 - You're a hotel night clerk. Room 207 has been booked for forty years by a guest who never checks out.
 
-Return ONLY the character description. No preamble, no quotes.`,
+Return ONLY the character description. No preamble, no quotes.`;
+
+      const multiPrompt = `Generate ${count} DIFFERENT character descriptions for an interactive story. Each must be 1 to 2 short sentences. Plain language. No em dashes. No abstract words like "destiny," "ethical implications," "fabric of reality," "wrestling with." Write in second person.
+
+Formula for each: a specific job or role, plus one weird thing that just happened or is happening. Lean toward the mundane meeting the surprising. Quirky and accessible, like an 80s choose-your-own-adventure book, not literary fiction.
+
+The ${count} descriptions must span DIFFERENT vibes — don't return three variants of the same archetype. Mix tone (cozy / eerie / playful), setting (small business / wilderness / hotel / school / animal POV), and stakes.
+
+Examples of the vibe:
+- You run a small bakery. Yesterday a customer paid in coins minted by countries that don't exist.
+- You're a substitute teacher. The kid in seat 4B has been ten years old for thirty years.
+- You're a forest ranger in a quiet park. Last week the elk started leaving notes.
+- You're a vole on the village mail route. A humming parcel just arrived addressed to "The Last One Awake."
+- You're a hotel night clerk. Room 207 has been booked for forty years by a guest who never checks out.
+
+Respond with ONLY valid JSON in this exact shape, no preamble:
+{ "descriptions": ["...", "...", "..."] }`;
+
+      const response = await openai.chat.completions.create({
+        model: "anthropic/claude-3.5-haiku",
+        // Budget per description. Each description is ~30–50 tokens of
+        // actual output; the rest is JSON wrapping when count > 1.
+        max_tokens: count === 1 ? 90 : 90 * count + 60,
+        messages: [
+          {
+            role: "user",
+            content: count === 1 ? singlePrompt : multiPrompt,
           },
         ],
+        ...(count > 1 ? { response_format: { type: "json_object" as const } } : {}),
       });
 
-      const description = response.choices?.[0]?.message?.content?.trim() || "";
+      const raw = response.choices?.[0]?.message?.content?.trim() || "";
 
       // Track token usage
       if (response.usage) {
@@ -700,7 +727,36 @@ Return ONLY the character description. No preamble, no quotes.`,
         });
       }
 
-      res.json({ success: true, description });
+      if (count === 1) {
+        // Legacy shape — single string.
+        return res.json({ success: true, description: raw });
+      }
+
+      // count > 1 — parse the JSON object and return an array. If the AI
+      // returned malformed JSON, fall back to splitting on newlines so the
+      // user still gets something useful instead of an error.
+      let descriptions: string[] = [];
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed?.descriptions)) {
+          descriptions = parsed.descriptions
+            .map((d: unknown) => (typeof d === "string" ? d.trim() : ""))
+            .filter((d: string) => d.length > 0)
+            .slice(0, count);
+        }
+      } catch {
+        descriptions = raw
+          .split(/\n+/)
+          .map((s) => s.replace(/^[-*•\d.)\s]+/, "").trim())
+          .filter((s) => s.length > 10)
+          .slice(0, count);
+      }
+
+      if (descriptions.length === 0) {
+        return res.status(502).json({ success: false, error: "Couldn't parse suggestions. Try again." });
+      }
+
+      res.json({ success: true, descriptions });
     } catch (error) {
       console.error("Error generating surprise character:", error);
       res.status(500).json({ success: false, error: "Failed to generate character description" });

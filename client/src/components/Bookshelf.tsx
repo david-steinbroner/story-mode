@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Plus, Check, CheckCircle, Archive, ArchiveRestore, Minus, Settings, Mail, MoreVertical, Trash2, ChevronDown, RefreshCw } from "lucide-react";
+import { Plus, Check, CheckCircle, Archive, ArchiveRestore, Mail, MoreVertical, Trash2, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import {
   DropdownMenu,
@@ -24,6 +23,10 @@ import {
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { analytics } from "@/lib/posthog";
 import GuideAvatar from "./GuideAvatar";
+import GuideBubble from "./GuideBubble";
+import CenteredHeader from "./CenteredHeader";
+import ChoiceButton from "./ChoiceButton";
+import PlayerBubble from "./PlayerBubble";
 import type { GameState } from "@shared/schema";
 
 // --- Long-press hook ---
@@ -454,26 +457,12 @@ function WoodenShelf() {
   );
 }
 
-// Font size constants — shared with ChatInterface via same localStorage key
-const FONT_SIZES = [
-  { label: "Small", px: 14 },
-  { label: "Medium", px: 16 },
-  { label: "Large", px: 18 },
-  { label: "X-Large", px: 20 },
-] as const;
-
-const FONT_SIZE_STORAGE_KEY = "storymode-font-size";
-
-function getInitialFontSizeIndex(): number {
-  try {
-    const stored = localStorage.getItem(FONT_SIZE_STORAGE_KEY);
-    if (stored !== null) {
-      const idx = parseInt(stored, 10);
-      if (idx >= 0 && idx < FONT_SIZES.length) return idx;
-    }
-  } catch {}
-  return 1; // Default to Medium
-}
+// Font-size controls were removed from the Bookshelf in v1.8.0 — the
+// adjuster didn't visually affect anything here (Tailwind text classes
+// overrode the container's font-size). Per docs/design-system.md, font
+// scaling is a story-screen affordance only. The ChatInterface still
+// owns the FONT_SIZES state + UI, and the same localStorage key
+// (`storymode-font-size`) persists the setting across surfaces.
 
 export default function Bookshelf({
   stories,
@@ -481,13 +470,33 @@ export default function Bookshelf({
   onNewStory: rawOnNewStory,
   className = "",
 }: BookshelfProps) {
-  const [showArchive, setShowArchive] = useState(false);
-  const [showSparks, setShowSparks] = useState(false);
-  const [fontSizeIndex, setFontSizeIndex] = useState(getInitialFontSizeIndex);
-  // 3 random sparks chosen per mount. Refresh button calls reshuffleSparks
-  // to draw a new trio from the pool without remounting the component.
-  const [sparks, setSparks] = useState<string[]>(() => pickSparks(3));
-  const reshuffleSparks = useCallback(() => setSparks(pickSparks(3)), []);
+  // Tabbed library (v1.8.1): one shelf area, three possible tabs. Default
+  // to whichever bucket has content so we never land on an empty tab.
+  type TabKey = "reading" | "finished" | "archive";
+  const [activeTab, setActiveTab] = useState<TabKey>(() => {
+    const hasActive = stories.some(
+      (s) => !s.storyComplete && !s.storyArchived && s.totalPages && s.totalPages > 0,
+    );
+    const hasFinished = stories.some((s) => s.storyComplete && !s.storyArchived);
+    if (hasActive) return "reading";
+    if (hasFinished) return "finished";
+    return "archive";
+  });
+
+  // Bookshelf drawer state. Same peek/expand pattern as the in-story
+  // drawer in ChatInterface — kept inline (not extracted) because the
+  // in-story drawer has additional concerns (custom-input field,
+  // regenerate dialog, validators) that don't apply here.
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  // Bookshelf Q&A history (ephemeral — clears on every visit because the
+  // Bookshelf remounts when the user enters a story and comes back). Each
+  // entry is a player tap or a Guide response. Renders as messenger-style
+  // bubbles below the welcome greeting.
+  type QaMessage = { id: string; sender: "player" | "guide"; content: string };
+  const [qaMessages, setQaMessages] = useState<QaMessage[]>([]);
+  const qaEndRef = useRef<HTMLDivElement>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
 
   // Delete-confirmation state. Null = closed; { id, title } = dialog open for
   // that story. Soft-delete with a 30-day server-side grace period; the user
@@ -534,16 +543,6 @@ export default function Bookshelf({
     });
     rawOnContinueStory(storyId);
   }, [rawOnContinueStory, stories]);
-
-  const currentFontSize = FONT_SIZES[fontSizeIndex];
-
-  const changeFontSize = (delta: number) => {
-    setFontSizeIndex((prev) => {
-      const next = Math.max(0, Math.min(FONT_SIZES.length - 1, prev + delta));
-      try { localStorage.setItem(FONT_SIZE_STORAGE_KEY, String(next)); } catch {}
-      return next;
-    });
-  };
 
   const archiveStory = useCallback(async (storyId: string) => {
     try {
@@ -604,6 +603,60 @@ export default function Bookshelf({
   const activeStories = stories.filter(s => !s.storyComplete && !s.storyArchived && s.totalPages && s.totalPages > 0);
   const completedStories = stories.filter(s => s.storyComplete && !s.storyArchived);
   const archivedStories = stories.filter(s => s.storyArchived);
+
+  // Auto-switch tabs if the current one becomes empty (e.g. the user
+  // archives their last active story while sitting on the Reading tab).
+  // Falls through to whichever non-empty bucket exists; if none exist, the
+  // entire shelf section hides anyway so it doesn't matter what's selected.
+  useEffect(() => {
+    if (activeTab === "reading" && activeStories.length === 0) {
+      if (completedStories.length > 0) setActiveTab("finished");
+      else if (archivedStories.length > 0) setActiveTab("archive");
+    } else if (activeTab === "finished" && completedStories.length === 0) {
+      if (activeStories.length > 0) setActiveTab("reading");
+      else if (archivedStories.length > 0) setActiveTab("archive");
+    } else if (activeTab === "archive" && archivedStories.length === 0) {
+      if (activeStories.length > 0) setActiveTab("reading");
+      else if (completedStories.length > 0) setActiveTab("finished");
+    }
+  }, [activeTab, activeStories.length, completedStories.length, archivedStories.length]);
+
+  // Hardcoded Q&A pairs for the bookshelf drawer's secondary choices.
+  // The Guide's replies are static (not AI-generated) — these are
+  // help/onboarding content, not story content.
+  const QA_RESPONSES: Record<string, string> = {
+    "Tell me how this works":
+      "Tap any book on your shelf to keep reading it. Tap Start a New Story to begin a new one, you describe who you are, I write the world around you.",
+    "What kinds of stories?":
+      "Literally anything you can imagine, from the mundane to the most fantastical. I can provide some suggestions once you choose to start a new story.",
+  };
+
+  const handleQaSelect = (question: string) => {
+    const stamp = Date.now();
+    setQaMessages((prev) => [
+      ...prev,
+      { id: `q-${stamp}`, sender: "player", content: question },
+      { id: `a-${stamp}`, sender: "guide", content: QA_RESPONSES[question] ?? "" },
+    ]);
+    setIsDrawerOpen(false);
+    // Defer the scroll to next frame so the new bubbles are in the DOM.
+    requestAnimationFrame(() => {
+      qaEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    });
+  };
+
+  // Close the drawer when tapping outside (mirrors the in-story drawer
+  // behavior — feels natural since the drawer is the same affordance).
+  useEffect(() => {
+    if (!isDrawerOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (drawerRef.current && !drawerRef.current.contains(e.target as Node)) {
+        setIsDrawerOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isDrawerOpen]);
 
   // Guide greeting based on library state. Ten distinct states (see
   // docs/ROADMAP.md v1.7.5 entry for the full taxonomy and voice notes).
@@ -737,310 +790,236 @@ export default function Bookshelf({
 
   return (
     <div
-      className={`h-dvh overflow-y-auto bg-background px-4 pb-8 ${className}`}
-      style={{ fontSize: `${currentFontSize.px}px` }}
+      className={`h-dvh flex flex-col bg-background relative ${className}`}
     >
-      {/* Header */}
-      <div className="pt-6 pb-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-foreground">Story Mode</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">Your Library</p>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="focus:outline-none" style={{ minHeight: 44, minWidth: 44 }}>
-              <GuideAvatar size={36} animate={false} />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56" style={{ backgroundColor: '#FFF9F0' }}>
-            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-              Text Size
-            </DropdownMenuLabel>
-            <div className="flex items-center justify-between px-2 py-1.5">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => changeFontSize(-1)}
-                disabled={fontSizeIndex === 0}
+      {/* Header — "Story Mode" centered (Cinzel hero font per design-system). */}
+      <CenteredHeader
+        className="px-4 pt-4 pb-2 shrink-0"
+        title="Story Mode"
+        right={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="focus:outline-none" style={{ minHeight: 44, minWidth: 44 }}>
+                <GuideAvatar size={36} animate={false} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56" style={{ backgroundColor: '#FFF9F0' }}>
+              <DropdownMenuItem
+                onClick={() => {
+                  analytics.trackEvent("feedback_mailto_clicked", { from: "bookshelf" });
+                  window.location.href = "mailto:feedback@mystorymode.com?subject=Story%20Mode%20feedback";
+                }}
               >
-                <Minus className="w-3 h-3" />
-              </Button>
-              <span className="text-sm text-foreground">{currentFontSize.label}</span>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => changeFontSize(1)}
-                disabled={fontSizeIndex === FONT_SIZES.length - 1}
+                <Mail className="w-4 h-4 mr-2" />
+                Send Feedback
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+      />
+
+      {/* Shelf section — anchored to the top, never scrolls (v1.8.2).
+          The chat area below scrolls independently; as the user scrolls
+          through Q&A history, the chat content disappears past the
+          bottom edge of the shelf, never overlapping it. Hidden entirely
+          when there's no library content. */}
+      {(activeStories.length > 0 || completedStories.length > 0 || archivedStories.length > 0) && (
+        <div className="shrink-0 px-4 mt-2 mb-2">
+          <WoodenShelf />
+          <div className="flex items-center gap-4 px-3" style={{ minHeight: 44 }}>
+            {activeStories.length > 0 && (
+              <button
+                onClick={() => setActiveTab("reading")}
+                className={`text-sm transition-colors ${
+                  activeTab === "reading"
+                    ? "font-semibold text-foreground"
+                    : "font-medium text-muted-foreground hover:text-foreground"
+                }`}
+                style={{ minHeight: 44 }}
               >
-                <Plus className="w-3 h-3" />
-              </Button>
-            </div>
+                Currently Reading
+              </button>
+            )}
+            {completedStories.length > 0 && (
+              <button
+                onClick={() => setActiveTab("finished")}
+                className={`text-sm transition-colors ${
+                  activeTab === "finished"
+                    ? "font-semibold text-foreground"
+                    : "font-medium text-muted-foreground hover:text-foreground"
+                }`}
+                style={{ minHeight: 44 }}
+              >
+                Finished
+              </button>
+            )}
             {archivedStories.length > 0 && (
+              <button
+                onClick={() => setActiveTab("archive")}
+                className={`text-sm transition-colors ${
+                  activeTab === "archive"
+                    ? "font-semibold text-foreground"
+                    : "font-medium text-muted-foreground hover:text-foreground"
+                }`}
+                style={{ minHeight: 44 }}
+              >
+                Archive
+              </button>
+            )}
+          </div>
+          <div className="flex items-start gap-4 px-3 pb-3 pt-1 overflow-x-auto">
+            {activeTab === "reading" && activeStories.map((story) => (
+              <BookSpine
+                key={story.storyId}
+                title={getStoryTitle(story)}
+                genre={story.genre || "fantasy"}
+                currentPage={story.currentPage || 0}
+                totalPages={story.totalPages || 0}
+                isComplete={false}
+                onClick={() => onContinueStory(story.storyId!)}
+                onEndStory={() => endStory(story.storyId!)}
+                onArchive={() => archiveStory(story.storyId!)}
+              />
+            ))}
+            {activeTab === "reading" && (
+              <BookSpine isNew onClick={() => onNewStory()} />
+            )}
+            {activeTab === "finished" && completedStories.map((story) => (
+              <BookSpine
+                key={story.storyId}
+                title={getStoryTitle(story)}
+                genre={story.genre || "fantasy"}
+                currentPage={story.totalPages || 0}
+                totalPages={story.totalPages || 0}
+                isComplete={true}
+                onClick={() => onContinueStory(story.storyId!)}
+                onArchive={() => archiveStory(story.storyId!)}
+              />
+            ))}
+            {activeTab === "archive" && archivedStories.map((story) => (
+              <BookSpine
+                key={story.storyId}
+                title={getStoryTitle(story)}
+                genre={story.genre || "fantasy"}
+                currentPage={story.totalPages || 0}
+                totalPages={story.totalPages || 0}
+                isComplete={true}
+                isArchived={true}
+                onClick={() => onContinueStory(story.storyId!)}
+                onUnarchive={() => unarchiveStory(story.storyId!)}
+                onDelete={() => deleteStory(story.storyId!, getStoryTitle(story))}
+              />
+            ))}
+          </div>
+          <WoodenShelf />
+        </div>
+      )}
+
+      {/* Chat area — welcome bubble + Q&A history. Scrollable independently
+          of the header + shelf above. paddingBottom leaves room for the
+          drawer peek (5rem) so the version footer is never behind it. */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-4" style={{ paddingBottom: "6rem" }}>
+        {/* Guide welcome bubble — same shared component as the wizard and
+            in-story. For a first-visit reader the bubble carries the
+            onboarding pitch so the Guide is the only voice talking. */}
+        <GuideBubble
+          avatarSize={36}
+          bubbleClassName="bg-card border border-border"
+          className="mt-2 mb-4"
+        >
+          <div className="text-sm leading-relaxed text-muted-foreground">
+            <p>{getGreeting()}</p>
+            {stories.length === 0 && (
               <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setShowArchive(!showArchive)}>
-                  <Archive className="w-4 h-4 mr-2" />
-                  {showArchive ? "Hide Archive" : "Show Archive"}
-                </DropdownMenuItem>
+                <p className="mt-3">
+                  I'm your personal Guide. Tell me what story you want to be in and I'll write it for you.
+                </p>
+                <ol className="mt-3 space-y-1.5 list-decimal list-inside marker:text-muted-foreground/60">
+                  <li>Describe your character in a sentence or two.</li>
+                  <li>I build the world around what you've told me.</li>
+                  <li>Tap or write choices to shape what happens next.</li>
+                </ol>
               </>
             )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => {
-                analytics.trackEvent("feedback_mailto_clicked", { from: "bookshelf" });
-                window.location.href = "mailto:feedback@mystorymode.com?subject=Story%20Mode%20feedback";
-              }}
+          </div>
+        </GuideBubble>
+
+        {/* Bookshelf Q&A history — taps on "Tell me how this works" etc.
+            render as messenger bubbles below the welcome. Ephemeral
+            (cleared every Bookshelf remount). */}
+        {qaMessages.map((msg) =>
+          msg.sender === "player" ? (
+            <PlayerBubble key={msg.id} className="mb-3">
+              {msg.content}
+            </PlayerBubble>
+          ) : (
+            <GuideBubble
+              key={msg.id}
+              avatarSize={36}
+              bubbleClassName="bg-card border border-border"
+              className="mb-4"
             >
-              <Mail className="w-4 h-4 mr-2" />
-              Send Feedback
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      {/* Guide greeting. Avatar sits on its own line above the bubble,
-          both left-aligned — gives the bubble full horizontal room for
-          longer onboarding copy. Matches the in-story messenger layout
-          (v1.7.3). For a first-visit reader (empty shelf) the bubble
-          carries the full onboarding pitch so the Guide is the one voice
-          doing the talking, not a hero block competing alongside her. */}
-      <div className="mb-6 space-y-2">
-        <GuideAvatar size={36} />
-        <div className="bg-card border border-border rounded-2xl px-4 py-3 text-sm leading-relaxed text-muted-foreground">
-          <p>{getGreeting()}</p>
-          {stories.length === 0 && (
-            <>
-              <p className="mt-3">
-                I'm your personal Guide. Tell me what story you want to be in and I'll write it for you.
-              </p>
-              <ol className="mt-3 space-y-1.5 list-decimal list-inside marker:text-muted-foreground/60">
-                <li>Describe your character in a sentence or two.</li>
-                <li>I build the world around what you've told me.</li>
-                <li>Tap or write choices to shape what happens next.</li>
-              </ol>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Currently Reading shelf */}
-      {activeStories.length > 0 && (
-        <div className="mb-2">
-          <div className="flex items-center justify-between mb-3 px-1">
-            <h2 className="text-sm font-semibold text-muted-foreground">
-              Currently Reading
-            </h2>
-          </div>
-          <div className="relative">
-            <div className="flex items-start gap-4 px-3 pb-3 pt-1 overflow-x-auto">
-              {activeStories.map(story => (
-                <BookSpine
-                  key={story.storyId}
-                  title={getStoryTitle(story)}
-                  genre={story.genre || "fantasy"}
-                  currentPage={story.currentPage || 0}
-                  totalPages={story.totalPages || 0}
-                  isComplete={false}
-                  onClick={() => onContinueStory(story.storyId!)}
-                  onEndStory={() => endStory(story.storyId!)}
-                  onArchive={() => archiveStory(story.storyId!)}
-                />
-              ))}
-              <BookSpine isNew onClick={() => onNewStory()} />
-            </div>
-            <WoodenShelf />
-          </div>
-
-          {/* Quick continue card for most recent active story */}
-          {activeStories[0] && (
-            <button
-              onClick={() => onContinueStory(activeStories[0].storyId!)}
-              className="w-full mt-4 text-left bg-card border border-border rounded-lg p-4 hover:bg-accent/10 transition-colors active:scale-[0.98]"
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-foreground truncate">
-                    Continue: {getStoryTitle(activeStories[0])}
-                  </p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Progress
-                      value={
-                        ((activeStories[0].currentPage || 0) /
-                          (activeStories[0].totalPages || 1)) *
-                        100
-                      }
-                      className="h-1.5 flex-1"
-                    />
-                    <span className="text-xs text-muted-foreground shrink-0">
-                      {activeStories[0].currentPage}/{activeStories[0].totalPages}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Decorative "+" book spine — shown when stories exist on other
-          shelves (completed/archived) but no active story to put a spine
-          next to. Pure visual scaffolding so the wooden shelf isn't empty. */}
-      {stories.length > 0 && activeStories.length === 0 && (
-        <div className="mb-2">
-          <div className="relative">
-            <div className="flex items-start gap-4 px-3 pb-3 pt-1">
-              <BookSpine isNew onClick={() => onNewStory()} />
-            </div>
-            <WoodenShelf />
-          </div>
-        </div>
-      )}
-
-      {/* Start a New Story — primary CTA, ALWAYS rendered. Sits between
-          active reading and the historical shelves on a populated bookshelf;
-          on an empty shelf it's the user's main action immediately below
-          the Guide bubble. */}
-      <button
-        onClick={() => onNewStory()}
-        className="w-full mt-2 bg-primary text-primary-foreground rounded-lg p-4 font-semibold text-base flex items-center justify-center hover:opacity-90 transition-opacity active:scale-[0.98]"
-        style={{ minHeight: 44 }}
-      >
-        Start a New Story
-      </button>
-
-      {/* Collapsible inspiration prompts. Default closed in every state so
-          the bookshelf isn't dominated by suggestion text. Used to be split
-          (always-visible on empty shelf, collapsed on populated); now
-          universally rendered + universally collapsed-by-default. */}
-      <div className="mt-2 mb-2">
-        <button
-          type="button"
-          onClick={() => setShowSparks((s) => !s)}
-          className="w-full flex items-center justify-center gap-1.5 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          style={{ minHeight: 44 }}
-          aria-expanded={showSparks}
-        >
-          <span>Need a spark?</span>
-          <ChevronDown
-            className="w-3.5 h-3.5 transition-transform duration-200"
-            style={{ transform: showSparks ? "rotate(180deg)" : "rotate(0deg)" }}
-          />
-        </button>
-        {showSparks && (
-          <>
-            <div className="flex items-center justify-end -mt-1 mb-1">
-              <button
-                type="button"
-                onClick={reshuffleSparks}
-                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors"
-                aria-label="Show different sparks"
-                title="Show different sparks"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="space-y-2">
-              {sparks.map((example, i) => (
-                <button
-                  key={`${example}-${i}`}
-                  onClick={() => onNewStory(example)}
-                  className="w-full text-left bg-card border border-border rounded-lg p-3 text-sm text-foreground/90 leading-relaxed hover:bg-accent/10 hover:border-primary/40 transition-colors active:scale-[0.98]"
-                  style={{ minHeight: 44 }}
-                >
-                  {example}
-                </button>
-              ))}
-            </div>
-          </>
+              <p className="text-sm leading-relaxed text-muted-foreground">{msg.content}</p>
+            </GuideBubble>
+          ),
         )}
+        <div ref={qaEndRef} />
+
+        {/* Version */}
+        <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.8.3</p>
       </div>
 
-      {/* Completed shelf */}
-      {completedStories.length > 0 && (
-        <div className="mb-2 mt-6">
-          <div className="flex items-center justify-between mb-3 px-1">
-            <h2 className="text-sm font-semibold text-muted-foreground">
-              Finished
-            </h2>
-            {archivedStories.length > 0 && (
-              <button
-                onClick={() => setShowArchive(!showArchive)}
-                className="flex items-center gap-1 text-xs text-[#C9B6E4] hover:text-[#C9B6E4]/80 transition-colors"
-                style={{ minHeight: 44, minWidth: 44, justifyContent: "flex-end" }}
-              >
-                <Archive size={12} />
-                <span>Archive ({archivedStories.length})</span>
-              </button>
-            )}
+      {/* Sticky drawer — same peek/expand pattern as the in-story drawer.
+          Peek copy is "What do you want to do?" so users learn the
+          affordance once and recognize it everywhere. */}
+      <div
+        ref={drawerRef}
+        className="absolute bottom-0 left-0 right-0 z-20 rounded-t-xl border-t border-border shadow-[0_-4px_12px_rgba(0,0,0,0.08)] transition-all duration-300 ease-in-out"
+        style={{
+          backgroundColor: "#FFF9F0",
+          maxHeight: isDrawerOpen ? "50vh" : "5rem",
+          overflow: "hidden",
+        }}
+      >
+        <button
+          onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+          className="w-full flex flex-col items-center justify-center px-4 gap-4"
+          style={{ height: "5rem" }}
+        >
+          <div className="w-10 h-1 bg-muted-foreground/30 rounded-full" />
+          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <span>What do you want to do?</span>
+            <ChevronUp
+              className="w-4 h-4 transition-transform duration-300"
+              style={{ transform: isDrawerOpen ? "rotate(180deg)" : "rotate(0deg)" }}
+            />
           </div>
-          <div className="relative">
-            <div className="flex items-start gap-4 px-3 pb-3 pt-1 overflow-x-auto">
-              {completedStories.map(story => (
-                <BookSpine
-                  key={story.storyId}
-                  title={getStoryTitle(story)}
-                  genre={story.genre || "fantasy"}
-                  currentPage={story.totalPages || 0}
-                  totalPages={story.totalPages || 0}
-                  isComplete={true}
-                  onClick={() => onContinueStory(story.storyId!)}
-                  onArchive={() => archiveStory(story.storyId!)}
-                />
-              ))}
-            </div>
-            <WoodenShelf />
-          </div>
-          <p className="text-[10px] text-[#6C7A89]/40 mt-2 px-1">
-            Tap a book to read, or use the ⋯ menu for options
-          </p>
+        </button>
+        <div
+          className="px-4 pb-4 pt-1 space-y-2 overflow-y-auto"
+          style={{ maxHeight: "calc(50vh - 5rem)" }}
+        >
+          {/* Primary CTA — keeps its green color per the spec. Different
+              shape from the ChoiceButtons below so the hierarchy reads:
+              "this is the main action; these are side conversations." */}
+          <button
+            onClick={() => {
+              setIsDrawerOpen(false);
+              onNewStory();
+            }}
+            className="w-full bg-primary text-primary-foreground rounded-lg p-3 font-semibold text-base flex items-center justify-center hover:opacity-90 transition-opacity active:scale-[0.98]"
+            style={{ minHeight: 44 }}
+          >
+            Start a New Story
+          </button>
+          <ChoiceButton onClick={() => handleQaSelect("Tell me how this works")}>
+            Tell me how this works
+          </ChoiceButton>
+          <ChoiceButton onClick={() => handleQaSelect("What kinds of stories?")}>
+            What kinds of stories?
+          </ChoiceButton>
         </div>
-      )}
-
-      {/* Archive section */}
-      {showArchive && archivedStories.length > 0 && (
-        <div className="mb-2 mt-6">
-          <div className="flex items-center justify-between mb-3 px-1">
-            <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1.5">
-              <Archive size={14} className="text-[#C9B6E4]" />
-              Archive
-            </h2>
-            <button
-              onClick={() => setShowArchive(false)}
-              className="text-xs text-[#6C7A89]/60 hover:text-[#6C7A89] transition-colors"
-              style={{ minHeight: 44, minWidth: 44, display: "flex", alignItems: "center", justifyContent: "flex-end" }}
-            >
-              Hide
-            </button>
-          </div>
-          <div className="relative">
-            <div className="flex items-start gap-4 px-3 pb-3 pt-1 overflow-x-auto">
-              {archivedStories.map(story => (
-                <BookSpine
-                  key={story.storyId}
-                  title={getStoryTitle(story)}
-                  genre={story.genre || "fantasy"}
-                  currentPage={story.totalPages || 0}
-                  totalPages={story.totalPages || 0}
-                  isComplete={true}
-                  isArchived={true}
-                  onClick={() => onContinueStory(story.storyId!)}
-                  onUnarchive={() => unarchiveStory(story.storyId!)}
-                  onDelete={() => deleteStory(story.storyId!, getStoryTitle(story))}
-                />
-              ))}
-            </div>
-            <WoodenShelf />
-          </div>
-          <p className="text-[10px] text-[#6C7A89]/40 mt-2 px-1">
-            Hold a book to unarchive it
-          </p>
-        </div>
-      )}
-
-      {/* Version */}
-      <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.7.5</p>
+      </div>
 
       {/* Delete-story confirmation. Soft delete with a 30-day server-side
           grace period — copy makes the recovery window explicit so a reader

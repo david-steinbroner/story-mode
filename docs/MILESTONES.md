@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.6.0**. Pre-launch audit Phases 1–5 (security, brand/domain, reliability, polish, cleanup) shipped 2026-05-11. AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, and typography wiring shipped 2026-05-12 (v1.2.x). **Concurrency hardening + UI polish** (Postgres-backed chat lock + rate limiter, `messages.created_at`, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool, drawer/footer spacing fixes) shipped 2026-05-12 (v1.3.0). **Current in-flight milestone:** Milestone 6 (Guide chatbot on bookshelf) — foundation components exist (`GuideConfirmDialog`, `GuideStoryCard`), chat UI + intent matcher + `POST /api/guide/chat` endpoint still TODO. **Completed:** Milestones 1–5 (Foundation, AI Memory, Page Structure pivot, Pacing, Polish + UX Overhaul) plus the Pre-launch Audit and the v1.3.0 concurrency/UI pass.
+> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.8.3**. Pre-launch audit Phases 1–5 (2026-05-11). AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, typography wiring (2026-05-12, v1.2.x). Concurrency hardening + UI polish (Postgres-backed chat lock + rate limiter, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool) (2026-05-12, v1.3.0). AI quality pass Chunk A + soft-delete (2026-05-13, v1.4.0); Chunk B validators + admin scroll fix (2026-05-13, v1.5.0); admin polish + welcome copy (2026-05-13, v1.5.1); Guide-chat wizard + universal sparks + in-story header (2026-05-13, v1.6.0). **Admin URL + TOTP 2FA** (2026-05-14, v1.7.0) and **per-tab dev model override** (2026-05-14, v1.7.1) unblocked the Sonnet comparison. **In-story texting layout pass** (2026-05-14, v1.7.2–1.7.3) — Guide messenger bubbles, avatar-above layout, always-visible custom input. **Bookshelf Guide copy revoiced** (2026-05-14, v1.7.4–1.7.5) — 10 personalized states, welcome-back gate, length-tier-up suggestions. **Texting-app UX overhaul** (2026-05-14, v1.8.0–1.8.3) — shared Guide primitives (`GuideBubble`/`PlayerBubble`/`ChoiceButton`/`TypingDots`/`CenteredHeader`), Bookshelf restructured as a conversation with tabbed shelves + sticky drawer + ephemeral Q&A, new-story wizard expanded to 3 steps (description → length → confirm) with drawers and AI-generated 3-suggestion surprise-me on both steps. **Current in-flight milestone:** Milestone 6 (full AI-powered Guide chatbot) — v1.8.1's hardcoded Q&A drawer is partial progress; the AI endpoint + intent matcher are still TODO. **Completed:** Milestones 1–5 plus the Pre-launch Audit and everything through v1.8.3.
 >
 > *Last updated: 2026-05-14 · Maintenance rule at the bottom.*
 
@@ -113,6 +113,108 @@ Each canned response flows through a `GuideConfirmDialog` for confirmation befor
 ---
 
 ## Completed Milestones
+
+### Wizard Step 3 confirmation page (2026-05-14) — v1.8.3 ✅
+
+Same-day iteration on v1.8.2 after testing showed the auto-submit-on-length-tap was too abrupt — the user wanted a beat to confirm before the 5–10s AI call kicked off.
+
+**New Step 3:** Tapping a length on Step 2 no longer fires `onStartStory` directly; it advances to a confirmation page. The Guide bubble recaps: *"Great choices! Your prompt: [description] [length label, pages, time] Ready?"* — prompt rendered italic + foreground color for emphasis (matches the book-title convention used elsewhere in the Guide voice). Below the bubble: a single primary "Begin" button that fires the actual start.
+
+**Drawer on Step 3:** Peek copy is "Need to change anything?" — expanded shows three `ChoiceButton`s: **Length** (→ Step 2), **Prompt** (→ Step 1), **Start over** (clears both fields + the Q&A history + the suggestion cache, returns to Step 1). Back button on Step 3 returns to Step 2 instead of exiting the wizard. Step dots become 3 (was 2).
+
+### Bookshelf anchored shelf + wizard step swap + drawer on both wizard steps (2026-05-14) — v1.8.2 ✅
+
+Three layered changes plus a backend tweak for the suggestion surface.
+
+**Bookshelf layout:** The shelf section (wooden lines + tabs + book spines) moved out of the scrollable area into a fixed slot directly below the header. The chat area (welcome bubble + Q&A) now scrolls independently below the shelf — as the user scrolls through Q&A history, the chat content disappears past the bottom edge of the shelf, which stays anchored. Reads more like a chat thread with the shelves as a persistent reference.
+
+**Wizard step swap:** Step 1 is now character description, Step 2 is now length. Tapping a length on Step 2 auto-submits at this version (replaced in v1.8.3 with a Step 3 confirm).
+
+**Wizard drawers:** Both wizard steps now have the sticky drawer affordance. Step 1's drawer peek is "Need suggestions?" — when first opened, lazy-fetches 3 AI-generated character descriptions and renders them as `ChoiceButton`s. A regenerate icon at the top of the drawer pulls a fresh batch. Tapping a suggestion fills the textarea and closes the drawer. The inline "Surprise Me" button is removed. Step 2's drawer peek is "What do you want to do?" — expanded shows one `ChoiceButton`, "Tell me about these lengths"; the Guide replies in a bubble explaining short / novella / novel / epic.
+
+**Backend:** `/api/story/surprise-me` now accepts `?count=N` (1–5; default 1 for backwards compat) and returns `{ descriptions: [...] }` when count>1. Single AI call producing N distinct descriptions — the prompt explicitly tells the model to span different vibes/settings so the user gets meaningful variety, not three takes on the same archetype. Legacy `count=1` shape preserved.
+
+### Bookshelf as a conversation: tabbed shelves + sticky drawer + shared primitives (2026-05-14) — v1.8.1 ✅
+
+Restructure of the Bookshelf around the same interaction grammar as the in-story chat — partial progress toward Milestone 6 (the Guide chatbot), implemented with hardcoded canned responses for now.
+
+**Layout:** header → wooden shelf line → tabs (Currently Reading | Finished | Archive — only the tabs with content show) → book spines for the active tab → wooden shelf line → Guide welcome bubble → ephemeral Q&A history → sticky drawer at the bottom. Tabs default to whichever bucket has content. Auto-switch tabs when the current one empties (e.g. archiving your last active story). Empty-state (no stories anywhere) hides the entire shelf section entirely so first-visit users see just the Guide pitch + drawer.
+
+**Drawer:** Mirrors the in-story drawer's peek/expand pattern. Peek copy is "What do you want to do?" — companion to in-story's "What happens next?". Expanded options: primary CTA "Start a New Story" (green, fills width) + two `ChoiceButton`s ("Tell me how this works", "What kinds of stories?"). Tapping a `ChoiceButton` appends a `PlayerBubble` + a Guide reply to the scroll area above; drawer collapses. Q&A responses are hardcoded help copy (not AI-generated — the AI Guide chat is still the unstarted Milestone 6 work). Q&A history is ephemeral — resets every time the Bookshelf remounts (i.e. every visit from a story).
+
+**Two new shared primitives:** `ChoiceButton.tsx` (outline button, single visual primitive for "pick one of these" across the app — also adopted in the in-story drawer) and `PlayerBubble.tsx` (right-aligned bubble — also adopted for the in-story player messages and the optimistic new-story bubble). Teaches users the affordance once; they recognize it everywhere.
+
+**Removed from the Bookshelf:** the "Your Library" label + black divider, the inline "Start a New Story" button (moved into the drawer), the Need-a-Spark collapsible section (subsumed into the drawer's broader question), the standalone "+" decoration shelf, and the dropdown "Show Archive" toggle (Archive is now a tab when there's content).
+
+### Texting-app UX pass + shared Guide-surface components (2026-05-14) — v1.8.0 ✅
+
+Minor bump because the new-story flow now feels meaningfully different. Three new shared components, an optimistic flow change, and a Bookshelf cleanup.
+
+**Three new shared components** under `client/src/components/`:
+- `GuideBubble.tsx` — wraps the avatar-above + left-aligned-bubble pattern used everywhere the Guide speaks (bookshelf hero, both wizard steps, in-story AI pages, the typing indicator).
+- `TypingDots.tsx` — iMessage-style three-dot indicator with a staggered CSS keyframe (`@keyframes typing-dot` in `index.css`). Replaces the old "Your Guide is thinking…" text card wherever the Guide is generating.
+- `CenteredHeader.tsx` — 3-column grid (`44px | 1fr | 44px`) used by the Bookshelf, `NewStoryCreation`, and `ChatInterface` top bars. Title is center-aligned per the design-system convention. Bookshelf "Story Mode" title now uses Cinzel (the hero font).
+
+**Optimistic new-story flow:** Tapping Begin Story navigates to the game view immediately. The character description renders as a right-aligned player bubble, the Guide's typing dots show below it, and when the API returns the real conversation fills in. No more blank "loading" screen during the 5–10s first-page generation.
+
+**Auto-scroll changed:** On a brand-new story (messages ≤ 2) the chat stays at the top so the user reads their own prompt before the Guide's reply, texting-style.
+
+**Bookshelf restructure (pre-v1.8.1 cleanup):** "Your Library" moved below the Guide greeting and centered above a horizontal divider. Continue-X module deleted (Guide already names the most-recent story). Font-size dropdown removed from the Bookshelf (was broken — Tailwind text classes overrode the container style; per design-system, font scaling is a story-screen affordance). `NewStoryCreation` header centered; "Step 1 of 2" text replaced with a two-dot indicator (filled = current).
+
+### Bookshelf Guide revoiced: welcome-back gate + length suggestions (2026-05-14) — v1.7.5 ✅
+
+Iteration on v1.7.4 after testing showed the copy started with bare numbers ("4 finished, 2 in the archive.") and over-used the "Last time we were in X" opener. Revoiced toward the user's example pattern: warm opener (when earned) → plain-language state description → concrete options inline ("Want to jump back in, pick up another, or start something new?"). Terminology: *ongoing*, *finished*, *in the archive* — never just "shelf".
+
+**Three structural changes:**
+- **"Welcome back." gate** — prefix prepended to states 3–10 only when 12+ hours have passed since we last greeted this user. Rolling window stored in `localStorage.lastWelcomeAt`.
+- **Length-tier-up suggestion in state 9** — if every completed story is the same length AND that length isn't epic, the Guide suggests the next tier ("Ready for another? Maybe try a novella this time."). Mixed-length history → no suggestion.
+- **State 8 split into 8a (1 active + N completed) and 8b (2+ active + N completed)** to avoid the "1 ongoing" phrasing awkwardness; 8a now leads with "You're partway through X."
+
+Action verbs are now consistent across states: *jump back in* (resume most recent), *pick up another* (switch to a different active story, only in states with 2+ active), *start something new* (open the wizard).
+
+### Bookshelf Guide copy: 10 states, personalized (2026-05-14) — v1.7.4 ✅
+
+`getGreeting()` in `Bookshelf.tsx` expanded from 4 conditional branches to 10. New states distinct on (active count × completed count × archive presence × progress%): first visit, empty-but-archived, one-in-progress (3 progress sub-variants), multiple-in-progress, active-plus-completed mix, all-completed-no-archive, all-completed-plus-archive. Active-story states personalize via `"Last time we were in <em>{recentTitle}</em>…"` where `recentTitle = activeStories[0].storyTitle` (sorted most-recent first, same source as the Continue CTA).
+
+Fixed two existing bugs: (1) state 8's "1 story in progress and 1 finished" hardcoded singular, (2) empty-active+archive state falling through to "You've finished 0 stories!" Pluralization uses word "one" for n=1 and digit for n≥2 — reads warmer than "1 story" mid-sentence. Voice matches `docs/ai-voice.md`: warm, campfire-friend, second person, no exclamation points except the first-visit welcome.
+
+**Known limitation:** can't distinguish a true first visit from a returning user who deleted everything — both fall through to the first-visit pitch. Differentiating would need a `GET /api/stories/recently-deleted` endpoint; deferred.
+
+### Avatar above bubble across all three Guide surfaces (2026-05-14) — v1.7.3 ✅
+
+Follow-up to v1.7.2 after the avatar-beside-bubble layout proved too narrow for long-form prose. The Guide avatar now sits on its own line ABOVE the bubble (left-aligned), with the bubble below also left-aligned, giving the prose more horizontal room. Applied consistently across all three Guide surfaces so the conversation reads continuously: in-story AI pages (`ChatInterface.tsx`), bookshelf hero greeting (`Bookshelf.tsx`), and both new-story wizard steps (`NewStoryCreation.tsx`).
+
+In-story bubble max-width bumped 82% → 88% since it's no longer competing inline with the avatar. Dropped the asymmetric `2px 16px 16px 16px` border-radius "tail" on the hero/wizard bubbles in favor of uniform `rounded-2xl` — matches the in-story bubbles for visual consistency. Player message layout unchanged (still right-aligned bubble, no avatar).
+
+### In-story texting layout: bubbles, alignment, avatar, always-visible input (2026-05-14) — v1.7.2 ✅
+
+Extends the Guide-as-messenger pattern from v1.6.0's bookshelf + wizard into the story reading view, going past a conservative "just add avatar" first cut into a full iMessage-style asymmetric layout.
+
+**AI pages:** small `GuideAvatar` (28px) on the left + left-aligned bubble (`bg-muted/50`, `rounded-2xl`, max-width 82%) keeping Crimson Pro `story-prose`.
+
+**Player messages:** right-aligned bubble (`bg-primary/10`, `rounded-2xl`, max-width 82%), no avatar — alignment is the directional cue. Dropped the "Your Guide" / "You" badge pills since avatar + alignment make them redundant. Timestamp + regenerate moved below the bubble, aligned to the bubble's edge so the bubble itself stays uncluttered. The "Your Guide is thinking…" loading bubble matches the AI layout. Palette stays muted — not iMessage-bright — so it reads as conversation without losing the book aesthetic.
+
+**Custom input collapsed** from a two-state button-then-input into one always-visible field with `"I have something else in mind…"` as the italic placeholder. `showCustomInput` state removed.
+
+Forward direction noted: the user is interested in eventually wiring this UI to real SMS so the conversation can feel actually real.
+
+### Per-tab AI model override for Sonnet vs Haiku testing (2026-05-14) — v1.7.1 ✅
+
+Dev-only infrastructure for the deferred Sonnet 2-cell comparison from `docs/specs/ai-quality-pass-plan.md`. Visiting `localhost:3000/?testmodel=sonnet` (or `haiku`, or a full OpenRouter model ID like `anthropic/claude-sonnet-4`) stores the override in that tab's `sessionStorage` and attaches an `X-Test-Model` header to every API request. Two Safari tabs in the same window can now run different models side-by-side because `sessionStorage` is per-tab.
+
+Server-side `resolveModel()` lives in new `server/aiModel.ts` (single seam — `DEFAULT_MODEL` + `MODEL_ALIASES` + the priority chain: dev header → `AI_MODEL_OVERRIDE` env → default). **Production gated:** `NODE_ENV !== 'production'` is enforced server-side so the header is ignored on Render even if sent. New `AI_MODEL_OVERRIDE` env var also added in case we ever want to flip the production default model without a code change.
+
+Floating "test: sonnet" badge in the corner of any tab with an active override so it's obvious which tab is which during a comparison. Also added a tiny `client/src/lib/testModel.ts` utility for URL-param parsing + sessionStorage I/O + URL cleaning.
+
+### Admin URL + error messaging + TOTP 2FA (2026-05-14) — v1.7.0 ✅
+
+Three changes to the admin login.
+
+**Dropped the `?admin=1` query-string gate:** the dashboard now lives at plain `/admin`. Obscurity wasn't real protection; the server-side `ADMIN_KEY` timing-safe compare is the real lock.
+
+**Production-ready error messaging:** replaced the generic "Failed to fetch stats" client error with three concrete states — 401 collapses to "Invalid credentials" (no leak of which factor failed), other non-OK responses surface the server's actual `error` JSON field, `fetch()` throwing shows "Couldn't reach the server". Root cause that surfaced the fix: `ADMIN_KEY` wasn't set in Render production env, server was returning 503, client was hiding the message. `ADMIN_KEY` now set in Render.
+
+**TOTP-based 2FA.** New `server/adminAuth.ts` is the single seam for all admin verification (top-of-file comment documents the future multi-admin DB migration path — when we go multi-admin, only this one file changes). Login form takes a 6-digit code from any TOTP app (1Password recommended) alongside the secret key. New `scripts/gen-admin-totp.ts` generates the secret + prints a QR. Both `ADMIN_KEY` and `ADMIN_TOTP_SECRET` env vars are required for the dashboard to function; missing either → 503 "Admin auth not configured on server". Deps: `otplib` (runtime), `qrcode-terminal` + `@types/qrcode-terminal` (dev). Operational step before deploy: run the gen script locally → scan into 1Password → paste secret into Render env.
 
 ### Guide-chat wizard + universal sparks + in-story header + simplified titles (2026-05-13) — v1.6.0 ✅
 

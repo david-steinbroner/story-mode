@@ -21,6 +21,11 @@ import {
 import EmptyState from "./EmptyState";
 import { MessageSquare, Loader2, RefreshCw, Send, Minus, Plus, BookOpen, XCircle, ChevronUp, ChevronDown, Mail, ThumbsUp, ThumbsDown } from "lucide-react";
 import GuideAvatar from "./GuideAvatar";
+import GuideBubble from "./GuideBubble";
+import TypingDots from "./TypingDots";
+import CenteredHeader from "./CenteredHeader";
+import ChoiceButton from "./ChoiceButton";
+import PlayerBubble from "./PlayerBubble";
 import type { Message, Character, Quest, Item, GameState } from "@shared/schema";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { analytics } from "@/lib/posthog";
@@ -39,6 +44,12 @@ interface ChatInterfaceProps {
   quests?: Quest[];
   items?: Item[];
   gameState?: GameState;
+  /** Optimistic UI: when set, render this string as a right-aligned player
+   *  bubble at the top of the conversation, plus a TypingDots indicator
+   *  below it. Used during the new-story Begin flow so the user sees their
+   *  character description immediately while the AI generates page 1.
+   *  Cleared by App.tsx once the real messages are returned by the API. */
+  pendingPlayerMessage?: string | null;
 }
 
 const FONT_SIZES = [
@@ -103,7 +114,8 @@ export default function ChatInterface({
   character,
   quests = [],
   items = [],
-  gameState
+  gameState,
+  pendingPlayerMessage = null,
 }: ChatInterfaceProps) {
   const [inputText, setInputText] = useState("");
   const [fontSizeIndex, setFontSizeIndex] = useState(getInitialFontSizeIndex);
@@ -171,14 +183,19 @@ export default function ChatInterface({
 
   // On the FIRST messages payload we get, jump straight to the bottom so the
   // user opens to the latest content (in-progress: their place; finished:
-  // the closing paragraph above the THE END footer). After that, the existing
-  // per-message logic runs: a new AI page scrolls its top into view so the
-  // reader sees it from the beginning; a player message pins to the bottom.
+  // the closing paragraph above the THE END footer). Exception (v1.8.0):
+  // for a brand-new story (length <= 2, i.e. just the player's character
+  // description + the AI's page 1), stay at the TOP so the user lands on
+  // their own prompt and reads down into the Guide's reply, texting-style.
+  // After the initial load, the existing per-message logic runs: a new AI
+  // page scrolls its top into view; a player message pins to the bottom.
   const initialScrollDone = useRef(false);
   useEffect(() => {
     if (messages.length === 0) return;
     if (!initialScrollDone.current) {
       initialScrollDone.current = true;
+      // Fresh story — leave the natural top position alone.
+      if (messages.length <= 2) return;
       // rAF lets the layout settle (padding + footer height) before we measure.
       requestAnimationFrame(() => {
         const el = scrollRef.current;
@@ -427,18 +444,14 @@ ${JSON.stringify(debugInfo, null, 2)}
 
   return (
     <div className={`h-full min-h-0 flex flex-col relative ${className}`} data-testid="chat-interface">
-      {/* Fixed top nav bar — sits outside the scroll container. Title is
-          centered, two-line capable, no truncation. Pages display as
-          (currentPage/totalPages) in parens inline with the title. Avatar
-          dropdown is anchored right; a fixed-width spacer on the left keeps
-          the title centered without a back button there (back-to-library
-          lives in the avatar menu). */}
-      <div className="z-30 border-b border-border shrink-0" style={{ backgroundColor: '#FFF9F0' }}>
-        <div className="grid items-center gap-2 px-3 py-2" style={{ gridTemplateColumns: "44px 1fr 44px", minHeight: 48 }}>
-          {/* Left spacer mirrors the avatar's footprint so the centered
-              title stays centered on the viewport. */}
-          <div aria-hidden />
-          <h1 className="text-center text-sm font-semibold text-foreground leading-snug break-words">
+      {/* Fixed top nav bar — sits outside the scroll container. Uses the
+          shared CenteredHeader component (same 3-col grid pattern as the
+          bookshelf and new-story wizard). Title is two-line capable, no
+          truncation. Pages display as (currentPage/totalPages) inline. */}
+      <CenteredHeader
+        className="z-30 border-b border-border shrink-0"
+        title={
+          <>
             <span>{gameState?.storyTitle || "Story Mode"}</span>
             {gameState?.totalPages && gameState.totalPages > 0 && (
               <span className="text-muted-foreground font-normal">
@@ -448,7 +461,10 @@ ${JSON.stringify(debugInfo, null, 2)}
                   : `(${gameState.currentPage || 1}/${gameState.totalPages})`}
               </span>
             )}
-          </h1>
+          </>
+        }
+        titleClassName="text-sm font-semibold text-foreground"
+        right={
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="focus:outline-none flex items-center justify-center" style={{ minHeight: 44, minWidth: 44 }}>
@@ -510,8 +526,8 @@ ${JSON.stringify(debugInfo, null, 2)}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
-      </div>
+        }
+      />
 
       {/* End Story confirmation dialog */}
       <AlertDialog
@@ -600,47 +616,52 @@ ${JSON.stringify(debugInfo, null, 2)}
         style={{ paddingBottom: gameState?.storyComplete ? 240 : showDrawer ? 112 : 16 }}
       >
         <div className="space-y-3 sm:space-y-4 max-w-full">
-            {messages.length === 0 ? (
+            {messages.length === 0 && pendingPlayerMessage && (
+              // Optimistic first-message UI for the new-story Begin flow.
+              // Renders the player's character description as a right-aligned
+              // bubble immediately while the new-story API generates page 1.
+              // The TypingDots indicator below (driven by isLoading) shows
+              // the Guide responding. When real messages arrive, messages.length
+              // flips to > 0 and this block is replaced by the real player
+              // bubble at the top of the conversation.
+              <PlayerBubble fontSize={currentFontSize.px}>{pendingPlayerMessage}</PlayerBubble>
+            )}
+            {messages.length === 0 && !pendingPlayerMessage && !isLoading && (
               <EmptyState
                 icon={MessageSquare}
                 title="Your story is loading"
                 description="Tap a choice below to begin."
               />
-            ) : (
+            )}
+            {messages.length > 0 && (
               messages.map((message, index) => {
                 const { text } = parseMessageContent(message.content);
                 const isPlayer = message.sender === "player";
                 const isLast = index === messages.length - 1;
                 const canRegenerate = isLast && !isPlayer && !isLoading && !gameState?.storyComplete;
 
-                // Messenger layout. AI messages: avatar on its own line ABOVE
-                // a left-aligned bubble. Player messages: right-aligned bubble,
-                // no avatar (alignment is the directional cue). Avatar-on-top
-                // lets the bubble use more horizontal space — the prose is
-                // long-form so a wide bubble reads better than the narrow
-                // bubble we'd get with the avatar sharing a row. Timestamp +
-                // regenerate sit below the bubble for both.
+                // Messenger layout. AI messages use the shared GuideBubble
+                // component (avatar above + left-aligned bubble). Player
+                // messages render a right-aligned bubble inline — no
+                // avatar; alignment is the directional cue.
+                const prose = (
+                  <p
+                    className={`leading-relaxed text-foreground whitespace-pre-line break-words ${
+                      isPlayer ? '' : 'story-prose'
+                    }`}
+                    style={{ fontSize: `${currentFontSize.px}px` }}
+                  >
+                    {text}
+                  </p>
+                );
+
                 return (
                   <div key={message.id} ref={isLast ? lastMessageRef : undefined} className="space-y-1">
-                    {!isPlayer && (
-                      <GuideAvatar size={28} animate={false} />
+                    {isPlayer ? (
+                      <PlayerBubble fontSize={currentFontSize.px}>{text}</PlayerBubble>
+                    ) : (
+                      <GuideBubble avatarSize={28}>{prose}</GuideBubble>
                     )}
-                    <div className={`flex ${isPlayer ? 'justify-end' : 'justify-start'}`}>
-                      <div
-                        className={`px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl overflow-hidden max-w-[88%] ${
-                          isPlayer ? 'bg-primary/10' : 'bg-muted/50'
-                        }`}
-                      >
-                        <p
-                          className={`leading-relaxed text-foreground whitespace-pre-line break-words ${
-                            isPlayer ? '' : 'story-prose'
-                          }`}
-                          style={{ fontSize: `${currentFontSize.px}px` }}
-                        >
-                          {text}
-                        </p>
-                      </div>
-                    </div>
                     {/* Below-bubble meta row: timestamp + (regenerate on the
                         last AI page). Aligned to the bubble's side. */}
                     <div
@@ -665,18 +686,13 @@ ${JSON.stringify(debugInfo, null, 2)}
               })
             )}
 
-            {/* AI Thinking Indicator. Mirrors the AI message layout so the
-                typing bubble sits exactly where the next reply will appear. */}
+            {/* AI Thinking Indicator. iMessage-style three-dot typing
+                animation inside a Guide bubble — sits exactly where the
+                next AI reply will land. */}
             {isLoading && (
-              <div className="space-y-1">
-                <GuideAvatar size={28} animate={false} />
-                <div className="flex justify-start">
-                  <div className="flex items-center gap-2 px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl bg-muted/50 animate-pulse max-w-[88%]">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <p className="text-sm text-muted-foreground">Your Guide is thinking...</p>
-                  </div>
-                </div>
-              </div>
+              <GuideBubble avatarSize={28} loading>
+                <TypingDots />
+              </GuideBubble>
             )}
 
           </div>
@@ -823,19 +839,19 @@ ${JSON.stringify(debugInfo, null, 2)}
             </div>
           </button>
 
-          {/* Expanded choices content */}
+          {/* Expanded choices content. Each AI-generated choice renders as
+              a shared ChoiceButton — same visual primitive as the bookshelf
+              drawer's Q&A options, so the affordance reads identically
+              across surfaces. */}
           <div className="px-4 pb-4 pt-1 space-y-2 overflow-y-auto" style={{ maxHeight: 'calc(50vh - 5rem)' }}>
             {latestChoices.map((option, index) => (
-              <Button
+              <ChoiceButton
                 key={index}
-                variant="outline"
-                size="sm"
-                className="w-full justify-start text-left h-auto py-2.5 px-3 min-h-[44px] whitespace-normal"
                 onClick={() => handleChoiceSelect(option)}
                 disabled={isLoading}
               >
-                <span className="text-sm leading-snug break-words">{option}</span>
-              </Button>
+                {option}
+              </ChoiceButton>
             ))}
             {/* Custom input — always visible. The placeholder doubles as
                 the affordance: "I have something else in mind…" cues the

@@ -113,7 +113,7 @@ Primary API surface (server/routes.ts). All require `x-session-id` header except
 | Method | Path | Notes |
 |---|---|---|
 | POST | `/api/story/new` | Creates a new story with first page. DB-backed creation lock (`story_creation_locks` table). |
-| POST | `/api/story/surprise-me` | Generates 1-2 sentence character description. ~$0.0005. |
+| POST | `/api/story/surprise-me` | Generates 1–2 sentence character description(s). Optional `?count=N` (1–5, default 1). `count=1` returns legacy `{ description: string }`; `count>1` returns `{ descriptions: string[] }` via a single AI call with `response_format: json_object` (the prompt asks the model to span different vibes/settings). ~$0.0005 per description. |
 | GET | `/api/stories` | All stories for this session. |
 | DELETE | `/api/stories/:storyId` | Permanent delete. Logs `story_deleted` event. |
 | PATCH | `/api/stories/:storyId/archive` | `{ archived: boolean }`. Logs `story_archived` / `story_unarchived`. |

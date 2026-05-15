@@ -25,6 +25,12 @@ function GameApp() {
   const [currentView, setCurrentView] = useState<ViewType>("bookshelf");
   const [activeStoryId, setActiveStory] = useState<string | null>(null);
   const [isCreatingStory, setIsCreatingStory] = useState(false);
+  // Optimistic UI for the new-story flow (v1.8.0): when the user taps
+  // Begin Story, we navigate to the game view immediately and stash the
+  // character description here so ChatInterface can render it as a
+  // right-aligned player bubble while the new-story API generates page 1.
+  // Cleared once a real story ID lands (enterStory) or on error.
+  const [pendingPlayerMessage, setPendingPlayerMessage] = useState<string | null>(null);
 
   // Sync storyId to queryClient headers whenever it changes
   useEffect(() => {
@@ -232,6 +238,7 @@ function GameApp() {
   const navigateToBookshelf = () => {
     setActiveStoryId(null);
     setActiveStory(null);
+    setPendingPlayerMessage(null);
     // Invalidate story-scoped queries so bookshelf shows fresh data
     queryClient.invalidateQueries({ queryKey: ['/api/stories'] });
     setCurrentView("bookshelf");
@@ -240,6 +247,7 @@ function GameApp() {
   const enterStory = (storyId: string) => {
     setActiveStoryId(storyId);
     setActiveStory(storyId);
+    setPendingPlayerMessage(null);
     // Invalidate queries so they refetch with the new storyId header
     // Query keys include storyId so each story has its own cache
     queryClient.invalidateQueries({ queryKey: ['/api/character'] });
@@ -294,6 +302,13 @@ function GameApp() {
         seedDescription={seedDescription}
         onStartStory={async (storyData) => {
           if (isCreatingStory) return;
+          // Optimistic: jump to the game view IMMEDIATELY so the user sees
+          // their character description as a right-aligned bubble + the
+          // Guide's typing dots while the API generates page 1. The
+          // pending state is cleared when enterStory() runs (success) or
+          // when we bail back to the bookshelf (error).
+          setPendingPlayerMessage(storyData.characterDescription);
+          setCurrentView("game");
           setIsCreatingStory(true);
           try {
             const response = await apiRequest('POST', '/api/story/new', storyData);
@@ -306,6 +321,8 @@ function GameApp() {
               description: "Something went wrong. Please try again.",
               variant: "destructive",
             });
+            setPendingPlayerMessage(null);
+            setCurrentView("newStory");
           } finally {
             setIsCreatingStory(false);
           }
@@ -325,7 +342,7 @@ function GameApp() {
 
       <div className="h-dvh flex flex-col bg-background text-foreground overflow-hidden">
         <main className="flex-1 min-h-0 flex flex-col">
-          {messagesLoading ? (
+          {messagesLoading && !pendingPlayerMessage ? (
             <div className="flex items-center justify-center h-full">
               <p className="text-muted-foreground">Loading story...</p>
             </div>
@@ -333,12 +350,16 @@ function GameApp() {
             <ChatInterface
               messages={messages}
               onSendMessage={handleSendMessage}
-              isLoading={aiChatMutation.isPending}
+              // While the new-story API is in flight, isCreatingStory drives
+              // the TypingDots indicator the same way aiChatMutation does
+              // for in-story replies.
+              isLoading={aiChatMutation.isPending || isCreatingStory}
               character={character}
               quests={quests}
               gameState={gameState}
               onEndAdventure={handleEndAdventure}
               onNavigateToBookshelf={navigateToBookshelf}
+              pendingPlayerMessage={pendingPlayerMessage}
               className="flex-1"
             />
           )}
