@@ -71,6 +71,11 @@ export default function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  // v1.9.0 — AI model toggle. `stored` is what's in app_config (alias or null);
+  // `resolved` is the full OpenRouter ID that AI calls actually hit right now.
+  const [modelOverride, setModelOverride] = useState<{ stored: string | null; resolved: string } | null>(null);
+  const [modelToggleSaving, setModelToggleSaving] = useState(false);
+  const [modelToggleError, setModelToggleError] = useState<string | null>(null);
 
   const fetchStats = useCallback(async () => {
     if (!adminKey || !totpCode) return;
@@ -89,8 +94,9 @@ export default function AdminDashboard() {
         fetch("/api/admin/sessions", { headers }),
         fetch("/api/admin/ai-quality", { headers }),
         fetch("/api/admin/recent-activity", { headers }),
+        fetch("/api/admin/model-override", { headers }),
       ]);
-      const [spendRes, sessionRes, qualityRes, activityRes] = responses;
+      const [spendRes, sessionRes, qualityRes, activityRes, modelRes] = responses;
 
       // 401 on any response = wrong key or wrong TOTP (server collapses both
       // so the response doesn't leak which factor failed). Reset auth so the
@@ -123,17 +129,19 @@ export default function AdminDashboard() {
         return;
       }
 
-      const [spend, sessions, quality, activity] = await Promise.all([
+      const [spend, sessions, quality, activity, modelOv] = await Promise.all([
         spendRes.json(),
         sessionRes.json(),
         qualityRes.json(),
         activityRes.json(),
+        modelRes.json(),
       ]);
 
       setSpendStats(spend);
       setSessionStats(sessions);
       setAiQualityStats(quality);
       setRecentActivity(activity);
+      setModelOverride({ stored: modelOv.stored ?? null, resolved: modelOv.resolved });
       setIsAuthenticated(true);
       setLastUpdated(new Date());
     } catch (err) {
@@ -160,6 +168,42 @@ export default function AdminDashboard() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     fetchStats();
+  };
+
+  // v1.9.0 — flip the runtime AI model between Haiku and Sonnet. The next
+  // AI call uses the new value (server updates its in-memory cache inside
+  // this POST handler). We also re-fetch stats afterward so the resolved
+  // display matches what's now live.
+  const saveModelOverride = async (model: "haiku" | "sonnet") => {
+    if (modelToggleSaving) return;
+    setModelToggleSaving(true);
+    setModelToggleError(null);
+    try {
+      const res = await fetch("/api/admin/model-override", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-key": adminKey,
+          "x-admin-totp": totpCode.replace(/\s+/g, ""),
+        },
+        body: JSON.stringify({ model }),
+      });
+      if (!res.ok) {
+        let msg = `Server error (${res.status})`;
+        try {
+          const body = await res.json();
+          if (body?.error) msg = body.error;
+        } catch { /* not JSON; keep status */ }
+        setModelToggleError(msg);
+        return;
+      }
+      const data = await res.json();
+      setModelOverride({ stored: data.stored ?? null, resolved: data.resolved });
+    } catch (err) {
+      setModelToggleError(err instanceof Error ? err.message : "Couldn't reach the server");
+    } finally {
+      setModelToggleSaving(false);
+    }
   };
 
   const formatCurrency = (value: number) => {
@@ -260,6 +304,53 @@ export default function AdminDashboard() {
             value={formatCurrency(spendStats?.dailyBudgetRemaining || 0)}
             subtitle={`of ${formatCurrency(spendStats?.dailyLimit || 10)} limit`}
           />
+        </div>
+
+        {/* AI Model Toggle (v1.9.0) — flip between Haiku and Sonnet at runtime.
+            Persists in app_config; next AI call picks up the change. */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+          <h2 className="text-lg font-semibold mb-1" style={{ color: "#5C5470" }}>
+            AI Model
+          </h2>
+          <p className="text-xs mb-4" style={{ color: "#5C5470", opacity: 0.7 }}>
+            Currently active: <span className="font-mono">{modelOverride?.resolved ?? "loading…"}</span>
+            {modelOverride?.stored ? (
+              <> — admin override: <span className="font-mono">{modelOverride.stored}</span></>
+            ) : (
+              <> — using server default</>
+            )}
+          </p>
+          <div className="flex items-center gap-2">
+            {(["haiku", "sonnet"] as const).map((m) => {
+              const isActive = modelOverride?.stored === m;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => saveModelOverride(m)}
+                  disabled={modelToggleSaving || isActive}
+                  className="px-4 py-2 rounded-md text-sm font-medium transition-colors"
+                  style={{
+                    backgroundColor: isActive ? "#5C5470" : "#FAF9F6",
+                    color: isActive ? "#FAF9F6" : "#5C5470",
+                    border: "1px solid #5C5470",
+                    cursor: isActive || modelToggleSaving ? "default" : "pointer",
+                    opacity: modelToggleSaving && !isActive ? 0.5 : 1,
+                  }}
+                >
+                  {m === "haiku" ? "Haiku" : "Sonnet"}
+                </button>
+              );
+            })}
+            {modelToggleSaving && (
+              <span className="text-xs ml-2" style={{ color: "#5C5470", opacity: 0.6 }}>
+                Saving…
+              </span>
+            )}
+          </div>
+          {modelToggleError && (
+            <p className="text-xs mt-2 text-red-600">{modelToggleError}</p>
+          )}
         </div>
 
         {/* Token Usage */}

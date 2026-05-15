@@ -16,7 +16,13 @@ export type ServerEventType =
   | "ai_request_failed"
   // Chunk B: per-response quality validators. Logged once per generateResponse
   // call, including retries. Properties carry the violation flags.
-  | "ai_quality_violation";
+  | "ai_quality_violation"
+  // v1.9.0: every successful AI call records the resolved model so admin can
+  // attribute spend Haiku-vs-Sonnet over a date range. Properties: { model,
+  // endpoint, durationMs?, promptTokens?, completionTokens? }.
+  | "ai_call"
+  // v1.9.0: admin flipped the runtime model override. Properties: { from, to }.
+  | "admin_model_override_set";
 
 export async function logEvent(
   sessionId: string,

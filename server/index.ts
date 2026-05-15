@@ -7,6 +7,8 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { generalLimiter } from "./rateLimit";
 import { testConnection } from "./db";
+import { loadAdminModelOverride } from "./aiModel";
+import { storage } from "./storage";
 
 const app = express();
 app.set('trust proxy', 1); // Render's reverse proxy fronts every request
@@ -37,6 +39,11 @@ app.use((req, res, next) => {
     console.error("[server] Failed to connect to database. Exiting.");
     process.exit(1);
   }
+
+  // Load the admin AI-model override from the app_config table into
+  // aiModel.ts's in-memory cache. Silent failure leaves the override at
+  // null and falls through to env/DEFAULT_MODEL.
+  await loadAdminModelOverride(storage);
 
   const server = await registerRoutes(app);
 

@@ -107,7 +107,7 @@ The client uses `retryAfter` to display a countdown when applicable.
 
 ## Endpoints index
 
-Primary API surface (server/routes.ts). All require `x-session-id` header except `/api/admin/*` which requires `x-admin-key`. **Story-scoped routes also require `x-story-id` (v1.8.7)** — `/api/character`, `/api/quests`, `/api/items`, `/api/messages`, `/api/game-state` (GET/PATCH), `/api/ai/chat`, `/api/ai/quick-action`. GETs return empty (`[]` or `null`) when the header is missing; writes return 400. Story-creation and listing endpoints don't need it (`/api/story/new`, `/api/story/surprise-me`, `/api/stories`).
+Primary API surface (server/routes.ts). All require `x-session-id` header except `/api/admin/*` which requires `x-admin-key` + `x-admin-totp`. **Story-scoped routes also require `x-story-id` (v1.8.7)** — `/api/character`, `/api/quests`, `/api/items`, `/api/messages`, `/api/game-state` (GET/PATCH), `/api/ai/chat`, `/api/ai/quick-action`. GETs return empty (`[]` or `null`) when the header is missing; writes return 400. Story-creation and listing endpoints don't need it (`/api/story/new`, `/api/story/surprise-me`, `/api/stories`).
 
 ### Story lifecycle
 | Method | Path | Notes |
@@ -124,11 +124,15 @@ Primary API surface (server/routes.ts). All require `x-session-id` header except
 |---|---|---|
 | POST | `/api/ai/chat` | Generate next page. Per-(session, story) chat lock (in-memory, 60s). Logs `page_turned` + `ai_fallback` on error. |
 
-### Admin (require `x-admin-key` matching `ADMIN_KEY` env var)
+### Admin (require `x-admin-key` matching `ADMIN_KEY` env var + valid `x-admin-totp` per `ADMIN_TOTP_SECRET`)
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/admin/spend` | Today + all-time spend stats. |
 | GET | `/api/admin/sessions` | Per-session usage (in-memory, since-last-restart). |
+| GET | `/api/admin/recent-activity` | Last 20 `event_log` rows for support lookup. |
+| GET | `/api/admin/ai-quality` | 24h Chunk-B validator violation counts + page_turned denominator. |
+| GET | `/api/admin/model-override` | Current AI model toggle (v1.9.0). Returns `{ stored, resolved, aliases }` — `stored` is the alias persisted in `app_config.active_model` (or `null`), `resolved` is the full OpenRouter model ID resolution would pick right now. |
+| POST | `/api/admin/model-override` | Flip the AI model toggle (v1.9.0). Body: `{ model: 'haiku' \| 'sonnet' }`. Persists to `app_config` AND updates `server/aiModel.ts`'s in-memory cache synchronously — the next AI call uses the new value. Logs `admin_model_override_set` to `event_log` for audit. |
 
 ---
 

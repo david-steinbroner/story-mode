@@ -21,6 +21,7 @@ import { aiLimiter, generalLimiter } from "./rateLimit";
 import { spendTracker } from "./spendTracker";
 import { aiService, type AIResponse } from "./aiService";
 import { logEvent } from "./eventLog";
+import { resolveModel, getAdminModelOverride, setAdminModelOverride, MODEL_ALIASES } from "./aiModel";
 import { eventLog as eventLogTable } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, lt, gte, sql as drizzleSql } from "drizzle-orm";
@@ -1097,6 +1098,15 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
       // Track request with actual token usage
       await spendTracker.trackRequest(sessionId, aiResponse.tokenUsage);
 
+      // Per-call model attribution (v1.9.0) — admin can later aggregate
+      // event_log to see Haiku vs Sonnet split over a date range.
+      logEvent(sessionId, "ai_call", {
+        model: resolveModel(testModel),
+        endpoint: "/api/ai/chat",
+        promptTokens: aiResponse.tokenUsage?.promptTokens,
+        completionTokens: aiResponse.tokenUsage?.completionTokens,
+      }, storyId).catch(() => { /* logging never fails the request */ });
+
       // Apply AI response (store messages, apply actions, detect side quests)
       const aiMessage = await applyAIResponse(sessionId, message, aiResponse, storyId, testModel);
 
@@ -1177,6 +1187,13 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
 
       // Track request with actual token usage
       await spendTracker.trackRequest(sessionId, aiResponse.tokenUsage);
+
+      logEvent(sessionId, "ai_call", {
+        model: resolveModel(testModel),
+        endpoint: "/api/ai/quick-action",
+        promptTokens: aiResponse.tokenUsage?.promptTokens,
+        completionTokens: aiResponse.tokenUsage?.completionTokens,
+      }, storyId).catch(() => { /* logging never fails the request */ });
 
       // Apply AI response (store messages, apply actions, detect side quests)
       const aiMessage = await applyAIResponse(sessionId, actionMessage, aiResponse, storyId, testModel);
@@ -1340,6 +1357,60 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
     } catch (error) {
       console.error('Error fetching AI quality stats:', error);
       res.status(500).json({ error: 'Failed to fetch AI quality stats' });
+    }
+  });
+
+  // GET /api/admin/model-override (v1.9.0) — current admin AI-model toggle.
+  // Returns the alias stored in app_config plus the full resolved model ID
+  // so the admin UI can display both.
+  app.get("/api/admin/model-override", adminAuth, async (_req, res) => {
+    try {
+      const stored = getAdminModelOverride();
+      const resolved = resolveModel(undefined); // pass undefined header → uses admin/env/default
+      res.json({
+        stored,                       // 'haiku' | 'sonnet' | full ID | null
+        resolved,                     // always a full OpenRouter model ID
+        aliases: Object.keys(MODEL_ALIASES),
+      });
+    } catch (error) {
+      console.error('Error fetching model override:', error);
+      res.status(500).json({ error: 'Failed to fetch model override' });
+    }
+  });
+
+  // POST /api/admin/model-override (v1.9.0) — flip the toggle. Body shape:
+  // { model: 'haiku' | 'sonnet' }. Persists to app_config AND updates the
+  // in-memory cache synchronously so the very next AI call uses the new
+  // model. Logged to event_log as admin_model_override_set so we have an
+  // audit trail of when each flip happened.
+  app.post("/api/admin/model-override", adminAuth, async (req, res) => {
+    try {
+      const requested = typeof req.body?.model === "string" ? req.body.model.trim() : "";
+      // Restrict to known aliases for now. If we want to expose full IDs
+      // later, drop this check (resolveModel already accepts pass-through
+      // full IDs from the alias map).
+      if (!requested || !(requested in MODEL_ALIASES)) {
+        return res.status(400).json({
+          error: `model must be one of: ${Object.keys(MODEL_ALIASES).join(", ")}`,
+        });
+      }
+
+      const previous = getAdminModelOverride();
+      await storage.setConfig("active_model", requested, "admin");
+      setAdminModelOverride(requested);
+
+      logEvent("admin", "admin_model_override_set", {
+        from: previous,
+        to: requested,
+      }).catch(() => { /* logging never fails the request */ });
+
+      res.json({
+        stored: requested,
+        resolved: resolveModel(undefined),
+      });
+    } catch (error) {
+      console.error('Error setting model override:', error);
+      res.status(500).json({ error: 'Failed to set model override' });
     }
   });
 

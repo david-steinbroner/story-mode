@@ -56,6 +56,11 @@ export interface IStorage {
   getActiveSummary(sessionId: string, storyId?: string): Promise<StorySummary | null>;
   createSummary(sessionId: string, summary: InsertStorySummary): Promise<StorySummary>;
   deactivateSummaries(sessionId: string, storyId?: string): Promise<void>;
+
+  // Runtime app config (v1.9.0) — generic key/value store, currently only
+  // used for the AI model override toggle on /admin.
+  getConfig(key: string): Promise<{ value: string } | null>;
+  setConfig(key: string, value: string, updatedBy?: string): Promise<void>;
 }
 
 export const storage: IStorage = new DbStorage();

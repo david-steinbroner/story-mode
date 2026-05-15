@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.8.7**. Pre-launch audit Phases 1–5 (2026-05-11). AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, typography wiring (2026-05-12, v1.2.x). Concurrency hardening + UI polish (Postgres-backed chat lock + rate limiter, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool) (2026-05-12, v1.3.0). AI quality pass Chunk A + soft-delete (2026-05-13, v1.4.0); Chunk B validators + admin scroll fix (2026-05-13, v1.5.0); admin polish + welcome copy (2026-05-13, v1.5.1); Guide-chat wizard + universal sparks + in-story header (2026-05-13, v1.6.0). **Admin URL + TOTP 2FA** (2026-05-14, v1.7.0) and **per-tab dev model override** (2026-05-14, v1.7.1) unblocked the Sonnet comparison. **In-story texting layout pass** (2026-05-14, v1.7.2–1.7.3) — Guide messenger bubbles, avatar-above layout, always-visible custom input. **Bookshelf Guide copy revoiced** (2026-05-14, v1.7.4–1.7.5) — 10 personalized states, welcome-back gate, length-tier-up suggestions. **Texting-app UX overhaul** (2026-05-14, v1.8.0–1.8.3) — shared Guide primitives (`GuideBubble`/`PlayerBubble`/`ChoiceButton`/`TypingDots`/`CenteredHeader`), Bookshelf restructured as a conversation with tabbed shelves + sticky drawer + ephemeral Q&A, new-story wizard expanded to 3 steps (description → length → confirm) with drawers and AI-generated 3-suggestion surprise-me on both steps. **Current in-flight milestone:** Milestone 6 (full AI-powered Guide chatbot) — v1.8.1's hardcoded Q&A drawer is partial progress; the AI endpoint + intent matcher are still TODO. **Completed:** Milestones 1–5 plus the Pre-launch Audit and everything through v1.8.3.
+> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.9.0**. Pre-launch audit Phases 1–5 (2026-05-11). AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, typography wiring (2026-05-12, v1.2.x). Concurrency hardening + UI polish (Postgres-backed chat lock + rate limiter, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool) (2026-05-12, v1.3.0). AI quality pass Chunk A + soft-delete (2026-05-13, v1.4.0); Chunk B validators + admin scroll fix (2026-05-13, v1.5.0); admin polish + welcome copy (2026-05-13, v1.5.1); Guide-chat wizard + universal sparks + in-story header (2026-05-13, v1.6.0). **Admin URL + TOTP 2FA** (2026-05-14, v1.7.0) and **per-tab dev model override** (2026-05-14, v1.7.1) unblocked the Sonnet comparison. **In-story texting layout pass** (2026-05-14, v1.7.2–1.7.3) — Guide messenger bubbles, avatar-above layout, always-visible custom input. **Bookshelf Guide copy revoiced** (2026-05-14, v1.7.4–1.7.5) — 10 personalized states, welcome-back gate, length-tier-up suggestions. **Texting-app UX overhaul** (2026-05-14, v1.8.0–1.8.3) — shared Guide primitives (`GuideBubble`/`PlayerBubble`/`ChoiceButton`/`TypingDots`/`CenteredHeader`), Bookshelf restructured as a conversation with tabbed shelves + sticky drawer + ephemeral Q&A, new-story wizard expanded to 3 steps (description → length → confirm) with drawers and AI-generated 3-suggestion surprise-me on both steps. **Current in-flight milestone:** Milestone 6 (full AI-powered Guide chatbot) — v1.8.1's hardcoded Q&A drawer is partial progress; the AI endpoint + intent matcher are still TODO. **Completed:** Milestones 1–5 plus the Pre-launch Audit and everything through v1.8.3.
 >
 > *Last updated: 2026-05-14 · Maintenance rule at the bottom.*
 
@@ -113,6 +113,36 @@ Each canned response flows through a `GuideConfirmDialog` for confirmation befor
 ---
 
 ## Completed Milestones
+
+### Admin AI-model toggle: Haiku ↔ Sonnet at runtime (2026-05-14) — v1.9.0 ✅
+
+Two-button toggle in the admin dashboard that flips the active AI model without a redeploy. Motivated by the monetization conversation — Sonnet's quality gap is real and the PM wanted a fast way to A/B the two on a live audience without coordinating a Render env-var flip + restart cycle.
+
+**DB layer.** New migration `010_app_config.sql` adds an `app_config` table — generic key/value store (`key text PRIMARY KEY, value text NOT NULL, updated_at, updated_by`). Currently the only row is `(key='active_model', value='haiku' | 'sonnet')` but the table is generic so future runtime toggles (kill switches, feature flags) reuse the same surface instead of accumulating one-table-per-toggle. Drizzle definition in `shared/schema.ts` as `appConfig`; storage methods `getConfig(key)` and `setConfig(key, value, updatedBy?)` in `dbStorage.ts` (upsert via `onConflictDoUpdate`).
+
+**Resolver layer (`server/aiModel.ts`).** Updated resolution chain:
+1. Dev `X-Test-Model` header (unchanged, non-prod only)
+2. **Admin runtime override (NEW)** — module-level `_adminOverride` variable, loaded once at boot via `loadAdminModelOverride(storage)`, updated synchronously inside the admin POST handler via `setAdminModelOverride(value)`
+3. `AI_MODEL_OVERRIDE` env var (unchanged, sysadmin fallback)
+4. `DEFAULT_MODEL = "anthropic/claude-3.5-haiku"` (unchanged)
+
+Stored value is the alias (`'haiku'`/`'sonnet'`), not the full OpenRouter ID — that way bumping `MODEL_ALIASES.sonnet` to a newer Sonnet release automatically updates what live admin overrides resolve to. The resolver's existing `aliasToId` translation handles it.
+
+**Boot wire-up.** `server/index.ts` calls `await loadAdminModelOverride(storage)` immediately after `testConnection()` succeeds. Silent failure leaves the cache at `null` and falls through to env/default; admin can re-flip once the DB recovers.
+
+**Per-call attribution.** Two new event types in `server/eventLog.ts`:
+- `ai_call` — fired from `/api/ai/chat` and `/api/ai/quick-action` after every successful AI response. Properties: `{ model, endpoint, promptTokens, completionTokens }`. Lets admin aggregate "last 7 days: X Haiku calls, Y Sonnet calls" with a simple GROUP BY on `properties->>'model'`.
+- `admin_model_override_set` — fired on every flip. Properties: `{ from, to }`. Audit trail for "who set what when".
+
+**Admin endpoints.** Both gated by existing `adminAuth` middleware (TOTP 2FA from v1.7.0):
+- `GET /api/admin/model-override` returns `{ stored, resolved, aliases }` — `stored` is the alias in DB (or `null`), `resolved` is the full OpenRouter ID resolveModel would currently pick, `aliases` is the list of accepted values for the toggle UI.
+- `POST /api/admin/model-override` takes `{ model: 'haiku' | 'sonnet' }`. Validates against `MODEL_ALIASES` keys; anything else 400s. On success: `storage.setConfig(...)`, `setAdminModelOverride(...)`, log audit event, return new `{ stored, resolved }`.
+
+**Admin UI (`AdminDashboard.tsx`).** Small card sits between the Spend Metrics grid and the Token Usage block. Shows the currently-resolved model + the stored alias (or "using server default"), two buttons (Haiku, Sonnet) with the active one highlighted, inline "Saving…" indicator, error surface if the POST fails. Fetched alongside the other admin stats and refreshed on the existing 30s poll.
+
+**Cost watchout (documented).** Sonnet is ~10–15× more expensive than Haiku per `docs/api-and-cost.md`. The $10 daily cap and warning threshold ($8) are unchanged; with Sonnet active the cap is hit much faster, but the spend tracker's behavior is identical regardless of model. Admin can see the resolved model up top of the card and on the spend monitoring rows.
+
+**Out of scope for this milestone:** per-tier routing (e.g. shorts on Haiku, novels on Sonnet) — the file header comment in `aiModel.ts` calls it out as the next step on this seam. A/B split is also future work; the toggle is global today.
 
 ### Fix: new-story optimistic flow bled messages from previous stories (2026-05-14) — v1.8.7 ✅
 

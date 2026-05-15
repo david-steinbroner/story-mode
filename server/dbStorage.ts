@@ -20,6 +20,7 @@ import {
   messages,
   gameState,
   storySummaries,
+  appConfig,
 } from "@shared/schema";
 
 /**
@@ -703,6 +704,36 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // ============================================================
+  // RUNTIME APP CONFIG (v1.9.0)
+  // ============================================================
+
+  async getConfig(key: string): Promise<{ value: string } | null> {
+    try {
+      const result = await db
+        .select({ value: appConfig.value })
+        .from(appConfig)
+        .where(eq(appConfig.key, key))
+        .limit(1);
+      return result[0] ?? null;
+    } catch (error) {
+      throw new Error(`Failed to get config '${key}': ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
+  async setConfig(key: string, value: string, updatedBy?: string): Promise<void> {
+    try {
+      await db
+        .insert(appConfig)
+        .values({ key, value, updatedBy: updatedBy ?? null })
+        .onConflictDoUpdate({
+          target: appConfig.key,
+          set: { value, updatedAt: new Date(), updatedBy: updatedBy ?? null },
+        });
+    } catch (error) {
+      throw new Error(`Failed to set config '${key}': ${error instanceof Error ? error.message : error}`);
+    }
+  }
 }
 
 // Export singleton instance

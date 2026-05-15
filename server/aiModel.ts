@@ -16,10 +16,17 @@
  *      OpenRouter model ID, use that. Lets us run Haiku-vs-Sonnet
  *      side-by-side in two browser tabs without restarts. Ignored in prod.
  *
- *   2. **AI_MODEL_OVERRIDE env var.** Set in Render env if we ever want to
- *      flip the default model globally without a code change.
+ *   2. **Admin runtime override (v1.9.0).** Persisted in the `app_config`
+ *      table under key `active_model`. Flipped from /admin → `POST
+ *      /api/admin/model-override`, which calls `setAdminModelOverride()`
+ *      below to update the in-memory cache synchronously. Effective on the
+ *      VERY NEXT AI call — no restart needed. Loaded once at server start
+ *      via `loadAdminModelOverride()`.
  *
- *   3. **DEFAULT_MODEL** (Haiku). Current production default. To change the
+ *   3. **AI_MODEL_OVERRIDE env var.** Sysadmin fallback. Persists across
+ *      restarts even if the DB row is wiped.
+ *
+ *   4. **DEFAULT_MODEL** (Haiku). Current production default. To change the
  *      production default permanently, edit the constant below and ship.
  *
  * ----------------------------------------------------------------------------
@@ -32,11 +39,15 @@
  *   pass it directly: `?testmodel=anthropic/claude-sonnet-4-x`.
  */
 
+import type { IStorage } from "./storage";
+
 export const DEFAULT_MODEL = "anthropic/claude-3.5-haiku";
 
 /**
  * Short aliases for the query-string toggle on the frontend
- * (`?testmodel=sonnet`). The backend also accepts full OpenRouter IDs
+ * (`?testmodel=sonnet`) AND the admin toggle (DB stores the alias, not the
+ * full ID, so swapping in a newer Sonnet model ID here updates the live
+ * setting automatically). The backend also accepts full OpenRouter IDs
  * directly, so an unmapped alias just gets passed through to OpenRouter,
  * which will error if it's not real.
  *
@@ -51,6 +62,52 @@ export const MODEL_ALIASES: Record<string, string> = {
   sonnet: "anthropic/claude-sonnet-4",
 };
 
+// Admin runtime override. Stored as an alias (e.g. "haiku" or "sonnet") OR
+// a full OpenRouter ID; resolveModel() does alias-to-ID translation. Null
+// means no override active; the resolver falls through to env/default.
+let _adminOverride: string | null = null;
+
+/**
+ * Read the current admin override (raw stored value — alias or full ID).
+ * The admin GET endpoint uses this to populate the toggle UI.
+ */
+export function getAdminModelOverride(): string | null {
+  return _adminOverride;
+}
+
+/**
+ * Update the in-memory cache. Called by the admin POST endpoint AFTER the
+ * DB write succeeds. Pass `null` to clear the override.
+ *
+ * Synchronous so the very next AI call sees the new value — no cache delay.
+ */
+export function setAdminModelOverride(value: string | null): void {
+  _adminOverride = value;
+}
+
+/**
+ * One-shot load from DB at server boot. Failures are silent — if the DB
+ * round-trip fails, the override stays null and we fall through to env/
+ * default. Admin can re-set via /admin once the DB recovers.
+ */
+export async function loadAdminModelOverride(storage: IStorage): Promise<void> {
+  try {
+    const row = await storage.getConfig("active_model");
+    _adminOverride = row?.value ?? null;
+  } catch {
+    _adminOverride = null;
+  }
+}
+
+/**
+ * Resolve an alias to a full OpenRouter model ID. Pass-through if the
+ * input already contains "/" (provider/model shape).
+ */
+function aliasToId(value: string): string {
+  if (value.includes("/")) return value;
+  return MODEL_ALIASES[value] ?? value;
+}
+
 /**
  * Pick the model for a given request.
  *
@@ -62,16 +119,18 @@ export function resolveModel(headerValue: string | undefined): string {
 
   if (!isProd && typeof headerValue === "string" && headerValue.trim()) {
     const trimmed = headerValue.trim();
-    // Accept either a known alias (short name) or a full model ID.
-    // Full IDs always contain "/" (provider/model), aliases never do.
     if (trimmed.includes("/")) {
       return trimmed;
     }
     if (MODEL_ALIASES[trimmed]) {
       return MODEL_ALIASES[trimmed];
     }
-    // Unknown short name. Fall through to env var / default rather than
+    // Unknown short name. Fall through to admin/env/default rather than
     // sending garbage to OpenRouter.
+  }
+
+  if (_adminOverride && _adminOverride.trim()) {
+    return aliasToId(_adminOverride.trim());
   }
 
   const envOverride = process.env.AI_MODEL_OVERRIDE;

@@ -181,6 +181,16 @@ export const eventLog = pgTable("event_log", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+// Generic runtime config table (v1.9.0). First use case is the active AI
+// model toggle managed from the admin dashboard. Generic on purpose — future
+// runtime toggles (feature flags, kill switches) reuse this surface.
+export const appConfig = pgTable("app_config", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedBy: text("updated_by"),
+});
+
 export const insertCharacterSchema = createInsertSchema(characters);
 export const insertQuestSchema = createInsertSchema(quests);
 export const insertItemSchema = createInsertSchema(items);
@@ -198,6 +208,7 @@ export type StoryCreationLock = typeof storyCreationLocks.$inferSelect;
 export type ChatLock = typeof chatLocks.$inferSelect;
 export type RateLimitBucket = typeof rateLimitBuckets.$inferSelect;
 export type EventLog = typeof eventLog.$inferSelect;
+export type AppConfig = typeof appConfig.$inferSelect;
 
 export type Character = typeof characters.$inferSelect;
 export type Quest = typeof quests.$inferSelect;

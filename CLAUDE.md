@@ -147,12 +147,13 @@ Most recently shipped + what's queued → `docs/MILESTONES.md` TL;DR and `docs/R
 
 | File | What it does |
 |---|---|
-| `shared/schema.ts` | DB schema (Drizzle + Zod). Tables: `gameState`, `messages`, `characters`, `quests`, `items`, `storySummaries`, `dailySpend`, `storyCreationLocks`, `eventLog`. **Touch with a migration plan approved by me first.** |
+| `shared/schema.ts` | DB schema (Drizzle + Zod). Tables: `gameState`, `messages`, `characters`, `quests`, `items`, `storySummaries`, `dailySpend`, `storyCreationLocks`, `eventLog`, `appConfig` (v1.9.0 generic runtime config — currently holds the admin AI model toggle). **Touch with a migration plan approved by me first.** |
 | `server/db.ts` | Connection pool (postgres-js + Drizzle). Pool: max 20, idle_timeout 20, connect_timeout 10. |
 | `server/dbStorage.ts` | All CRUD with session + story scoping and business logic. |
 | `server/storage.ts` | Exports `IStorage` interface + active `DbStorage` instance. |
 | `server/routes.ts` | All API endpoints (thin handlers). Endpoints catalogued in `docs/api-and-cost.md`. |
 | `server/aiService.ts` | All AI calls. System prompt + pacing + JSON parsing + em-dash strip + retry. Rules in `docs/ai-voice.md`; cost in `docs/api-and-cost.md`. |
+| `server/aiModel.ts` | **Single seam for model resolution.** `resolveModel()` is called from every AI call site. Priority chain: dev `X-Test-Model` header (non-prod only) → admin runtime override (v1.9.0, cached in-memory, persisted in `app_config.active_model`) → `AI_MODEL_OVERRIDE` env → `DEFAULT_MODEL`. The admin override loads from DB at server boot via `loadAdminModelOverride()` and updates synchronously inside the admin POST handler so flips take effect on the next AI call. |
 | `server/summaryService.ts` | Rolling story summary, every 10 messages. |
 | `server/spendTracker.ts` | DB-backed cost tracking with daily cap. See `docs/api-and-cost.md`. |
 | `server/eventLog.ts` | Server-side funnel analytics ground truth. |
