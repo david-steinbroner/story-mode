@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.8.5**. Pre-launch audit Phases 1–5 (2026-05-11). AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, typography wiring (2026-05-12, v1.2.x). Concurrency hardening + UI polish (Postgres-backed chat lock + rate limiter, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool) (2026-05-12, v1.3.0). AI quality pass Chunk A + soft-delete (2026-05-13, v1.4.0); Chunk B validators + admin scroll fix (2026-05-13, v1.5.0); admin polish + welcome copy (2026-05-13, v1.5.1); Guide-chat wizard + universal sparks + in-story header (2026-05-13, v1.6.0). **Admin URL + TOTP 2FA** (2026-05-14, v1.7.0) and **per-tab dev model override** (2026-05-14, v1.7.1) unblocked the Sonnet comparison. **In-story texting layout pass** (2026-05-14, v1.7.2–1.7.3) — Guide messenger bubbles, avatar-above layout, always-visible custom input. **Bookshelf Guide copy revoiced** (2026-05-14, v1.7.4–1.7.5) — 10 personalized states, welcome-back gate, length-tier-up suggestions. **Texting-app UX overhaul** (2026-05-14, v1.8.0–1.8.3) — shared Guide primitives (`GuideBubble`/`PlayerBubble`/`ChoiceButton`/`TypingDots`/`CenteredHeader`), Bookshelf restructured as a conversation with tabbed shelves + sticky drawer + ephemeral Q&A, new-story wizard expanded to 3 steps (description → length → confirm) with drawers and AI-generated 3-suggestion surprise-me on both steps. **Current in-flight milestone:** Milestone 6 (full AI-powered Guide chatbot) — v1.8.1's hardcoded Q&A drawer is partial progress; the AI endpoint + intent matcher are still TODO. **Completed:** Milestones 1–5 plus the Pre-launch Audit and everything through v1.8.3.
+> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.8.6**. Pre-launch audit Phases 1–5 (2026-05-11). AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, typography wiring (2026-05-12, v1.2.x). Concurrency hardening + UI polish (Postgres-backed chat lock + rate limiter, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool) (2026-05-12, v1.3.0). AI quality pass Chunk A + soft-delete (2026-05-13, v1.4.0); Chunk B validators + admin scroll fix (2026-05-13, v1.5.0); admin polish + welcome copy (2026-05-13, v1.5.1); Guide-chat wizard + universal sparks + in-story header (2026-05-13, v1.6.0). **Admin URL + TOTP 2FA** (2026-05-14, v1.7.0) and **per-tab dev model override** (2026-05-14, v1.7.1) unblocked the Sonnet comparison. **In-story texting layout pass** (2026-05-14, v1.7.2–1.7.3) — Guide messenger bubbles, avatar-above layout, always-visible custom input. **Bookshelf Guide copy revoiced** (2026-05-14, v1.7.4–1.7.5) — 10 personalized states, welcome-back gate, length-tier-up suggestions. **Texting-app UX overhaul** (2026-05-14, v1.8.0–1.8.3) — shared Guide primitives (`GuideBubble`/`PlayerBubble`/`ChoiceButton`/`TypingDots`/`CenteredHeader`), Bookshelf restructured as a conversation with tabbed shelves + sticky drawer + ephemeral Q&A, new-story wizard expanded to 3 steps (description → length → confirm) with drawers and AI-generated 3-suggestion surprise-me on both steps. **Current in-flight milestone:** Milestone 6 (full AI-powered Guide chatbot) — v1.8.1's hardcoded Q&A drawer is partial progress; the AI endpoint + intent matcher are still TODO. **Completed:** Milestones 1–5 plus the Pre-launch Audit and everything through v1.8.3.
 >
 > *Last updated: 2026-05-14 · Maintenance rule at the bottom.*
 
@@ -113,6 +113,20 @@ Each canned response flows through a `GuideConfirmDialog` for confirmation befor
 ---
 
 ## Completed Milestones
+
+### Step 2 Q&A wipes on re-entry + CTA re-ask after every reply (2026-05-14) — v1.8.6 ✅
+
+Two small behavior tweaks on the Step 2 chat after testing v1.8.5 showed two related awkwardnesses: returning to Step 2 from Step 3 left a wall of stale Q&A, and the user could scroll past the original "How long should your story be?" question without the Guide re-orienting them back to the decision.
+
+**Wipe on re-entry:** new `useEffect(() => { if (step === 2) setStep2Qa([]); }, [step])`. Every transition INTO Step 2 (from Step 1 via Next, from Step 3 via back, from Step 3 via the "Length" edit-back ChoiceButton) clears the Q&A history. First entry is a no-op since `step2Qa` is already empty. The Q&A is positioned as a momentary aside, not a persistent thread.
+
+**CTA re-ask:** `addStep2Qa` now appends a third bubble after the player question + Guide answer — a fresh Guide bubble whose content is just "How long should your story be?". The pattern in the chat area becomes:
+
+```
+[player Q] → [Guide answer] → [Guide CTA: "How long should your story be?"]
+```
+
+The top Guide bubble (prompt echo + "How long…?") still anchors first-load visibility; the bottom CTA bubble is the scroll-anchored repeat so the most recent message is always the call to action. After a user taps both canned questions in sequence they end up with three Guide CTA bubbles in the thread, which intentionally reinforces "OK but seriously, pick a length."
 
 ### Step 2 length tiles anchored + centered copy + pages/time on one line (2026-05-14) — v1.8.5 ✅
 

@@ -163,10 +163,15 @@ export default function NewStoryCreation({
 
   const addStep2Qa = (question: string, answer: string) => {
     const stamp = Date.now();
+    // After every Q&A, re-ask "How long should your story be?" so the CTA
+    // is always the last thing the Guide says (v1.8.6). Keeps the user
+    // oriented back to the decision even if they wandered through the
+    // canned answers.
     setStep2Qa((prev) => [
       ...prev,
       { id: `q-${stamp}`, sender: "player", content: question },
       { id: `a-${stamp}`, sender: "guide", content: answer },
+      { id: `cta-${stamp}`, sender: "guide", content: "How long should your story be?" },
     ]);
     setIsDrawerOpen(false);
     requestAnimationFrame(() => {
@@ -179,6 +184,18 @@ export default function NewStoryCreation({
 
   const handleKeepGoing = () =>
     addStep2Qa("Can I keep going after a story is done?", KEEP_GOING_EXPLAINER);
+
+  // Wipe Step 2 Q&A history every time the user (re-)enters Step 2 (v1.8.6).
+  // The Q&A is meant to be a momentary aside, not a persistent thread —
+  // returning from Step 3 (via back or "Length" edit) should land the user
+  // on a clean "prompt echo + How long…?" screen, not a wall of prior
+  // questions. First entry from Step 1 is also covered; step2Qa is already
+  // [] in that case so the set is a no-op.
+  useEffect(() => {
+    if (step === 2) {
+      setStep2Qa([]);
+    }
+  }, [step]);
 
   // Close drawer when tapping outside (mirrors in-story drawer behavior).
   useEffect(() => {
