@@ -470,18 +470,15 @@ export default function Bookshelf({
   onNewStory: rawOnNewStory,
   className = "",
 }: BookshelfProps) {
-  // Tabbed library (v1.8.1): one shelf area, three possible tabs. Default
-  // to whichever bucket has content so we never land on an empty tab.
+  // Tabbed library (v1.8.1): one shelf area, three possible tabs. Always
+  // default to Currently Reading (v1.8.4) — the auto-switch effect below
+  // falls through to Finished or Archive when Currently Reading is empty
+  // once stories load. Fixes a bug where stories=[] on initial mount (data
+  // still in flight from React Query) caused the lazy initializer to pick
+  // "archive" as the default if archive ended up being the only non-empty
+  // bucket.
   type TabKey = "reading" | "finished" | "archive";
-  const [activeTab, setActiveTab] = useState<TabKey>(() => {
-    const hasActive = stories.some(
-      (s) => !s.storyComplete && !s.storyArchived && s.totalPages && s.totalPages > 0,
-    );
-    const hasFinished = stories.some((s) => s.storyComplete && !s.storyArchived);
-    if (hasActive) return "reading";
-    if (hasFinished) return "finished";
-    return "archive";
-  });
+  const [activeTab, setActiveTab] = useState<TabKey>("reading");
 
   // Bookshelf drawer state. Same peek/expand pattern as the in-story
   // drawer in ChatInterface — kept inline (not extracted) because the
@@ -966,7 +963,7 @@ export default function Bookshelf({
         <div ref={qaEndRef} />
 
         {/* Version */}
-        <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.8.3</p>
+        <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.8.4</p>
       </div>
 
       {/* Sticky drawer — same peek/expand pattern as the in-story drawer.

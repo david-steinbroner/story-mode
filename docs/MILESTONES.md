@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.8.3**. Pre-launch audit Phases 1–5 (2026-05-11). AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, typography wiring (2026-05-12, v1.2.x). Concurrency hardening + UI polish (Postgres-backed chat lock + rate limiter, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool) (2026-05-12, v1.3.0). AI quality pass Chunk A + soft-delete (2026-05-13, v1.4.0); Chunk B validators + admin scroll fix (2026-05-13, v1.5.0); admin polish + welcome copy (2026-05-13, v1.5.1); Guide-chat wizard + universal sparks + in-story header (2026-05-13, v1.6.0). **Admin URL + TOTP 2FA** (2026-05-14, v1.7.0) and **per-tab dev model override** (2026-05-14, v1.7.1) unblocked the Sonnet comparison. **In-story texting layout pass** (2026-05-14, v1.7.2–1.7.3) — Guide messenger bubbles, avatar-above layout, always-visible custom input. **Bookshelf Guide copy revoiced** (2026-05-14, v1.7.4–1.7.5) — 10 personalized states, welcome-back gate, length-tier-up suggestions. **Texting-app UX overhaul** (2026-05-14, v1.8.0–1.8.3) — shared Guide primitives (`GuideBubble`/`PlayerBubble`/`ChoiceButton`/`TypingDots`/`CenteredHeader`), Bookshelf restructured as a conversation with tabbed shelves + sticky drawer + ephemeral Q&A, new-story wizard expanded to 3 steps (description → length → confirm) with drawers and AI-generated 3-suggestion surprise-me on both steps. **Current in-flight milestone:** Milestone 6 (full AI-powered Guide chatbot) — v1.8.1's hardcoded Q&A drawer is partial progress; the AI endpoint + intent matcher are still TODO. **Completed:** Milestones 1–5 plus the Pre-launch Audit and everything through v1.8.3.
+> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.8.4**. Pre-launch audit Phases 1–5 (2026-05-11). AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, typography wiring (2026-05-12, v1.2.x). Concurrency hardening + UI polish (Postgres-backed chat lock + rate limiter, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool) (2026-05-12, v1.3.0). AI quality pass Chunk A + soft-delete (2026-05-13, v1.4.0); Chunk B validators + admin scroll fix (2026-05-13, v1.5.0); admin polish + welcome copy (2026-05-13, v1.5.1); Guide-chat wizard + universal sparks + in-story header (2026-05-13, v1.6.0). **Admin URL + TOTP 2FA** (2026-05-14, v1.7.0) and **per-tab dev model override** (2026-05-14, v1.7.1) unblocked the Sonnet comparison. **In-story texting layout pass** (2026-05-14, v1.7.2–1.7.3) — Guide messenger bubbles, avatar-above layout, always-visible custom input. **Bookshelf Guide copy revoiced** (2026-05-14, v1.7.4–1.7.5) — 10 personalized states, welcome-back gate, length-tier-up suggestions. **Texting-app UX overhaul** (2026-05-14, v1.8.0–1.8.3) — shared Guide primitives (`GuideBubble`/`PlayerBubble`/`ChoiceButton`/`TypingDots`/`CenteredHeader`), Bookshelf restructured as a conversation with tabbed shelves + sticky drawer + ephemeral Q&A, new-story wizard expanded to 3 steps (description → length → confirm) with drawers and AI-generated 3-suggestion surprise-me on both steps. **Current in-flight milestone:** Milestone 6 (full AI-powered Guide chatbot) — v1.8.1's hardcoded Q&A drawer is partial progress; the AI endpoint + intent matcher are still TODO. **Completed:** Milestones 1–5 plus the Pre-launch Audit and everything through v1.8.3.
 >
 > *Last updated: 2026-05-14 · Maintenance rule at the bottom.*
 
@@ -113,6 +113,26 @@ Each canned response flows through a `GuideConfirmDialog` for confirmation befor
 ---
 
 ## Completed Milestones
+
+### Bookshelf default-tab fix + wizard layout swap + smaller length tiles + new canned Q&A (2026-05-14) — v1.8.4 ✅
+
+Four small refinements to the v1.8.x surface, bundled because they all landed in the same review pass.
+
+**Bookshelf default tab:** initial `activeTab` is now hardcoded to `"reading"` instead of a lazy initializer that read from `stories`. Fixes a bug where `stories=[]` on mount (React Query data in flight) caused the initializer to pick the lowest-priority non-empty bucket; the auto-switch effect only fires when the *current* tab becomes empty, so users could land on Archive even when Currently Reading had content. The existing fall-through effect handles the edge case where Currently Reading is genuinely empty once stories load (falls through to Finished, then Archive).
+
+**Wizard layout swap:** the Guide bubble moved from the top of each step's scroll area to *below* the action. Mirrors the Bookshelf's "shelf above, Guide chat below" pattern so the wizard reads with the same visual grammar as the library page.
+- Step 1: `[Textarea] → [counter] → [Next button] → [Guide bubble: "Describe who you are…"]`
+- Step 2: `[Length tiles] → [Guide bubble: prompt echo + "How long…?"] → [Q&A history]`
+- Step 3: `[Begin button] → [Guide bubble: recap]`
+
+Guide bubble on Step 2 now leads with the user's prompt rendered italic + foreground color (book-title convention, same as Step 3) before the length question — so the user sees what they're committing to before picking length.
+
+**Smaller length tiles:** 2×2 grid stays, but each tile is now compact. Single-line stacked layout (label / pages / time), left-aligned, no giant page number, `px-3 py-2.5` padding. Saves ~60–80px of vertical space below the tiles. Tap target still ≥44px.
+
+**Step 2 drawer revamp:**
+- Peek copy changed from "What do you want to do?" to "Need suggestions?" (consistent with Step 1).
+- New second canned `ChoiceButton`: "Can I keep going after a story is done?" with a hardcoded Guide reply ("Once a story reaches its ending, that one's wrapped. I write a final page and the book closes. If you want more room to roam, pick a longer length next time. A novella, novel, or epic gives the world more time to breathe.") — nudges length-tier-up at the moment the user is picking length.
+- Refactored the Q&A handler into a single `addStep2Qa(question, answer)` helper since there are now two canned options sharing the same flow.
 
 ### Wizard Step 3 confirmation page (2026-05-14) — v1.8.3 ✅
 

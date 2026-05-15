@@ -28,11 +28,14 @@ const STORY_LENGTHS = [
   { id: "epic", pages: 250, label: "Epic", desc: "Grand saga", time: "~3 hours" },
 ];
 
-// Hardcoded reply for the Step 2 drawer's "Tell me about these lengths"
-// option. Matches the Guide voice from docs/ai-voice.md — short sentences,
-// no em dashes, plain words, concrete.
+// Hardcoded replies for the Step 2 drawer's canned questions. Match the
+// Guide voice from docs/ai-voice.md — short sentences, no em dashes, plain
+// words, concrete.
 const LENGTH_EXPLAINER =
   "Short stories run 25 pages, about 15 minutes. Quick and tight. Novellas double that, around 30 minutes, with room for a twist. Novels are 100 pages, a full hour, a whole arc. Epics run 250 pages, about 3 hours. A grand journey.";
+
+const KEEP_GOING_EXPLAINER =
+  "Once a story reaches its ending, that one's wrapped. I write a final page and the book closes. If you want more room to roam, pick a longer length next time. A novella, novel, or epic gives the world more time to breathe.";
 
 export default function NewStoryCreation({
   onStartStory,
@@ -158,18 +161,24 @@ export default function NewStoryCreation({
     analytics.trackEvent("surprise_me_clicked");
   };
 
-  const handleAboutLengths = () => {
+  const addStep2Qa = (question: string, answer: string) => {
     const stamp = Date.now();
     setStep2Qa((prev) => [
       ...prev,
-      { id: `q-${stamp}`, sender: "player", content: "Tell me about these lengths" },
-      { id: `a-${stamp}`, sender: "guide", content: LENGTH_EXPLAINER },
+      { id: `q-${stamp}`, sender: "player", content: question },
+      { id: `a-${stamp}`, sender: "guide", content: answer },
     ]);
     setIsDrawerOpen(false);
     requestAnimationFrame(() => {
       qaEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     });
   };
+
+  const handleAboutLengths = () =>
+    addStep2Qa("Tell me about these lengths", LENGTH_EXPLAINER);
+
+  const handleKeepGoing = () =>
+    addStep2Qa("Can I keep going after a story is done?", KEEP_GOING_EXPLAINER);
 
   // Close drawer when tapping outside (mirrors in-story drawer behavior).
   useEffect(() => {
@@ -189,7 +198,7 @@ export default function NewStoryCreation({
     step === 1
       ? "Need suggestions?"
       : step === 2
-      ? "What do you want to do?"
+      ? "Need suggestions?"
       : "Need to change anything?";
 
   return (
@@ -230,41 +239,14 @@ export default function NewStoryCreation({
         }
       />
 
-      {/* Scrollable content. paddingBottom leaves room for the drawer peek. */}
+      {/* Scrollable content. paddingBottom leaves room for the drawer peek.
+          v1.8.4 layout: action/input goes FIRST, Guide bubble goes BELOW the
+          action — mirrors the Bookshelf pattern where shelves sit above the
+          Guide welcome bubble. Drawer is sticky-anchored at the bottom. */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4" style={{ paddingBottom: "6rem" }}>
-        {/* Guide question bubble. On Steps 1 & 2 it's a one-line question.
-            On Step 3 (confirmation) it's a multi-line recap of the choices. */}
-        <GuideBubble
-          avatarSize={36}
-          bubbleClassName="bg-card border border-border"
-          className="mt-2 mb-6"
-        >
-          {step === 1 && (
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              Describe who you are in this story.
-            </p>
-          )}
-          {step === 2 && (
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              How long should your story be?
-            </p>
-          )}
-          {step === 3 && (
-            <div className="text-sm leading-relaxed text-muted-foreground space-y-3">
-              <p>Great choices! Your prompt:</p>
-              <p className="italic text-foreground">{characterDescription.trim()}</p>
-              <p>
-                {selectedLength?.label} ({selectedLength?.pages} pages,{" "}
-                {selectedLength?.time})
-              </p>
-              <p>Ready?</p>
-            </div>
-          )}
-        </GuideBubble>
-
-        {/* Step 1: Character description */}
+        {/* Step 1: Character description input → counter → Next → Guide */}
         {step === 1 && (
-          <div className="space-y-4">
+          <div className="space-y-4 mt-2">
             <Textarea
               id="character-desc"
               placeholder="e.g., A curious inventor who discovers a hidden door in their workshop that leads somewhere impossible..."
@@ -286,13 +268,22 @@ export default function NewStoryCreation({
             >
               Next
             </Button>
+            <GuideBubble
+              avatarSize={36}
+              bubbleClassName="bg-card border border-border"
+              className="mt-6"
+            >
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                Describe who you are in this story.
+              </p>
+            </GuideBubble>
           </div>
         )}
 
-        {/* Step 2: Length selection (auto-submits on tap) + Q&A history */}
+        {/* Step 2: Length tiles → Guide bubble (prompt echo + question) → Q&A history */}
         {step === 2 && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-4 mt-2">
+            <div className="grid grid-cols-2 gap-2">
               {STORY_LENGTHS.map((l) => {
                 const isSelected = storyLength === l.id;
                 return (
@@ -312,17 +303,16 @@ export default function NewStoryCreation({
                       }, 200);
                     }}
                     disabled={isLoading || isSubmitting.current}
-                    className={`p-4 rounded-lg border-2 transition-all text-center ${
+                    className={`px-3 py-2.5 rounded-lg border-2 transition-all text-left ${
                       isSelected
                         ? "border-primary bg-primary/5 shadow-sm"
                         : "border-border hover:border-primary/40 hover:bg-muted/50"
                     }`}
                     style={{ minHeight: 44 }}
                   >
-                    <p className="font-bold text-2xl text-primary">{l.pages}</p>
-                    <p className="text-xs text-muted-foreground">pages</p>
-                    <p className="font-semibold text-sm mt-2">{l.label}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{l.time}</p>
+                    <p className="font-semibold text-sm">{l.label}</p>
+                    <p className="text-xs text-muted-foreground">{l.pages} pages</p>
+                    <p className="text-xs text-muted-foreground">{l.time}</p>
                   </button>
                 );
               })}
@@ -335,8 +325,19 @@ export default function NewStoryCreation({
               </div>
             )}
 
-            {/* Step 2 Q&A history (from the drawer's "Tell me about these
-                lengths" option). Same bubble pattern as Bookshelf Q&A. */}
+            <GuideBubble
+              avatarSize={36}
+              bubbleClassName="bg-card border border-border"
+              className="mt-6"
+            >
+              <div className="text-sm leading-relaxed text-muted-foreground space-y-3">
+                <p className="italic text-foreground">{characterDescription.trim()}</p>
+                <p>How long should your story be?</p>
+              </div>
+            </GuideBubble>
+
+            {/* Step 2 Q&A history (from the drawer's canned questions). Same
+                bubble pattern as Bookshelf Q&A — chains below the recap. */}
             {step2Qa.map((msg) =>
               msg.sender === "player" ? (
                 <PlayerBubble key={msg.id} className="mt-3">
@@ -357,11 +358,10 @@ export default function NewStoryCreation({
           </div>
         )}
 
-        {/* Step 3: Confirmation. The Guide bubble above the scroll area
-            recaps the choices; this block is just the Begin CTA. The
-            drawer offers the "Need to change anything?" routes. */}
+        {/* Step 3: Begin button → Guide bubble (recap). Drawer offers the
+            "Need to change anything?" routes. */}
         {step === 3 && (
-          <div className="space-y-4">
+          <div className="space-y-4 mt-2">
             <Button
               onClick={() => handleSubmit()}
               disabled={!isValid || isLoading}
@@ -377,6 +377,21 @@ export default function NewStoryCreation({
                 "Begin"
               )}
             </Button>
+            <GuideBubble
+              avatarSize={36}
+              bubbleClassName="bg-card border border-border"
+              className="mt-6"
+            >
+              <div className="text-sm leading-relaxed text-muted-foreground space-y-3">
+                <p>Great choices! Your prompt:</p>
+                <p className="italic text-foreground">{characterDescription.trim()}</p>
+                <p>
+                  {selectedLength?.label} ({selectedLength?.pages} pages,{" "}
+                  {selectedLength?.time})
+                </p>
+                <p>Ready?</p>
+              </div>
+            </GuideBubble>
           </div>
         )}
       </div>
@@ -445,9 +460,14 @@ export default function NewStoryCreation({
             </>
           )}
           {step === 2 && (
-            <ChoiceButton onClick={handleAboutLengths}>
-              Tell me about these lengths
-            </ChoiceButton>
+            <>
+              <ChoiceButton onClick={handleAboutLengths}>
+                Tell me about these lengths
+              </ChoiceButton>
+              <ChoiceButton onClick={handleKeepGoing}>
+                Can I keep going after a story is done?
+              </ChoiceButton>
+            </>
           )}
           {step === 3 && (
             <>
