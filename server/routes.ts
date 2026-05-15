@@ -808,6 +808,7 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
   app.post("/api/quests", async (req, res) => {
     try {
       const sessionId = getSessionId(req);
+      if (!getStoryId(req)) return res.status(400).json({ error: "Missing x-story-id header" });
       const result = insertQuestSchema.safeParse({ ...req.body, sessionId });
       if (!result.success) {
         return res.status(400).json({ error: "Invalid quest data", details: sanitizeZodIssues(result.error.errors) });
@@ -959,6 +960,7 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
   app.post("/api/messages", async (req, res) => {
     try {
       const sessionId = getSessionId(req);
+      if (!getStoryId(req)) return res.status(400).json({ error: "Missing x-story-id header" });
       // Set server-side timestamp
       const messageData = {
         ...req.body,
@@ -982,6 +984,11 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
   app.delete("/api/messages", async (req, res) => {
     try {
       const sessionId = getSessionId(req);
+      // Defensive guard: no client today calls this without a storyId, but the
+      // underlying clearMessages(sessionId) is session-wide — requiring the
+      // header makes accidental session-wipes harder. A future PR-B revisit
+      // should either scope the wipe to storyId or remove this endpoint.
+      if (!getStoryId(req)) return res.status(400).json({ error: "Missing x-story-id header" });
       await storage.clearMessages(sessionId);
       res.json({ success: true });
     } catch (error) {

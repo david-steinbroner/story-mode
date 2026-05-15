@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.9.3**. Milestones 1–5 shipped pre-launch (Foundation → AI Memory → Page Structure pivot → Pacing → Polish & UX Overhaul). Pre-launch audit Phases 1–5 (2026-05-11). **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; the AI-powered intent matcher + `POST /api/guide/chat` endpoint are still TODO. **Most recent meaningful push:** v1.9.3 first ship from the 2026-05-15 audit (correctness + a11y + sanitization). Full version-by-version detail in the "Completed Milestones" entries below.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.9.4**. Milestones 1–5 shipped pre-launch (Foundation → AI Memory → Page Structure pivot → Pacing → Polish & UX Overhaul). Pre-launch audit Phases 1–5 (2026-05-11). **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; the AI-powered intent matcher + `POST /api/guide/chat` endpoint are still TODO. **Most recent meaningful push:** the 2026-05-15 audit is shipping in risk-isolated PRs — A1 (v1.9.3) + A2 (v1.9.4) so far. Full version-by-version detail in the "Completed Milestones" entries below.
 >
 > *Last updated: 2026-05-15 · Maintenance rule at the bottom.*
 
@@ -39,6 +39,16 @@ The original Milestone 6 plan called for a slide-up `GuideChat.tsx` modal trigge
 ---
 
 ## Completed Milestones
+
+### Audit 2026-05-15 PR-A2: story-scoping POST/DELETE guards (2026-05-15) — v1.9.4 ✅
+
+Defensive `400 Missing x-story-id` guard added to three routes that previously accepted the request even without the story-scoping header. No client today calls these without the header — pure hardening against a future caller (or accidental curl) that forgets it.
+
+- **POST `/api/quests`** (`server/routes.ts:811`) — guard above the existing Zod parse.
+- **POST `/api/messages`** (`server/routes.ts:963`) — guard above the timestamp build.
+- **DELETE `/api/messages`** (`server/routes.ts:986`) — guard above `clearMessages(sessionId)`. Note the underlying storage method is still session-wide (clears all stories for the session); the guard at least requires the caller to claim a story context. PR-B revisit should either scope the wipe to storyId or remove the endpoint.
+
+**Not in scope:** POST `/api/items` — deferred to PR-B alongside the items keep-or-delete decision (#4).
 
 ### Audit 2026-05-15 PR-A1: correctness + a11y + sanitization (2026-05-15) — v1.9.3 ✅
 
