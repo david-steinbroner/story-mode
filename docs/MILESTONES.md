@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.8.4**. Pre-launch audit Phases 1–5 (2026-05-11). AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, typography wiring (2026-05-12, v1.2.x). Concurrency hardening + UI polish (Postgres-backed chat lock + rate limiter, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool) (2026-05-12, v1.3.0). AI quality pass Chunk A + soft-delete (2026-05-13, v1.4.0); Chunk B validators + admin scroll fix (2026-05-13, v1.5.0); admin polish + welcome copy (2026-05-13, v1.5.1); Guide-chat wizard + universal sparks + in-story header (2026-05-13, v1.6.0). **Admin URL + TOTP 2FA** (2026-05-14, v1.7.0) and **per-tab dev model override** (2026-05-14, v1.7.1) unblocked the Sonnet comparison. **In-story texting layout pass** (2026-05-14, v1.7.2–1.7.3) — Guide messenger bubbles, avatar-above layout, always-visible custom input. **Bookshelf Guide copy revoiced** (2026-05-14, v1.7.4–1.7.5) — 10 personalized states, welcome-back gate, length-tier-up suggestions. **Texting-app UX overhaul** (2026-05-14, v1.8.0–1.8.3) — shared Guide primitives (`GuideBubble`/`PlayerBubble`/`ChoiceButton`/`TypingDots`/`CenteredHeader`), Bookshelf restructured as a conversation with tabbed shelves + sticky drawer + ephemeral Q&A, new-story wizard expanded to 3 steps (description → length → confirm) with drawers and AI-generated 3-suggestion surprise-me on both steps. **Current in-flight milestone:** Milestone 6 (full AI-powered Guide chatbot) — v1.8.1's hardcoded Q&A drawer is partial progress; the AI endpoint + intent matcher are still TODO. **Completed:** Milestones 1–5 plus the Pre-launch Audit and everything through v1.8.3.
+> **TL;DR (read this first):** Story Mode is live at mystorymode.com on **v1.8.5**. Pre-launch audit Phases 1–5 (2026-05-11). AI voice rewrite, parse-failure hardening, rate-limit fix, drawer/regenerate UX polish, doc framework restructure, typography wiring (2026-05-12, v1.2.x). Concurrency hardening + UI polish (Postgres-backed chat lock + rate limiter, sentiment dedup, hero rebrand into Guide bubble + 100-prompt spark pool) (2026-05-12, v1.3.0). AI quality pass Chunk A + soft-delete (2026-05-13, v1.4.0); Chunk B validators + admin scroll fix (2026-05-13, v1.5.0); admin polish + welcome copy (2026-05-13, v1.5.1); Guide-chat wizard + universal sparks + in-story header (2026-05-13, v1.6.0). **Admin URL + TOTP 2FA** (2026-05-14, v1.7.0) and **per-tab dev model override** (2026-05-14, v1.7.1) unblocked the Sonnet comparison. **In-story texting layout pass** (2026-05-14, v1.7.2–1.7.3) — Guide messenger bubbles, avatar-above layout, always-visible custom input. **Bookshelf Guide copy revoiced** (2026-05-14, v1.7.4–1.7.5) — 10 personalized states, welcome-back gate, length-tier-up suggestions. **Texting-app UX overhaul** (2026-05-14, v1.8.0–1.8.3) — shared Guide primitives (`GuideBubble`/`PlayerBubble`/`ChoiceButton`/`TypingDots`/`CenteredHeader`), Bookshelf restructured as a conversation with tabbed shelves + sticky drawer + ephemeral Q&A, new-story wizard expanded to 3 steps (description → length → confirm) with drawers and AI-generated 3-suggestion surprise-me on both steps. **Current in-flight milestone:** Milestone 6 (full AI-powered Guide chatbot) — v1.8.1's hardcoded Q&A drawer is partial progress; the AI endpoint + intent matcher are still TODO. **Completed:** Milestones 1–5 plus the Pre-launch Audit and everything through v1.8.3.
 >
 > *Last updated: 2026-05-14 · Maintenance rule at the bottom.*
 
@@ -113,6 +113,18 @@ Each canned response flows through a `GuideConfirmDialog` for confirmation befor
 ---
 
 ## Completed Milestones
+
+### Step 2 length tiles anchored + centered copy + pages/time on one line (2026-05-14) — v1.8.5 ✅
+
+Two follow-ups to v1.8.4's smaller-tile pass, after testing showed the tiles still scrolled out of view when the Guide Q&A history accumulated below them.
+
+**Anchored tiles:** the length tiles moved out of the scrolling content area into a `shrink-0` slot directly below the header — same pattern as the Bookshelf shelf section that landed in v1.8.2. The Guide bubble (recap + length question) and the Q&A history now scroll independently below the tiles. The user can ask "Tell me about these lengths" or "Can I keep going after a story is done?" and read the answer without losing visual context of the choice they're about to make.
+
+Steps 1 and 3 keep their existing single-scroll layout: Step 1 has no Q&A growing beneath its action, and Step 3 has no Q&A at all (its drawer is the "Need to change anything?" edit-back menu, which doesn't append to the chat area). Anchoring them would have been visual symmetry for its own sake.
+
+**Tile copy refinement:**
+- `text-left` → `text-center` so the label/info column reads as a unit.
+- Two info lines collapsed to one: `25 pages   ~15 min` (two info points separated by `&nbsp; &nbsp;` on a single `<p>`). Saves another row of vertical height on every tile and reads as a single fact instead of a stat sheet.
 
 ### Bookshelf default-tab fix + wizard layout swap + smaller length tiles + new canned Q&A (2026-05-14) — v1.8.4 ✅
 

@@ -239,6 +239,51 @@ export default function NewStoryCreation({
         }
       />
 
+      {/* Step 2 length tiles — anchored above the scroll area (v1.8.5),
+          same pattern as the Bookshelf shelf section. The Guide bubble and
+          Q&A history scroll independently below; the tiles stay visible no
+          matter how much chat accumulates. Steps 1 and 3 keep everything
+          in the scroll area since neither has Q&A growing beneath. */}
+      {step === 2 && (
+        <div className="shrink-0 px-4 mt-2 mb-2">
+          <div className="grid grid-cols-2 gap-2">
+            {STORY_LENGTHS.map((l) => {
+              const isSelected = storyLength === l.id;
+              return (
+                <button
+                  key={l.id}
+                  onClick={() => {
+                    setStoryLength(l.id);
+                    analytics.trackEvent("story_length_selected", {
+                      storyLength: l.id,
+                      pages: l.pages,
+                    });
+                    // Selection style animates briefly, then we advance
+                    // to Step 3 for the user to confirm before submit.
+                    setTimeout(() => {
+                      setStep(3);
+                      setIsDrawerOpen(false);
+                    }, 200);
+                  }}
+                  disabled={isLoading || isSubmitting.current}
+                  className={`px-3 py-2.5 rounded-lg border-2 transition-all text-center ${
+                    isSelected
+                      ? "border-primary bg-primary/5 shadow-sm"
+                      : "border-border hover:border-primary/40 hover:bg-muted/50"
+                  }`}
+                  style={{ minHeight: 44 }}
+                >
+                  <p className="font-semibold text-sm">{l.label}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {l.pages} pages &nbsp; {l.time}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Scrollable content. paddingBottom leaves room for the drawer peek.
           v1.8.4 layout: action/input goes FIRST, Guide bubble goes BELOW the
           action — mirrors the Bookshelf pattern where shelves sit above the
@@ -280,44 +325,10 @@ export default function NewStoryCreation({
           </div>
         )}
 
-        {/* Step 2: Length tiles → Guide bubble (prompt echo + question) → Q&A history */}
+        {/* Step 2: Guide bubble (prompt echo + question) → Q&A history.
+            Length tiles live in the anchored section above this scroll area. */}
         {step === 2 && (
           <div className="space-y-4 mt-2">
-            <div className="grid grid-cols-2 gap-2">
-              {STORY_LENGTHS.map((l) => {
-                const isSelected = storyLength === l.id;
-                return (
-                  <button
-                    key={l.id}
-                    onClick={() => {
-                      setStoryLength(l.id);
-                      analytics.trackEvent("story_length_selected", {
-                        storyLength: l.id,
-                        pages: l.pages,
-                      });
-                      // Selection style animates briefly, then we advance
-                      // to Step 3 for the user to confirm before submit.
-                      setTimeout(() => {
-                        setStep(3);
-                        setIsDrawerOpen(false);
-                      }, 200);
-                    }}
-                    disabled={isLoading || isSubmitting.current}
-                    className={`px-3 py-2.5 rounded-lg border-2 transition-all text-left ${
-                      isSelected
-                        ? "border-primary bg-primary/5 shadow-sm"
-                        : "border-border hover:border-primary/40 hover:bg-muted/50"
-                    }`}
-                    style={{ minHeight: 44 }}
-                  >
-                    <p className="font-semibold text-sm">{l.label}</p>
-                    <p className="text-xs text-muted-foreground">{l.pages} pages</p>
-                    <p className="text-xs text-muted-foreground">{l.time}</p>
-                  </button>
-                );
-              })}
-            </div>
-
             {isLoading && (
               <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -328,7 +339,6 @@ export default function NewStoryCreation({
             <GuideBubble
               avatarSize={36}
               bubbleClassName="bg-card border border-border"
-              className="mt-6"
             >
               <div className="text-sm leading-relaxed text-muted-foreground space-y-3">
                 <p className="italic text-foreground">{characterDescription.trim()}</p>
