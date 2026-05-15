@@ -26,7 +26,7 @@ Defined as HSL CSS variables in `client/src/index.css` under `:root`. Light mode
 
 - **Never pure black** (`#000`). Use `text-foreground`. Shadows are tinted (HSL 220 25% 15%), not pure black either.
 - **Never pure white** for backgrounds. Use `bg-background` (cream) or `bg-card`.
-- **No dark mode.** The brand is light-only. The `.dark` CSS block was removed. **Note:** `tailwind.config.ts` still has `darkMode: ["class"]` configured (vestigial — should be removed in a future cleanup; tracked in `docs/ROADMAP.md`).
+- **No dark mode.** The brand is light-only. The `.dark` CSS block and the `darkMode: ["class"]` Tailwind config were both removed in v1.3.0.
 - **No hardcoded hex in components.** Use Tailwind tokens. Hardcoded hex still exists in some places — phased out per `docs/ROADMAP.md`.
 
 ### Accessibility & contrast

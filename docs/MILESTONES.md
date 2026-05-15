@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.9.4**. Milestones 1–5 shipped pre-launch (Foundation → AI Memory → Page Structure pivot → Pacing → Polish & UX Overhaul). Pre-launch audit Phases 1–5 (2026-05-11). **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; the AI-powered intent matcher + `POST /api/guide/chat` endpoint are still TODO. **Most recent meaningful push:** the 2026-05-15 audit is shipping in risk-isolated PRs — A1 (v1.9.3) + A2 (v1.9.4) so far. Full version-by-version detail in the "Completed Milestones" entries below.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.9.5**. Milestones 1–5 shipped pre-launch (Foundation → AI Memory → Page Structure pivot → Pacing → Polish & UX Overhaul). Pre-launch audit Phases 1–5 (2026-05-11). **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; the AI-powered intent matcher + `POST /api/guide/chat` endpoint are still TODO. **Most recent meaningful push:** the 2026-05-15 audit is shipping in risk-isolated PRs — A1 (v1.9.3) + A2 (v1.9.4) + C (v1.9.5) so far. Full version-by-version detail in the "Completed Milestones" entries below.
 >
 > *Last updated: 2026-05-15 · Maintenance rule at the bottom.*
 
@@ -39,6 +39,28 @@ The original Milestone 6 plan called for a slide-up `GuideChat.tsx` modal trigge
 ---
 
 ## Completed Milestones
+
+### Audit 2026-05-15 PR-C: doc drift + console.log gating + spec archive (2026-05-15) — v1.9.5 ✅
+
+Zero-risk mop-up of stale docs and ungated production logs (#5–#14).
+
+**Doc drift fixed:**
+- `docs/design-system.md:29` — stale claim that `tailwind.config.ts` "still has" `darkMode: ["class"]`. Verified removed in v1.3.0; doc updated to match.
+- `.env.example:20-25` — `AI_MODEL_OVERRIDE` comment described a 2-step chain. Rewritten to spell out the full v1.9.0 resolver chain: dev-header → admin DB override → env → DEFAULT_MODEL.
+- `docs/ROADMAP.md` Sonnet-active warning entry — trimmed to just the still-unbuilt "Sonnet has been active for Xh, $Y" highlight (the resolved-model display already landed in v1.9.0).
+- `docs/ROADMAP.md` palette-consolidation hex counts — re-counted: 110 total / 58 in AdminDashboard (the doc said ~61/~26; the audit's own restated count of 85/53 was also stale).
+
+**Spec archive:**
+- `docs/specs/ai-quality-pass.md` and `ai-quality-pass-plan.md` both moved to `docs/specs/archive/` via `git mv` (preserves history). 6 path references in MILESTONES + ROADMAP repointed.
+
+**Production-log gating:**
+- `server/dbStorage.ts:206` (duplicate-quest prevention log) — gated on `NODE_ENV !== 'production'`.
+- `server/rateLimit.ts:41, 66, 86` — three rate-limit handler logs (general, ai, strict) — all gated.
+
+**Dead-code removal:**
+- `client/src/lib/sentry.ts` — deleted the commented-out `Sentry.replayIntegration({...})` block and the trailing `replaysSessionSampleRate` / `replaysOnErrorSampleRate` comments. Replay was intentionally disabled (per the comment "to avoid 403 errors"); keeping the commented config was just clutter.
+
+**Downgraded on re-read — not shipped:** `client/src/components/ChatInterface.tsx:345` was flagged as a stray dev `console.log`, but the surrounding code shows it's the user-facing fallback for browsers without the Clipboard API (paired with a toast that says "check browser console for debug info"). Gating it would break the fallback. The audit doc records this as #13 "downgraded on second look."
 
 ### Audit 2026-05-15 PR-A2: story-scoping POST/DELETE guards (2026-05-15) — v1.9.4 ✅
 
@@ -239,7 +261,7 @@ Forward direction noted: the user is interested in eventually wiring this UI to 
 
 ### Per-tab AI model override for Sonnet vs Haiku testing (2026-05-14) — v1.7.1 ✅
 
-Dev-only infrastructure for the deferred Sonnet 2-cell comparison from `docs/specs/ai-quality-pass-plan.md`. Visiting `localhost:3000/?testmodel=sonnet` (or `haiku`, or a full OpenRouter model ID like `anthropic/claude-sonnet-4`) stores the override in that tab's `sessionStorage` and attaches an `X-Test-Model` header to every API request. Two Safari tabs in the same window can now run different models side-by-side because `sessionStorage` is per-tab.
+Dev-only infrastructure for the deferred Sonnet 2-cell comparison from `docs/specs/archive/ai-quality-pass-plan.md`. Visiting `localhost:3000/?testmodel=sonnet` (or `haiku`, or a full OpenRouter model ID like `anthropic/claude-sonnet-4`) stores the override in that tab's `sessionStorage` and attaches an `X-Test-Model` header to every API request. Two Safari tabs in the same window can now run different models side-by-side because `sessionStorage` is per-tab.
 
 Server-side `resolveModel()` lives in new `server/aiModel.ts` (single seam — `DEFAULT_MODEL` + `MODEL_ALIASES` + the priority chain: dev header → `AI_MODEL_OVERRIDE` env → default). **Production gated:** `NODE_ENV !== 'production'` is enforced server-side so the header is ignored on Render even if sent. New `AI_MODEL_OVERRIDE` env var also added in case we ever want to flip the production default model without a code change.
 
@@ -309,11 +331,11 @@ Chunk B from the AI quality pass plan. Shifts the strategy from "trust the promp
 
 **Cost impact in production:** No new AI calls in v1. Retry rate expected 5–15% after Chunk A's prompt fix landed. Per-story cost change: +$0.005 to +$0.015. Within the planned envelope.
 
-**Plan reference:** `docs/specs/ai-quality-pass-plan.md`. Chunks C (prose-tell post-process scrubbers + telemetry) and D (entity commitment tracking with cross-story-ready JSONB) remain. Sonnet 2-cell comparison still pending as a small follow-up PR.
+**Plan reference:** `docs/specs/archive/ai-quality-pass-plan.md`. Chunks C (prose-tell post-process scrubbers + telemetry) and D (entity commitment tracking with cross-story-ready JSONB) remain. Sonnet 2-cell comparison still pending as a small follow-up PR.
 
 ### AI Quality Pass — Chunk A + Soft-Delete (2026-05-13) — v1.4.0 ✅
 
-Single PR landing the first chunk of the AI quality pass (per `docs/specs/ai-quality-pass-plan.md`) bundled with the soft-delete + 30-day grace pattern for stories.
+Single PR landing the first chunk of the AI quality pass (per `docs/specs/archive/ai-quality-pass-plan.md`) bundled with the soft-delete + 30-day grace pattern for stories.
 
 **The AI quality piece (Chunk A):**
 
@@ -339,7 +361,7 @@ A late-day conversation about customer support recovery (a user reported wanting
 - New AlertDialog confirmation popup before delete fires. Copy is explicit about the 30-day window: *"It'll stay on our servers for 30 days in case you change your mind, then it's gone for good."* Replaces the previous `window.confirm` with a brand-consistent dialog.
 - Eventually we want an admin search-by-content tool for support; for now, support queries Supabase directly (`WHERE deleted_at IS NOT NULL AND deleted_at > NOW() - INTERVAL '30 days'`).
 
-**Plan reference:** `docs/specs/ai-quality-pass-plan.md` — Chunks B (validate + retry), C (prose-tell post-process + telemetry), D (entity commitment tracking with cross-story-ready JSONB) remain. Sonnet 2-cell comparison will run as a small follow-up PR after the v1.4.0 prompt has run on real users.
+**Plan reference:** `docs/specs/archive/ai-quality-pass-plan.md` — Chunks B (validate + retry), C (prose-tell post-process + telemetry), D (entity commitment tracking with cross-story-ready JSONB) remain. Sonnet 2-cell comparison will run as a small follow-up PR after the v1.4.0 prompt has run on real users.
 
 ### Concurrency Hardening + UI Polish (2026-05-12) — v1.3.0 ✅
 

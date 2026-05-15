@@ -203,7 +203,9 @@ export class DbStorage implements IStorage {
 
       // If duplicate found, return the existing quest instead of creating a new one
       if (existingQuests.length > 0) {
-        console.log(`Prevented duplicate quest creation: "${quest.title}"`);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`Prevented duplicate quest creation: "${quest.title}"`);
+        }
         return existingQuests[0];
       }
 

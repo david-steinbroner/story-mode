@@ -38,7 +38,9 @@ export const generalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => {
-    console.log(`[RateLimit] General limit exceeded for key: ${keyBySession(req)}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[RateLimit] General limit exceeded for key: ${keyBySession(req)}`);
+    }
     const resetTime = getRateLimitInfo(req)?.resetTime;
     res.status(429).json({
       error: 'Too many requests. Please try again in a few minutes.',
@@ -63,7 +65,9 @@ export const aiLimiter = rateLimit({
       ? Math.ceil((resetTime.getTime() - Date.now()) / (1000 * 60))
       : 60;
 
-    console.log(`[RateLimit] AI limit exceeded for key: ${keyBySession(req)}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[RateLimit] AI limit exceeded for key: ${keyBySession(req)}`);
+    }
     res.status(429).json({
       error: `You've used your AI request limit. Please try again in ${minutesUntilReset} minutes.`,
       limit: AI_LIMIT,
@@ -83,7 +87,9 @@ export const strictLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => {
-    console.log(`[RateLimit] Strict limit exceeded for IP: ${req.ip}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[RateLimit] Strict limit exceeded for IP: ${req.ip}`);
+    }
     res.status(429).json({
       error: 'This operation has a strict rate limit. Please try again later.',
       limit: 5,

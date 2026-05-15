@@ -13,19 +13,12 @@ export function initSentry() {
       environment: import.meta.env.MODE,
       integrations: [
         Sentry.browserTracingIntegration(),
-        // Disable replay integration to avoid 403 errors
-        // Sentry.replayIntegration({
-        //   maskAllText: false,
-        //   blockAllMedia: false,
-        // }),
       ],
 
-      // Performance Monitoring
-      tracesSampleRate: 0.1, // 10% of transactions
-
-      // Session Replay - disabled
-      // replaysSessionSampleRate: 0.1, // 10% of sessions
-      // replaysOnErrorSampleRate: 1.0, // 100% of sessions with errors
+      // 10% trace sampling. Story Mode's per-request cost (DB + AI) dwarfs
+      // Sentry's per-event cost, so we get useful latency signal across the
+      // AI critical path without big spend.
+      tracesSampleRate: 0.1,
 
       // Filter out development errors
       beforeSend(event) {
