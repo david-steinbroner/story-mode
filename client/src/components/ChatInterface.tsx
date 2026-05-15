@@ -861,6 +861,7 @@ ${JSON.stringify(debugInfo, null, 2)}
               <input
                 type="text"
                 placeholder="I have something else in mind…"
+                aria-label="Tell the Guide what you do next"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={(e) => {

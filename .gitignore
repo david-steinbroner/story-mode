@@ -14,6 +14,10 @@ vite.config.ts.*
 story-mode-plugin/
 story-mode-toolkit.plugin
 
+# brains-trust skill working dir (prompts + raw model responses from audits).
+# Synthesis lives in docs/specs/*.md; raw artifacts stay local.
+.jez/
+
 # Environment variables (keep your API keys safe!)
 .env
 .env.local

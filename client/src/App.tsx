@@ -60,7 +60,7 @@ function GameApp() {
   // cross-story session data and bleed an old story's messages into the new
   // story view.
   const { data: character, isLoading: characterLoading, error: characterError } = useQuery<Character>({
-    queryKey: ['/api/character'],
+    queryKey: ['/api/character', activeStoryId],
     enabled: !!activeStoryId,
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),

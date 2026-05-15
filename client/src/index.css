@@ -319,3 +319,17 @@
 
 /* Story page serif font */
 .story-prose { font-family: 'Crimson Pro', Georgia, serif; }
+
+/* Honor prefers-reduced-motion (WCAG 2.3.3). Collapses every animation and
+   transition to a near-instant tick, including the Guide's bounce, the
+   typing dots, slide-up entrances, and any third-party CSS transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

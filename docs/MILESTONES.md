@@ -1,8 +1,8 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.9.2**. Milestones 1–5 shipped pre-launch (Foundation → AI Memory → Page Structure pivot → Pacing → Polish & UX Overhaul). Pre-launch audit Phases 1–5 (2026-05-11). **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; the AI-powered intent matcher + `POST /api/guide/chat` endpoint are still TODO. **Most recent meaningful push:** v1.9.0 admin runtime AI-model toggle. Full version-by-version detail in the "Completed Milestones" entries below.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.9.3**. Milestones 1–5 shipped pre-launch (Foundation → AI Memory → Page Structure pivot → Pacing → Polish & UX Overhaul). Pre-launch audit Phases 1–5 (2026-05-11). **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; the AI-powered intent matcher + `POST /api/guide/chat` endpoint are still TODO. **Most recent meaningful push:** v1.9.3 first ship from the 2026-05-15 audit (correctness + a11y + sanitization). Full version-by-version detail in the "Completed Milestones" entries below.
 >
-> *Last updated: 2026-05-14 · Maintenance rule at the bottom.*
+> *Last updated: 2026-05-15 · Maintenance rule at the bottom.*
 
 ---
 
@@ -39,6 +39,19 @@ The original Milestone 6 plan called for a slide-up `GuideChat.tsx` modal trigge
 ---
 
 ## Completed Milestones
+
+### Audit 2026-05-15 PR-A1: correctness + a11y + sanitization (2026-05-15) — v1.9.3 ✅
+
+First ship out of the 2026-05-15 audit (see `docs/specs/audit-2026-05-15.md`). Five risk-low findings bundled because they share a smoke-test profile (deterministic, no AI or CSP changes): the queryKey caching bug, error-envelope normalization, Zod-error sanitization, reduced-motion respect, and aria-labels on the two unlabeled inputs.
+
+**Findings shipped:**
+- **#1 — `/api/character` queryKey adds `activeStoryId`.** `client/src/App.tsx:63`. Sibling queries (`messages`, `game-state`, `quests`) already keyed on storyId; character did not. Switching stories briefly bled the previous story's character into the new view. Same bug class as v1.8.7 with smaller blast radius. One-line fix; new cache entry per story so each first-entry re-fetches cleanly.
+- **#21 — Normalize error envelope to `{ error: "..." }`.** `server/routes.ts:500, 668, 760, 766` — dropped `success: false` from the four error responses that had it. Success responses left alone (would have broken `NewStoryCreation.tsx:138` which reads `data.success` from the surprise-me success path).
+- **#25 — Sanitize Zod error details.** Added `sanitizeZodIssues()` helper in `server/routes.ts:289` that strips Zod's internal `code`/`expected`/`received` fields, keeping only `{ field, message }`. Applied to all 9 sites that previously leaked `result.error.errors`. No client consumed the raw shape, so transparent change.
+- **#30 — `prefers-reduced-motion` reset.** `client/src/index.css:323` adds `@media (prefers-reduced-motion: reduce)` that collapses every animation + transition to 0.01ms. Fixes WCAG 2.3.3 for the Guide bounce, typing dots, slide-ups. Global with `!important`; nothing in the app needs an exemption today.
+- **#31 — `aria-label` on the two unlabeled inputs.** `ChatInterface.tsx:861` ("Tell the Guide what you do next") and `NewStoryCreation.tsx:312` ("Describe who you are in this story"). Placeholder text isn't a label per WIG.
+
+**What's still in the audit pile:** PR-A2 (POST guards), PR-C (doc drift), PR-A3 (AI prompt hygiene + playtest), PR-A4 (CSP isolated), PR-D (perf + pagination + token pruning), PR-B (items decision), PR-E (migration journal). Ship order in `docs/specs/audit-2026-05-15.md`.
 
 ### Admin AI-model toggle: Haiku ↔ Sonnet at runtime (2026-05-14) — v1.9.0 ✅
 

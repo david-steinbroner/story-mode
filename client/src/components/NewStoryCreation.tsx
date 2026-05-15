@@ -311,6 +311,7 @@ export default function NewStoryCreation({
           <div className="space-y-4 mt-2">
             <Textarea
               id="character-desc"
+              aria-label="Describe who you are in this story"
               placeholder="e.g., A curious inventor who discovers a hidden door in their workshop that leads somewhere impossible..."
               value={characterDescription}
               onChange={(e) => setCharacterDescription(e.target.value)}

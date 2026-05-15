@@ -287,6 +287,16 @@ function getTestModel(req: Request): string | undefined {
   return req.headers['x-test-model'] as string | undefined;
 }
 
+// Strip Zod's internal issue shape (code/expected/received) down to a
+// client-safe { field, message } pair. The full ZodError includes
+// implementation details that shouldn't leak across the API boundary.
+function sanitizeZodIssues(issues: Array<{ path: Array<string | number>; message: string }>) {
+  return issues.map((i) => ({
+    field: i.path.join('.'),
+    message: i.message,
+  }));
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Character routes
   app.get("/api/character", async (req, res) => {
@@ -309,7 +319,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const sessionId = getSessionId(req);
       const result = insertCharacterSchema.safeParse({ ...req.body, sessionId });
       if (!result.success) {
-        return res.status(400).json({ error: "Invalid character data", details: result.error.errors });
+        return res.status(400).json({ error: "Invalid character data", details: sanitizeZodIssues(result.error.errors) });
       }
 
       const character = await storage.createCharacter(result.data);
@@ -393,7 +403,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const sessionId = getSessionId(req);
       const result = updateCharacterSchema.safeParse(req.body);
       if (!result.success) {
-        return res.status(400).json({ error: "Invalid character data", details: result.error.errors });
+        return res.status(400).json({ error: "Invalid character data", details: sanitizeZodIssues(result.error.errors) });
       }
 
       const character = await storage.updateCharacter(req.params.id, sessionId, result.data);
@@ -497,13 +507,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (process.env.NODE_ENV !== "production") {
         console.log(`[Story New] BLOCKED — creation already in progress for session=${sessionId}`);
       }
-      return res.status(429).json({ success: false, error: "Story creation already in progress" });
+      return res.status(429).json({ error: "Story creation already in progress" });
     }
 
     try {
       const result = newStorySchema.safeParse(req.body);
       if (!result.success) {
-        return res.status(400).json({ error: "Invalid story data", details: result.error.errors });
+        return res.status(400).json({ error: "Invalid story data", details: sanitizeZodIssues(result.error.errors) });
       }
 
       const { genre, storyLength, characterDescription } = result.data;
@@ -665,7 +675,7 @@ IMPORTANT: Include a "storyTitle" field in your JSON response. Title rules:
       // Check spend limits
       const spendCheck = await spendTracker.canMakeRequest();
       if (!spendCheck.allowed) {
-        return res.status(429).json({ success: false, error: spendCheck.reason });
+        return res.status(429).json({ error: spendCheck.reason });
       }
 
       const openai = new OpenAI({
@@ -757,13 +767,13 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
       }
 
       if (descriptions.length === 0) {
-        return res.status(502).json({ success: false, error: "Couldn't parse suggestions. Try again." });
+        return res.status(502).json({ error: "Couldn't parse suggestions. Try again." });
       }
 
       res.json({ success: true, descriptions });
     } catch (error) {
       console.error("Error generating surprise character:", error);
-      res.status(500).json({ success: false, error: "Failed to generate character description" });
+      res.status(500).json({ error: "Failed to generate character description" });
     }
   });
 
@@ -800,7 +810,7 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
       const sessionId = getSessionId(req);
       const result = insertQuestSchema.safeParse({ ...req.body, sessionId });
       if (!result.success) {
-        return res.status(400).json({ error: "Invalid quest data", details: result.error.errors });
+        return res.status(400).json({ error: "Invalid quest data", details: sanitizeZodIssues(result.error.errors) });
       }
 
       const quest = await storage.createQuest(result.data);
@@ -816,7 +826,7 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
       const sessionId = getSessionId(req);
       const result = updateQuestSchema.safeParse(req.body);
       if (!result.success) {
-        return res.status(400).json({ error: "Invalid quest data", details: result.error.errors });
+        return res.status(400).json({ error: "Invalid quest data", details: sanitizeZodIssues(result.error.errors) });
       }
 
       const quest = await storage.updateQuest(req.params.id, sessionId, result.data);
@@ -877,7 +887,7 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
       const sessionId = getSessionId(req);
       const result = insertItemSchema.safeParse({ ...req.body, sessionId });
       if (!result.success) {
-        return res.status(400).json({ error: "Invalid item data", details: result.error.errors });
+        return res.status(400).json({ error: "Invalid item data", details: sanitizeZodIssues(result.error.errors) });
       }
 
       const item = await storage.createItem(result.data);
@@ -893,7 +903,7 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
       const sessionId = getSessionId(req);
       const result = updateItemSchema.safeParse(req.body);
       if (!result.success) {
-        return res.status(400).json({ error: "Invalid item data", details: result.error.errors });
+        return res.status(400).json({ error: "Invalid item data", details: sanitizeZodIssues(result.error.errors) });
       }
 
       const item = await storage.updateItem(req.params.id, sessionId, result.data);
@@ -958,7 +968,7 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
 
       const result = insertMessageSchema.safeParse(messageData);
       if (!result.success) {
-        return res.status(400).json({ error: "Invalid message data", details: result.error.errors });
+        return res.status(400).json({ error: "Invalid message data", details: sanitizeZodIssues(result.error.errors) });
       }
 
       const message = await storage.createMessage(result.data);
@@ -999,7 +1009,7 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
       const sessionId = getSessionId(req);
       const result = insertGameStateSchema.safeParse({ ...req.body, sessionId });
       if (!result.success) {
-        return res.status(400).json({ error: "Invalid game state data", details: result.error.errors });
+        return res.status(400).json({ error: "Invalid game state data", details: sanitizeZodIssues(result.error.errors) });
       }
 
       const gameState = await storage.createGameState(result.data);
