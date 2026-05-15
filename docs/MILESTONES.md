@@ -1,8 +1,8 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.9.7**. Milestones 1–5 shipped pre-launch (Foundation → AI Memory → Page Structure pivot → Pacing → Polish & UX Overhaul). Pre-launch audit Phases 1–5 (2026-05-11). **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; the AI-powered intent matcher + `POST /api/guide/chat` endpoint are still TODO. **Most recent meaningful push:** the 2026-05-15 audit is shipping in risk-isolated PRs — A1 (v1.9.3) + A2 (v1.9.4) + C (v1.9.5) + A3 (v1.9.6) + A4 (v1.9.7) so far. Full version-by-version detail in the "Completed Milestones" entries below.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.9.7**. Milestones 1–5 shipped pre-launch. **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; AI-powered intent matcher + `POST /api/guide/chat` endpoint still TODO. **In progress:** 2026-05-15 audit shipping in risk-isolated PRs (5 of 8 done; full plan and remaining work in `docs/specs/audit-2026-05-15.md`). Version-by-version detail in entries below.
 >
-> *Last updated: 2026-05-15 · Maintenance rule at the bottom.*
+> *Last updated: 2026-05-15.*
 
 ---
 
