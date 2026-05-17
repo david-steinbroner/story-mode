@@ -152,7 +152,7 @@ async function applyAIResponse(
           try {
             const character = await storage.getCharacter(sessionId);
             const gameState = await storage.getGameState(sessionId);
-            const followUpQuest = await aiService.generateFollowUpQuest(updatedQuest, { character, gameState }, modelOverride);
+            const followUpQuest = await aiService.generateFollowUpQuest(sessionId, updatedQuest, { character, gameState }, modelOverride);
 
             if (followUpQuest) {
               // Ensure the completed quest has a chainId for consistency
@@ -327,7 +327,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Auto-generate world from character if appearance and backstory are provided
       if (character.appearance || character.backstory) {
         try {
-          const worldData = await aiService.generateWorldFromCharacter({
+          const worldData = await aiService.generateWorldFromCharacter(sessionId, {
             name: character.name,
             appearance: character.appearance,
             backstory: character.backstory,

@@ -6,6 +6,7 @@ import { generateStorySummary } from "./summaryService";
 import { logEvent } from "./eventLog";
 import { runValidators, detectStallPattern, buildRetryHint } from "./aiValidators";
 import { resolveModel } from "./aiModel";
+import { spendTracker } from "./spendTracker";
 
 // Constants for rolling story summary
 const SUMMARY_THRESHOLD = 10; // Trigger summarization when this many unsummarized messages exist
@@ -850,13 +851,14 @@ Example Quest Actions:
     }
   }
 
-  async generateFollowUpQuest(completedQuest: Quest, context: {
+  async generateFollowUpQuest(sessionId: string, completedQuest: Quest, context: {
     character: Character | undefined;
     gameState: GameState | undefined;
   }, modelOverride?: string): Promise<Quest | null> {
     try {
+      const modelUsed = resolveModel(modelOverride);
       const response = await openai.chat.completions.create({
-        model: resolveModel(modelOverride),
+        model: modelUsed,
         messages: [
           {
             role: "system",
@@ -884,6 +886,20 @@ Example Quest Actions:
         ],
         response_format: { type: "json_object" },
       });
+
+      // Track spend before parsing — the API call has already been billed
+      // regardless of whether we successfully use the response.
+      await spendTracker.trackRequest(
+        sessionId,
+        response.usage
+          ? {
+              promptTokens: response.usage.prompt_tokens,
+              completionTokens: response.usage.completion_tokens,
+              totalTokens: response.usage.total_tokens,
+            }
+          : undefined,
+        modelUsed,
+      );
 
       const result = JSON.parse(response.choices[0].message.content || '{}');
       return result.title ? result : null;
@@ -964,8 +980,9 @@ Example Quest Actions:
         return `${speaker}: ${m.content}`;
       }).join('\\n');
 
+      const modelUsed = resolveModel(modelOverride);
       const response = await openai.chat.completions.create({
-        model: resolveModel(modelOverride),
+        model: modelUsed,
         messages: [
           {
             role: "system",
@@ -1003,6 +1020,18 @@ Format as JSON:
         response_format: { type: "json_object" },
       });
 
+      await spendTracker.trackRequest(
+        sessionId,
+        response.usage
+          ? {
+              promptTokens: response.usage.prompt_tokens,
+              completionTokens: response.usage.completion_tokens,
+              totalTokens: response.usage.total_tokens,
+            }
+          : undefined,
+        modelUsed,
+      );
+
       const result = JSON.parse(response.choices[0].message.content || '{}');
 
       if (result.title) {
@@ -1031,7 +1060,7 @@ Format as JSON:
     }
   }
 
-  async generateWorldFromCharacter(character: {
+  async generateWorldFromCharacter(sessionId: string, character: {
     name: string;
     appearance?: string | null;
     backstory?: string | null;
@@ -1078,8 +1107,9 @@ Respond in this EXACT JSON format (no other text):
   ]
 }`;
 
+      const modelUsed = resolveModel(modelOverride);
       const response = await openai.chat.completions.create({
-        model: resolveModel(modelOverride),
+        model: modelUsed,
         messages: [
           {
             role: "system",
@@ -1092,6 +1122,18 @@ Respond in this EXACT JSON format (no other text):
         ],
         temperature: 0.9, // Higher creativity for world generation
       });
+
+      await spendTracker.trackRequest(
+        sessionId,
+        response.usage
+          ? {
+              promptTokens: response.usage.prompt_tokens,
+              completionTokens: response.usage.completion_tokens,
+              totalTokens: response.usage.total_tokens,
+            }
+          : undefined,
+        modelUsed,
+      );
 
       const content = response.choices[0].message.content || "";
 
