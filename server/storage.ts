@@ -8,7 +8,9 @@ import {
   type GameState,
   type InsertGameState,
   type StorySummary,
-  type InsertStorySummary
+  type InsertStorySummary,
+  type IssueReport,
+  type InsertIssueReport
 } from "@shared/schema";
 import { DbStorage } from "./dbStorage";
 
@@ -53,6 +55,11 @@ export interface IStorage {
   // used for the AI model override toggle on /admin.
   getConfig(key: string): Promise<{ value: string } | null>;
   setConfig(key: string, value: string, updatedBy?: string): Promise<void>;
+
+  // Issue reports (v1.13.0) — in-app bug reporting.
+  createIssueReport(report: InsertIssueReport): Promise<IssueReport>;
+  getIssueReports(opts: { resolved?: boolean; limit?: number }): Promise<IssueReport[]>;
+  markIssueReportResolved(id: string): Promise<IssueReport | null>;
 }
 
 export const storage: IStorage = new DbStorage();

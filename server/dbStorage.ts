@@ -12,6 +12,8 @@ import {
   type InsertGameState,
   type StorySummary,
   type InsertStorySummary,
+  type IssueReport,
+  type InsertIssueReport,
   characters,
   quests,
   // `items` table still referenced for story-deletion cleanup below; type-
@@ -21,6 +23,7 @@ import {
   gameState,
   storySummaries,
   appConfig,
+  issueReports,
 } from "@shared/schema";
 
 /**
@@ -659,6 +662,48 @@ export class DbStorage implements IStorage {
         });
     } catch (error) {
       throw new Error(`Failed to set config '${key}': ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
+  // ============================================================
+  // ISSUE REPORTS (v1.13.0)
+  // ============================================================
+
+  async createIssueReport(report: InsertIssueReport): Promise<IssueReport> {
+    try {
+      const [created] = await db.insert(issueReports).values(report).returning();
+      return created;
+    } catch (error) {
+      throw new Error(`Failed to create issue report: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
+  async getIssueReports(opts: { resolved?: boolean; limit?: number }): Promise<IssueReport[]> {
+    try {
+      const limit = Math.min(opts.limit ?? 100, 500);
+      const baseQuery = db.select().from(issueReports);
+      const filtered =
+        opts.resolved === true
+          ? baseQuery.where(isNotNull(issueReports.resolvedAt))
+          : opts.resolved === false
+          ? baseQuery.where(isNull(issueReports.resolvedAt))
+          : baseQuery;
+      return await filtered.orderBy(desc(issueReports.createdAt)).limit(limit);
+    } catch (error) {
+      throw new Error(`Failed to list issue reports: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
+  async markIssueReportResolved(id: string): Promise<IssueReport | null> {
+    try {
+      const [updated] = await db
+        .update(issueReports)
+        .set({ resolvedAt: new Date() })
+        .where(eq(issueReports.id, id))
+        .returning();
+      return updated ?? null;
+    } catch (error) {
+      throw new Error(`Failed to mark issue report resolved: ${error instanceof Error ? error.message : error}`);
     }
   }
 }

@@ -15,10 +15,11 @@ import {
   type Message
 } from "@shared/schema";
 import { z } from "zod";
-import { aiLimiter, generalLimiter } from "./rateLimit";
+import { aiLimiter, generalLimiter, strictLimiter } from "./rateLimit";
 import { spendTracker } from "./spendTracker";
 import { aiService, type AIResponse, extractTokenUsage } from "./aiService";
 import { logEvent } from "./eventLog";
+import { sendIssueReportEmail } from "./emailService";
 import { resolveModel, getAdminModelOverride, setAdminModelOverride, MODEL_ALIASES } from "./aiModel";
 import { eventLog as eventLogTable } from "@shared/schema";
 import { db } from "./db";
@@ -1127,6 +1128,74 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
   });
 
   // ============================================
+  // Issue reports (v1.13.0)
+  // ============================================
+
+  // Public submit endpoint. Strict-limited (5/hour per session) to prevent
+  // spam. session_id + story_id are attached only when the user opted in via
+  // the "Include this story" toggle in the IssueReportSheet. Email is
+  // fire-and-forget so a Resend outage doesn't break submit UX.
+  // In-story categories: guide_reply / choices / stuck. Bookshelf categories:
+  // story_load / story_missing / story_manage. 'other' is shared on both.
+  const issueReportCategory = z.enum([
+    "guide_reply",
+    "choices",
+    "stuck",
+    "story_load",
+    "story_missing",
+    "story_manage",
+    "other",
+  ]);
+  const issueReportBodySchema = z.object({
+    category: issueReportCategory,
+    description: z.string().min(10).max(5000),
+    includeContext: z.boolean(),
+    currentPage: z.number().int().nullable().optional(),
+    lastMessageIds: z.array(z.string()).max(3).optional(),
+    appVersion: z.string().max(32).nullable().optional(),
+  });
+
+  app.post("/api/issue-report", strictLimiter, async (req, res) => {
+    const parsed = issueReportBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid issue report body" });
+    }
+    const body = parsed.data;
+    const sessionId = body.includeContext ? getSessionId(req) : null;
+    const storyId = body.includeContext ? getStoryId(req) ?? null : null;
+    const userAgent = req.get("user-agent") ?? null;
+    try {
+      const report = await storage.createIssueReport({
+        sessionId,
+        storyId,
+        category: body.category,
+        description: body.description,
+        currentPage: body.includeContext ? body.currentPage ?? null : null,
+        lastMessageIds: body.includeContext ? body.lastMessageIds ?? [] : [],
+        appVersion: body.appVersion ?? null,
+        userAgent,
+      });
+      res.json({ id: report.id });
+      // Fire-and-forget. Errors are logged inside emailService; DB save is the
+      // source of truth, so a Resend outage doesn't break the user's submit.
+      sendIssueReportEmail({
+        id: report.id,
+        category: report.category,
+        description: report.description,
+        sessionId: report.sessionId,
+        storyId: report.storyId,
+        currentPage: report.currentPage,
+        lastMessageIds: report.lastMessageIds ?? [],
+        appVersion: report.appVersion,
+        userAgent: report.userAgent,
+      }).catch((err) => console.error("[issue-report] email send failed", err));
+    } catch (err) {
+      console.error("[issue-report] DB insert failed", err);
+      res.status(500).json({ error: "Failed to save issue report" });
+    }
+  });
+
+  // ============================================
   // Admin API endpoints (protected by ADMIN_KEY)
   // ============================================
 
@@ -1334,6 +1403,34 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
     } catch (error) {
       console.error('Error setting model override:', error);
       res.status(500).json({ error: 'Failed to set model override' });
+    }
+  });
+
+  // GET /api/admin/issue-reports (v1.13.0). Newest first. ?resolved=true|false
+  // filters; ?limit caps the page size (default 100, max 500).
+  app.get("/api/admin/issue-reports", adminAuth, async (req, res) => {
+    try {
+      const resolvedParam = req.query.resolved;
+      const resolved =
+        resolvedParam === "true" ? true : resolvedParam === "false" ? false : undefined;
+      const limit = req.query.limit ? Math.min(parseInt(req.query.limit as string, 10) || 100, 500) : 100;
+      const reports = await storage.getIssueReports({ resolved, limit });
+      res.json({ reports });
+    } catch (err) {
+      console.error('[admin] failed to list issue reports', err);
+      res.status(500).json({ error: 'Failed to list issue reports' });
+    }
+  });
+
+  // POST /api/admin/issue-reports/:id/resolve — set resolved_at = NOW().
+  app.post("/api/admin/issue-reports/:id/resolve", adminAuth, async (req, res) => {
+    try {
+      const updated = await storage.markIssueReportResolved(req.params.id);
+      if (!updated) return res.status(404).json({ error: 'Report not found' });
+      res.json({ report: updated });
+    } catch (err) {
+      console.error('[admin] failed to resolve issue report', err);
+      res.status(500).json({ error: 'Failed to resolve issue report' });
     }
   });
 

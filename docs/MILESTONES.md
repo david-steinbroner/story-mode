@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.12.2**. Milestones 1–5 shipped pre-launch. **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; AI-powered intent matcher + `POST /api/guide/chat` endpoint still TODO. **2026-05-15 audit lane is now closed** — all 8 PRs shipped (A1–A4, B, C, D, E across v1.9.3 → v1.12.2); only remaining follow-up is the CSP `reportOnly: false` flip, tracked in `docs/ROADMAP.md` Maybe/TBD. See per-version entries below for what each PR shipped.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.13.0**. Milestones 1–5 shipped pre-launch. **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; AI-powered intent matcher + `POST /api/guide/chat` endpoint still TODO. **2026-05-15 audit lane is closed** — all 8 PRs shipped across v1.9.3 → v1.12.2; only remaining follow-up is the CSP `reportOnly: false` flip, tracked in `docs/ROADMAP.md` Maybe/TBD. **Latest (v1.13.0):** in-app issue reporting (IssueReportSheet + admin queue + optional Resend email) plus a heavy UI polish bundle — surface-consistent header chrome with iOS safe-area handling, hamburger menu, copy buttons on chat messages, story-details modal, scroll-up button, reopen-story flow, font-size parity work, and more. See the v1.13.0 entry below.
 >
 > *Last updated: 2026-05-17.*
 
@@ -39,6 +39,73 @@ The original Milestone 6 plan called for a slide-up `GuideChat.tsx` modal trigge
 ---
 
 ## Completed Milestones
+
+### In-app issue reporting + UI polish bundle (2026-05-17) — v1.13.0 ✅
+
+Two threads in one push: the first real feature after the audit-lane close (in-app bug reporting), plus a heavy UI polish pass that touched headers, drawers, menus, chat messages, and the bookshelf.
+
+#### In-app issue reporting
+
+Replaces the prior `mailto:feedback@mystorymode.com` flow in both the in-story and bookshelf menus. Users tap "Report an issue" and a `Sheet` slides up from the bottom with a structured form: 4 surface-specific categories, description textarea (10–5000 chars), and a "Send my story too" checkbox-style toggle that explains exactly what's attached and why.
+
+- **In-story categories:** Guide reply broken / Choices didn't work / Story got stuck / Something else
+- **Bookshelf categories:** Story didn't open or load / Story missing or in wrong tab / Can't archive, restore, or delete / Something else
+- **Context attached when toggle on:** session_id, story_id, current_page, last 3 AI message IDs, app_version, user_agent. Hidden entirely on bookshelf where no story is active.
+
+**Schema:** new `issue_reports` table (migration 0003 — first new migration post the v1.12.2 consolidation, exercising the hand-management workflow). Nullable session_id/story_id, category text, description, current_page, last_message_ids (jsonb string[]), app_version, user_agent, resolved_at, created_at. Indexed for the admin sort + partial index on unresolved.
+
+**Server:**
+- `server/emailService.ts` — new single seam for outbound transactional email; wraps Resend with a no-op fallback so missing keys don't break submit flow (DB save is the source of truth)
+- `POST /api/issue-report` (public, `strictLimiter` = 5/hour per session, now session-keyed instead of IP-keyed) — zod-validated body covering all 7 categories, DB insert, fire-and-forget email
+- `GET /api/admin/issue-reports` + `POST /api/admin/issue-reports/:id/resolve` (admin-auth) for the queue view
+
+**Client:**
+- `IssueReportSheet.tsx` — shadcn Sheet, exported `IN_STORY_CATEGORY_IDS` + `BOOKSHELF_CATEGORY_IDS` so each surface filters the full enum to its relevant subset
+- Surface-specific category sets passed via `categoryIds` prop from `Bookshelf.tsx` and `ChatInterface.tsx`
+- Success state with auto-close on send; inline retry on error
+
+**Admin:** new "Issue Reports" section in `AdminDashboard.tsx`. Defaults to unresolved-only filter; per-row category badge, full description, attached context, and a "Mark resolved" action.
+
+**Notification:** Resend (free tier: 3k emails/month). Requires DNS verification on `mystorymode.com` to send to arbitrary recipients — without it, the email step no-ops but the DB save still happens. Three new env vars: `RESEND_API_KEY`, `ISSUE_REPORT_FROM_EMAIL`, `ISSUE_REPORT_TO_EMAIL`.
+
+**Pre-flight audit caught the Resend domain-verification restriction** (`onboarding@resend.dev` can only send to the account's signup email). Without that catch the MVP would have shipped with silently-failing email forwarding.
+
+#### UI polish bundle
+
+Touched roughly every surface in the app for consistency and craft. Grouped by area:
+
+**Step 1 wizard copy** — Guide bubble + aria-label updated from "Describe who you are in this story" to "Describe your character, your setting, or the story itself — whatever you've got." Unlocks scene-first and premise-first inputs (the AI handles all three; the prior copy artificially narrowed the surface to character-first).
+
+**Header chrome standardized across Bookshelf / Wizard / ChatInterface:**
+- Menu icon swapped from the Guide avatar to a hamburger (`Menu`). The Guide avatar duplicated the in-bubble Guide identity; the hamburger reads as "menu" universally.
+- Wizard keeps step dots (no menu — focused 3-step flow).
+- `CenteredHeader` now applies `paddingTop: env(safe-area-inset-top)` so iOS notches are dodged automatically. Outer wrappers no longer pass their own `pt-*`; all three headers share the same chrome and the menu icon's vertical position is identical across views (was a ~16-20px jump previously). First safe-area-aware code in the app.
+
+**Sticky-drawer grabber** — bumped up `-mt-3` (12px above baseline center) across all three peek drawers (Bookshelf, Wizard, ChatInterface) so it hugs the top of the peek rather than floating in the middle.
+
+**In-story menu reorganized** (Text Size → Back to Library → Report an issue → End Story) following iOS HIG / Material grouping: setting → primary actions → destructive. Two separators instead of three; vertical padding bumped `py-1.5 → py-2.5` for tap-friendly rhythm. Mailto subject changed to "Story Mode issue report" to match the renamed label. Background matches the Bookshelf dropdown for visual parity.
+
+**Font-size relationships** — Bookshelf + Wizard Q&A Guide replies now match Player bubble size (`text-base text-foreground` instead of `text-sm text-muted-foreground`); in-story Guide narrative (Crimson Pro `.story-prose`) renders at `currentFontSize.px + 2` to optically balance against Inter's larger x-height. Added **XX-Large** (22px) to the font-size menu — five steps now.
+
+**Copy buttons on every chat message** — copy icon in the meta row below each Player and Guide bubble, sitting adjacent to the regenerate button. Single tap copies, flips icon to a check for 1.5s, AND triggers a toast ("Copied to clipboard"). Uses a new two-tier `lib/copyToClipboard.ts` helper that falls back to `document.execCommand('copy')` when `navigator.clipboard` is unavailable (LAN-IP dev testing on phones — not a secure context).
+
+**Scroll-up button added** at top-right of the chat surface, mirroring the existing scroll-down at bottom-right. Both can be visible simultaneously in the middle of a long conversation; both use `inline-flex items-center justify-center` for icon centering, `focus-visible:` rings, and `WebkitTapHighlightColor: transparent` to kill the iOS gray tap flash.
+
+**Book-spine 3-dot menu redesigned** — was a 44×44 button (global tap-target floor) with a tiny icon centered, looking like the dots were too small. Now visibly a 24×24 chip (`min-h-0 min-w-0` defeats the global rule for this button only), subtle `bg-background/70 backdrop-blur-sm`, larger `MoreVertical` icon. Trade: smaller hit area than 44 — accepted because the prior 44×44 was hijacking most of the book spine's tap surface.
+
+**Story Details modal** (`StoryDetailsDialog.tsx`) — new shadcn Dialog opened from a new "Details" option in the book-spine popover. Shows title, original prompt (`characterDescription`), length tier ("Novella — 50 pages, ~30 min"), and progress. Card treatment with `rounded-2xl`, `border border-border`, and `w-[calc(100%-2rem)] max-w-sm` for predictable centered sizing on mobile.
+
+**Reopen story flow** — new `BookOpen`-icon menu item on the Finished tab's 3-dot popover AND a "Reopen story" button in the in-story complete footer. Both gated on `currentPage < totalPages` — a story that finished naturally at its last page can't be reopened, only stories the reader ended early. Closes a UX gap where finished stories with unused pages were dead-ends.
+
+**Bookshelf labels + spacing tightened:**
+- Tabs as `grid grid-cols-3` (was packed left with `flex gap-4`) — Reading / Finished / Archive sit in fixed positions, evenly distributed across the row; positions don't shuffle as tabs appear/disappear
+- "Currently Reading" renamed to "Reading"
+- Title text bumped `text-[10px] → text-xs` (12px); status bumped `text-[9px] → text-[11px]`
+- Top padding above shelf `mt-2 → mt-6` for breathing room
+
+**Close-X consistency across modals** — IssueReportSheet and StoryDetailsDialog both render their own SheetClose/DialogClose-wrapped X button at `top-2 right-2`, sized `w-11 h-11` with `inline-flex items-center justify-center` for guaranteed icon centering. Shadcn's default X is suppressed via `[&>button:last-of-type]:hidden` (NOT `[&>button]:hidden` — that hid the replacement too; one of the bugs we caught in iteration). `focus-visible:` instead of `focus:` so the tap doesn't leave a stuck ring; `WebkitTapHighlightColor: transparent` for iOS.
+
+**Pre-flight discipline** kept paying off this session: the Resend domain-verification audit, the `[&>button:last-of-type]` vs `[&>button]` close-button bug, the global 44×44 tap-target floor in `index.css` (every `w-*` change to a button had been silently overridden until we found it). All caught before users saw them.
 
 ### Audit 2026-05-15 PR-E: migration journal consolidation (2026-05-17) — v1.12.2 ✅
 

@@ -222,7 +222,7 @@ export default function NewStoryCreation({
     <div className={`h-dvh flex flex-col bg-background relative ${className}`}>
       {/* Header: back button (left) + centered "New Story" + step dots (right). */}
       <CenteredHeader
-        className="px-4 pt-4 pb-2 shrink-0"
+        className="shrink-0"
         title="New Story"
         left={
           <button
@@ -311,7 +311,7 @@ export default function NewStoryCreation({
           <div className="space-y-4 mt-2">
             <Textarea
               id="character-desc"
-              aria-label="Describe who you are in this story"
+              aria-label="Describe your character, setting, or story"
               placeholder="e.g., A curious inventor who discovers a hidden door in their workshop that leads somewhere impossible..."
               value={characterDescription}
               onChange={(e) => setCharacterDescription(e.target.value)}
@@ -337,7 +337,7 @@ export default function NewStoryCreation({
               className="mt-6"
             >
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Describe who you are in this story.
+                Describe your character, your setting, or the story itself — whatever you've got.
               </p>
             </GuideBubble>
           </div>
@@ -378,7 +378,7 @@ export default function NewStoryCreation({
                   bubbleClassName="bg-card border border-border"
                   className="mt-3"
                 >
-                  <p className="text-sm leading-relaxed text-muted-foreground">{msg.content}</p>
+                  <p className="text-base leading-relaxed text-foreground">{msg.content}</p>
                 </GuideBubble>
               ),
             )}
@@ -443,7 +443,7 @@ export default function NewStoryCreation({
           className="w-full flex flex-col items-center justify-center px-4 gap-4"
           style={{ height: "5rem" }}
         >
-          <div className="w-10 h-1 bg-muted-foreground/30 rounded-full" />
+          <div className="-mt-3 w-10 h-1 bg-muted-foreground/30 rounded-full" />
           <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
             <span>{drawerPeekLabel}</span>
             <ChevronUp

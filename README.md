@@ -27,7 +27,8 @@ Required env vars (see `.env.example`):
 
 - `OPENROUTER_API_KEY` — AI responses
 - `DATABASE_URL` — Supabase connection string
-- `ADMIN_KEY` — protects `/api/admin/*`
+- `ADMIN_KEY`, `ADMIN_TOTP_SECRET` — protects `/api/admin/*` (key + 2FA TOTP)
+- `RESEND_API_KEY`, `ISSUE_REPORT_FROM_EMAIL`, `ISSUE_REPORT_TO_EMAIL` — optional, forwards in-app bug reports by email (requires a verified Resend domain)
 - `SENTRY_DSN`, `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST` — optional, observability
 
 ```bash

@@ -196,6 +196,24 @@ export const appConfig = pgTable("app_config", {
   updatedBy: text("updated_by"),
 });
 
+// In-app bug / issue reports (v1.13.0). Replaces the prior mailto-only flow.
+// session_id / story_id are nullable: users can opt out of attaching context.
+// last_message_ids holds the trailing 3 AI message IDs so devs can pull
+// narrative context to reproduce reported issues with a specific reply.
+export const issueReports = pgTable("issue_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id"),
+  storyId: varchar("story_id"),
+  category: text("category").notNull(),
+  description: text("description").notNull(),
+  currentPage: integer("current_page"),
+  lastMessageIds: jsonb("last_message_ids").$type<string[]>(),
+  appVersion: text("app_version"),
+  userAgent: text("user_agent"),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const insertCharacterSchema = createInsertSchema(characters);
 export const insertQuestSchema = createInsertSchema(quests);
 export const insertItemSchema = createInsertSchema(items);
@@ -214,6 +232,11 @@ export type ChatLock = typeof chatLocks.$inferSelect;
 export type RateLimitBucket = typeof rateLimitBuckets.$inferSelect;
 export type EventLog = typeof eventLog.$inferSelect;
 export type AppConfig = typeof appConfig.$inferSelect;
+export type IssueReport = typeof issueReports.$inferSelect;
+// Drizzle's native $inferInsert is the truth here; createInsertSchema's tuple-
+// flavored typing of the jsonb string[] column doesn't compose cleanly.
+// Body validation lives in routes.ts (zod schema on the wire shape).
+export type InsertIssueReport = typeof issueReports.$inferInsert;
 
 export type Character = typeof characters.$inferSelect;
 export type Quest = typeof quests.$inferSelect;

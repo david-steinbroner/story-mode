@@ -32,10 +32,15 @@ export default function CenteredHeader({
   className = "",
   titleClassName = "font-serif text-xl text-foreground",
 }: CenteredHeaderProps) {
+  // `paddingTop: env(safe-area-inset-top)` dodges the iOS notch on devices
+  // that report a non-zero inset, and resolves to 0 on everything else. This
+  // is what keeps the menu-icon's vertical position consistent across the
+  // bookshelf, wizard, and in-story headers (v1.12.3, paired with all three
+  // callers no longer passing their own `pt-*` padding).
   return (
-    <div className={className}>
+    <div className={className} style={{ paddingTop: "env(safe-area-inset-top)" }}>
       <div
-        className="grid items-center gap-2 px-3 py-2"
+        className="grid items-center gap-2 px-4 py-2"
         style={{ gridTemplateColumns: "44px 1fr 44px", minHeight: 48 }}
       >
         <div className="flex items-center justify-start">{left ?? <span aria-hidden />}</div>

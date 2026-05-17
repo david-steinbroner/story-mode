@@ -19,19 +19,22 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import EmptyState from "./EmptyState";
-import { MessageSquare, Loader2, RefreshCw, Send, Minus, Plus, BookOpen, XCircle, ChevronUp, ChevronDown, Mail, ThumbsUp, ThumbsDown } from "lucide-react";
-import GuideAvatar from "./GuideAvatar";
+import { MessageSquare, Loader2, RefreshCw, Send, Minus, Plus, BookOpen, XCircle, ChevronUp, ChevronDown, Mail, Menu, ThumbsUp, ThumbsDown, Copy, Check } from "lucide-react";
 import GuideBubble from "./GuideBubble";
 import TypingDots from "./TypingDots";
 import CenteredHeader from "./CenteredHeader";
 import ChoiceButton from "./ChoiceButton";
 import PlayerBubble from "./PlayerBubble";
+import IssueReportSheet, { IN_STORY_CATEGORY_IDS } from "./IssueReportSheet";
 import type { Message, Character, Quest, GameState } from "@shared/schema";
+
+const APP_VERSION = "1.13.0";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { analytics } from "@/lib/posthog";
 import { useToast } from "@/hooks/use-toast";
 import { captureError, addBreadcrumb } from "@/lib/sentry";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { copyToClipboard } from "@/lib/copyToClipboard";
 
 interface ChatInterfaceProps {
   messages: Message[];
@@ -62,6 +65,7 @@ const FONT_SIZES = [
   { label: "Medium", px: 16 },
   { label: "Large", px: 18 },
   { label: "X-Large", px: 20 },
+  { label: "XX-Large", px: 22 },
 ] as const;
 
 const FONT_SIZE_STORAGE_KEY = "storymode-font-size";
@@ -152,8 +156,24 @@ export default function ChatInterface({
     }
   };
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
+  const [showIssueReport, setShowIssueReport] = useState(false);
+  // Per-message copy feedback. Set to the message id on copy, cleared
+  // after 1.5s so the icon flips back to the copy state.
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+
+  const handleCopyMessage = async (messageId: string, text: string) => {
+    const ok = await copyToClipboard(text);
+    if (ok) {
+      setCopiedMessageId(messageId);
+      toast({ description: "Copied to clipboard", duration: 1500 });
+      setTimeout(() => setCopiedMessageId((current) => (current === messageId ? null : current)), 1500);
+    } else {
+      toast({ description: "Couldn't copy — try selecting the text instead", variant: "destructive", duration: 2500 });
+    }
+  };
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
+  const [isScrolledDown, setIsScrolledDown] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
   const lastMessageRef = useRef<HTMLDivElement>(null);
@@ -225,6 +245,7 @@ export default function ChatInterface({
     const handleScroll = () => {
       const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
       setIsScrolledUp(distanceFromBottom > 100);
+      setIsScrolledDown(el.scrollTop > 100);
     };
     el.addEventListener('scroll', handleScroll, { passive: true });
     return () => el.removeEventListener('scroll', handleScroll);
@@ -232,6 +253,10 @@ export default function ChatInterface({
 
   const scrollToBottom = () => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+  };
+
+  const scrollToTop = () => {
+    scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Close drawer when tapping outside
@@ -464,25 +489,20 @@ ${JSON.stringify(debugInfo, null, 2)}
         right={
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="focus:outline-none flex items-center justify-center" style={{ minHeight: 44, minWidth: 44 }}>
-                <GuideAvatar size={28} animate={false} />
+              <button
+                aria-label="Open menu"
+                className="focus:outline-none flex items-center justify-center text-foreground"
+                style={{ minHeight: 44, minWidth: 44 }}
+              >
+                <Menu className="w-6 h-6" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuItem
-                onClick={() => {
-                  analytics.buttonClicked('Back to Library', 'Story Menu');
-                  onNavigateToBookshelf?.();
-                }}
-              >
-                <BookOpen className="w-4 h-4 mr-2" />
-                Back to Library
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+            <DropdownMenuContent align="end" className="w-56" style={{ backgroundColor: '#FFF9F0' }}>
+              {/* Group 1: setting */}
+              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground py-2.5">
                 Text Size
               </DropdownMenuLabel>
-              <div className="flex items-center justify-between px-2 py-1.5">
+              <div className="flex items-center justify-between px-2 py-2.5">
                 <Button
                   variant="outline"
                   size="icon"
@@ -504,19 +524,32 @@ ${JSON.stringify(debugInfo, null, 2)}
                 </Button>
               </div>
               <DropdownMenuSeparator />
+              {/* Group 2: actions */}
               <DropdownMenuItem
+                className="py-2.5"
                 onClick={() => {
-                  analytics.trackEvent("feedback_mailto_clicked", { from: "story" });
-                  window.location.href = "mailto:feedback@mystorymode.com?subject=Story%20Mode%20feedback";
+                  analytics.buttonClicked('Back to Library', 'Story Menu');
+                  onNavigateToBookshelf?.();
+                }}
+              >
+                <BookOpen className="w-4 h-4 mr-2" />
+                Back to Library
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="py-2.5"
+                onClick={() => {
+                  analytics.trackEvent("issue_report_opened", { from: "story" });
+                  setShowIssueReport(true);
                 }}
               >
                 <Mail className="w-4 h-4 mr-2" />
-                Send Feedback
+                Report an issue
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              {/* Group 3: destructive */}
               <DropdownMenuItem
                 onClick={() => setShowEndConfirm(true)}
-                className="text-destructive focus:text-destructive"
+                className="text-destructive focus:text-destructive py-2.5"
               >
                 <XCircle className="w-4 h-4 mr-2" />
                 End Story
@@ -654,12 +687,16 @@ ${JSON.stringify(debugInfo, null, 2)}
                 // component (avatar above + left-aligned bubble). Player
                 // messages render a right-aligned bubble inline — no
                 // avatar; alignment is the directional cue.
+                // Guide narrative uses Crimson Pro (`.story-prose`) while the
+                // player bubble uses Inter. Crimson Pro's smaller x-height
+                // makes it read ~10–15% smaller at identical pt; bump the
+                // Guide side by +2px to balance the optical size.
                 const prose = (
                   <p
                     className={`leading-relaxed text-foreground whitespace-pre-line break-words ${
                       isPlayer ? '' : 'story-prose'
                     }`}
-                    style={{ fontSize: `${currentFontSize.px}px` }}
+                    style={{ fontSize: `${isPlayer ? currentFontSize.px : currentFontSize.px + 2}px` }}
                   >
                     {text}
                   </p>
@@ -672,24 +709,42 @@ ${JSON.stringify(debugInfo, null, 2)}
                     ) : (
                       <GuideBubble avatarSize={28}>{prose}</GuideBubble>
                     )}
-                    {/* Below-bubble meta row: timestamp + (regenerate on the
-                        last AI page). Aligned to the bubble's side. */}
+                    {/* Below-bubble meta row: timestamp on one end, action
+                        buttons (copy + regenerate when last AI page) grouped
+                        at the other. `justify-between` keeps timestamp and
+                        actions on opposite sides regardless of side. */}
                     <div
                       className={`flex items-center gap-2 text-xs text-muted-foreground ${
-                        isPlayer ? 'justify-end' : 'justify-start'
+                        isPlayer ? 'flex-row-reverse' : ''
                       }`}
                     >
                       <span>{message.timestamp}</span>
-                      {canRegenerate && (
+                      <div className="flex items-center gap-1 ml-auto">
                         <button
-                          onClick={() => setShowRegenConfirm(true)}
-                          className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors"
-                          aria-label="Regenerate this response"
-                          title="Regenerate this response"
+                          onClick={() => handleCopyMessage(message.id, text)}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          style={{ WebkitTapHighlightColor: 'transparent' }}
+                          aria-label={copiedMessageId === message.id ? "Copied" : "Copy message"}
+                          title={copiedMessageId === message.id ? "Copied" : "Copy message"}
                         >
-                          <RefreshCw className="w-3.5 h-3.5" />
+                          {copiedMessageId === message.id ? (
+                            <Check className="w-3.5 h-3.5" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
                         </button>
-                      )}
+                        {canRegenerate && (
+                          <button
+                            onClick={() => setShowRegenConfirm(true)}
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            style={{ WebkitTapHighlightColor: 'transparent' }}
+                            aria-label="Regenerate this response"
+                            title="Regenerate this response"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -731,14 +786,28 @@ ${JSON.stringify(debugInfo, null, 2)}
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Scroll to bottom button. Has to float above whichever chrome is at
+      {/* Scroll-to-top button — top-right, just below the header, mirrors
+          the scroll-to-bottom button at the opposite corner. Both can be
+          visible simultaneously in the middle of a long conversation. */}
+      {isScrolledDown && (
+        <button
+          onClick={scrollToTop}
+          className="absolute z-20 right-4 top-16 inline-flex items-center justify-center w-9 h-9 bg-card border border-border rounded-full shadow-md hover:bg-accent/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          style={{ WebkitTapHighlightColor: 'transparent' }}
+          aria-label="Scroll to top"
+        >
+          <ChevronUp className="w-5 h-5 text-muted-foreground" />
+        </button>
+      )}
+
+      {/* Scroll-to-bottom button. Has to float above whichever chrome is at
           the bottom — story-complete footer is the tallest, drawer peek is
-          shorter. */}
+          shorter. inline-flex centers the icon precisely in the round button. */}
       {isScrolledUp && (
         <button
           onClick={scrollToBottom}
-          className="absolute z-20 right-4 bg-card border border-border rounded-full p-2 shadow-md hover:bg-accent/10 transition-colors"
-          style={{ bottom: gameState?.storyComplete ? 252 : showDrawer ? 92 : 20 }}
+          className="absolute z-20 right-4 inline-flex items-center justify-center w-9 h-9 bg-card border border-border rounded-full shadow-md hover:bg-accent/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          style={{ bottom: gameState?.storyComplete ? 252 : showDrawer ? 92 : 20, WebkitTapHighlightColor: 'transparent' }}
           aria-label="Scroll to latest"
         >
           <ChevronDown className="w-5 h-5 text-muted-foreground" />
@@ -804,6 +873,30 @@ ${JSON.stringify(debugInfo, null, 2)}
               <p className="text-xs text-center text-muted-foreground">Thanks for the feedback.</p>
             )}
 
+            {/* Reopen — only when the reader stopped short of totalPages.
+                A naturally-finished story (last page == totalPages) can't be
+                reopened; matches the bookshelf gating. */}
+            {gameState?.totalPages && (gameState.currentPage ?? 0) < gameState.totalPages && (
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  analytics.buttonClicked('Reopen Story', 'Finished Page');
+                  try {
+                    await apiRequest('PATCH', '/api/game-state', { storyComplete: false });
+                    queryClient.invalidateQueries({ queryKey: ['/api/game-state'] });
+                    queryClient.invalidateQueries({ queryKey: ['/api/stories'] });
+                  } catch (err) {
+                    console.error('Failed to reopen story:', err);
+                  }
+                }}
+                className="w-full"
+                style={{ minHeight: 44 }}
+              >
+                <BookOpen className="w-4 h-4 mr-2" />
+                Reopen story
+              </Button>
+            )}
+
             <Button
               onClick={() => {
                 analytics.buttonClicked('Back to Library', 'Finished Page');
@@ -839,7 +932,7 @@ ${JSON.stringify(debugInfo, null, 2)}
             className="w-full flex flex-col items-center justify-center px-4 gap-4"
             style={{ height: '5rem' }}
           >
-            <div className="w-10 h-1 bg-muted-foreground/30 rounded-full" />
+            <div className="-mt-3 w-10 h-1 bg-muted-foreground/30 rounded-full" />
             <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
               <span>What happens next?</span>
               <ChevronUp
@@ -894,6 +987,25 @@ ${JSON.stringify(debugInfo, null, 2)}
           </div>
         </div>
       )}
+
+      {/* Issue-report sheet (v1.13.0). Pulls the trailing 3 AI message IDs
+          so the dev can pull narrative context for "Guide reply broken"
+          reports without making the user describe which page they meant. */}
+      <IssueReportSheet
+        open={showIssueReport}
+        onOpenChange={setShowIssueReport}
+        includeContextDefault={true}
+        context={{
+          currentPage: gameState?.currentPage ?? null,
+          storyId: gameState?.storyId ?? null,
+          lastMessageIds: messages
+            .filter((m) => m.sender !== "player")
+            .slice(-3)
+            .map((m) => m.id),
+        }}
+        appVersion={APP_VERSION}
+        categoryIds={IN_STORY_CATEGORY_IDS}
+      />
     </div>
   );
 }

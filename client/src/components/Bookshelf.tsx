@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Plus, Check, CheckCircle, Archive, ArchiveRestore, Mail, MoreVertical, Trash2, ChevronUp } from "lucide-react";
+import { Plus, Check, CheckCircle, Archive, ArchiveRestore, BookOpen, Info, Mail, Menu, MoreVertical, Trash2, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import {
@@ -22,12 +22,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { analytics } from "@/lib/posthog";
-import GuideAvatar from "./GuideAvatar";
 import GuideBubble from "./GuideBubble";
 import CenteredHeader from "./CenteredHeader";
 import ChoiceButton from "./ChoiceButton";
 import PlayerBubble from "./PlayerBubble";
+import IssueReportSheet, { BOOKSHELF_CATEGORY_IDS } from "./IssueReportSheet";
+import StoryDetailsDialog from "./StoryDetailsDialog";
 import type { GameState } from "@shared/schema";
+
+const APP_VERSION = "1.13.0";
 
 // --- Long-press hook ---
 function useLongPress(onLongPress: () => void, delay = 500) {
@@ -231,7 +234,9 @@ function BookSpine({
   onArchive,
   onUnarchive,
   onEndStory,
+  onReopen,
   onDelete,
+  onShowDetails,
   isArchived,
 }: {
   title?: string;
@@ -244,13 +249,15 @@ function BookSpine({
   onArchive?: () => void;
   onUnarchive?: () => void;
   onEndStory?: () => void;
+  onReopen?: () => void;
   onDelete?: () => void;
+  onShowDetails?: () => void;
   isArchived?: boolean;
 }) {
   const spineGradient = genre ? GENRE_SPINES[genre] || GENRE_SPINES.fantasy : "";
   const [popoverOpen, setPopoverOpen] = useState(false);
 
-  const hasActions = !!(onArchive || onUnarchive || onEndStory || onDelete);
+  const hasActions = !!(onArchive || onUnarchive || onEndStory || onReopen || onDelete || onShowDetails);
   const longPress = useLongPress(() => {
     if (hasActions && !isNew) {
       setPopoverOpen(true);
@@ -318,11 +325,11 @@ function BookSpine({
 
       {/* Label */}
       <div className="text-center w-full">
-        <p className="text-[10px] font-medium text-[hsl(var(--muted-foreground))] leading-tight line-clamp-2">
+        <p className="text-xs font-medium text-[hsl(var(--muted-foreground))] leading-tight line-clamp-2">
           {isNew ? "New Story" : title || "Untitled"}
         </p>
         {!isNew && totalPages && (
-          <p className="text-[9px] text-[hsl(var(--muted-foreground))]/60 mt-0.5">
+          <p className="text-[11px] text-[hsl(var(--muted-foreground))]/70 mt-0.5">
             {isComplete
               ? "Complete"
               : `p.${currentPage || 0}/${totalPages}`}
@@ -362,13 +369,18 @@ function BookSpine({
             {spineContent}
           </button>
           <PopoverTrigger asChild>
+            {/* `min-h-0 min-w-0` overrides the global 44x44 floor from
+                index.css for THIS button only. We're explicitly accepting a
+                smaller hit target (24x24) so the menu doesn't hijack most
+                of the book spine's tap surface. Subtle bg so it reads as a
+                chip without dominating the spine art. */}
             <button
               type="button"
               onClick={(e) => e.stopPropagation()}
-              className="absolute top-1 right-1 w-6 h-6 rounded-full bg-background/80 backdrop-blur-sm border border-border/60 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+              className="absolute top-0.5 right-0.5 inline-flex items-center justify-center w-6 h-6 min-h-0 min-w-0 rounded-full bg-background/70 backdrop-blur-sm text-foreground/60 hover:text-foreground hover:bg-background transition-colors"
               aria-label="Story actions"
             >
-              <MoreVertical className="w-3.5 h-3.5" />
+              <MoreVertical className="w-4 h-4" />
             </button>
           </PopoverTrigger>
         </div>
@@ -377,6 +389,19 @@ function BookSpine({
           side="top"
           sideOffset={8}
         >
+          {onShowDetails && (
+            <button
+              onClick={() => {
+                onShowDetails();
+                setPopoverOpen(false);
+              }}
+              className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-[#6C7A89] hover:bg-[#C9B6E4]/15 transition-colors w-full"
+              style={{ minHeight: 44, minWidth: 44 }}
+            >
+              <Info size={16} className="text-[#6C7A89]" />
+              <span>Details</span>
+            </button>
+          )}
           {onEndStory && (
             <button
               onClick={() => {
@@ -388,6 +413,19 @@ function BookSpine({
             >
               <CheckCircle size={16} className="text-[#A8E6CF]" />
               <span>End Story</span>
+            </button>
+          )}
+          {onReopen && (
+            <button
+              onClick={() => {
+                onReopen();
+                setPopoverOpen(false);
+              }}
+              className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-[#6C7A89] hover:bg-[#C9B6E4]/15 transition-colors w-full"
+              style={{ minHeight: 44, minWidth: 44 }}
+            >
+              <BookOpen size={16} className="text-[#6C7A89]" />
+              <span>Reopen</span>
             </button>
           )}
           {onArchive && (
@@ -500,6 +538,8 @@ export default function Bookshelf({
   // sees it removed from the bookshelf immediately. Mirrors the styled
   // AlertDialog pattern used in ChatInterface (End Story / Regenerate).
   const [storyToDelete, setStoryToDelete] = useState<{ id: string; title: string } | null>(null);
+  const [storyDetailsToShow, setStoryDetailsToShow] = useState<GameState | null>(null);
+  const [showIssueReport, setShowIssueReport] = useState(false);
 
   // "Welcome back." gate: prepended to the Guide greeting only when 12+
   // hours have passed since we last greeted this user. Rolling window —
@@ -594,6 +634,30 @@ export default function Bookshelf({
       queryClient.invalidateQueries({ queryKey: ['/api/stories'] });
     } catch (error) {
       console.error('Failed to end story:', error);
+    }
+  }, []);
+
+  // Reopen a previously-ended story. Only valid when the reader stopped
+  // short of their planned totalPages — the spine wiring (and the in-story
+  // footer) gate on canReopen so a story that finished naturally at its
+  // last page can't be reopened.
+  const reopenStory = useCallback(async (storyId: string) => {
+    try {
+      const sessionId = localStorage.getItem('sessionId') || '';
+      const res = await fetch('/api/game-state', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-id': sessionId,
+          'x-story-id': storyId,
+        },
+        body: JSON.stringify({ storyComplete: false }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`Failed to reopen story: ${res.status}`);
+      queryClient.invalidateQueries({ queryKey: ['/api/stories'] });
+    } catch (error) {
+      console.error('Failed to reopen story:', error);
     }
   }, []);
 
@@ -791,24 +855,29 @@ export default function Bookshelf({
     >
       {/* Header — "Story Mode" centered (Cinzel hero font per design-system). */}
       <CenteredHeader
-        className="px-4 pt-4 pb-2 shrink-0"
+        className="shrink-0"
         title="Story Mode"
         right={
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="focus:outline-none" style={{ minHeight: 44, minWidth: 44 }}>
-                <GuideAvatar size={36} animate={false} />
+              <button
+                aria-label="Open menu"
+                className="focus:outline-none flex items-center justify-center text-foreground"
+                style={{ minHeight: 44, minWidth: 44 }}
+              >
+                <Menu className="w-6 h-6" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56" style={{ backgroundColor: '#FFF9F0' }}>
               <DropdownMenuItem
+                className="py-2.5"
                 onClick={() => {
-                  analytics.trackEvent("feedback_mailto_clicked", { from: "bookshelf" });
-                  window.location.href = "mailto:feedback@mystorymode.com?subject=Story%20Mode%20feedback";
+                  analytics.trackEvent("issue_report_opened", { from: "bookshelf" });
+                  setShowIssueReport(true);
                 }}
               >
                 <Mail className="w-4 h-4 mr-2" />
-                Send Feedback
+                Report an issue
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -821,48 +890,58 @@ export default function Bookshelf({
           bottom edge of the shelf, never overlapping it. Hidden entirely
           when there's no library content. */}
       {(activeStories.length > 0 || completedStories.length > 0 || archivedStories.length > 0) && (
-        <div className="shrink-0 px-4 mt-2 mb-2">
+        <div className="shrink-0 px-4 mt-6 mb-2">
           <WoodenShelf />
-          <div className="flex items-center gap-4 px-3" style={{ minHeight: 44 }}>
-            {activeStories.length > 0 && (
-              <button
-                onClick={() => setActiveTab("reading")}
-                className={`text-sm transition-colors ${
-                  activeTab === "reading"
-                    ? "font-semibold text-foreground"
-                    : "font-medium text-muted-foreground hover:text-foreground"
-                }`}
-                style={{ minHeight: 44 }}
-              >
-                Currently Reading
-              </button>
-            )}
-            {completedStories.length > 0 && (
-              <button
-                onClick={() => setActiveTab("finished")}
-                className={`text-sm transition-colors ${
-                  activeTab === "finished"
-                    ? "font-semibold text-foreground"
-                    : "font-medium text-muted-foreground hover:text-foreground"
-                }`}
-                style={{ minHeight: 44 }}
-              >
-                Finished
-              </button>
-            )}
-            {archivedStories.length > 0 && (
-              <button
-                onClick={() => setActiveTab("archive")}
-                className={`text-sm transition-colors ${
-                  activeTab === "archive"
-                    ? "font-semibold text-foreground"
-                    : "font-medium text-muted-foreground hover:text-foreground"
-                }`}
-                style={{ minHeight: 44 }}
-              >
-                Archive
-              </button>
-            )}
+          {/* 3-column grid so tabs are always evenly distributed across the
+              row (`grid-cols-3`). Each cell renders its button only if that
+              tab has content — positions stay fixed (Reading / Finished /
+              Archive) so tabs don't shuffle as the library state changes. */}
+          <div className="grid grid-cols-3 gap-2 px-3" style={{ minHeight: 44 }}>
+            <div className="flex items-center justify-center">
+              {activeStories.length > 0 && (
+                <button
+                  onClick={() => setActiveTab("reading")}
+                  className={`text-sm transition-colors ${
+                    activeTab === "reading"
+                      ? "font-semibold text-foreground"
+                      : "font-medium text-muted-foreground hover:text-foreground"
+                  }`}
+                  style={{ minHeight: 44 }}
+                >
+                  Reading
+                </button>
+              )}
+            </div>
+            <div className="flex items-center justify-center">
+              {completedStories.length > 0 && (
+                <button
+                  onClick={() => setActiveTab("finished")}
+                  className={`text-sm transition-colors ${
+                    activeTab === "finished"
+                      ? "font-semibold text-foreground"
+                      : "font-medium text-muted-foreground hover:text-foreground"
+                  }`}
+                  style={{ minHeight: 44 }}
+                >
+                  Finished
+                </button>
+              )}
+            </div>
+            <div className="flex items-center justify-center">
+              {archivedStories.length > 0 && (
+                <button
+                  onClick={() => setActiveTab("archive")}
+                  className={`text-sm transition-colors ${
+                    activeTab === "archive"
+                      ? "font-semibold text-foreground"
+                      : "font-medium text-muted-foreground hover:text-foreground"
+                  }`}
+                  style={{ minHeight: 44 }}
+                >
+                  Archive
+                </button>
+              )}
+            </div>
           </div>
           <div className="flex items-start gap-4 px-3 pb-3 pt-1 overflow-x-auto">
             {activeTab === "reading" && activeStories.map((story) => (
@@ -874,6 +953,7 @@ export default function Bookshelf({
                 totalPages={story.totalPages || 0}
                 isComplete={false}
                 onClick={() => onContinueStory(story.storyId!)}
+                onShowDetails={() => setStoryDetailsToShow(story)}
                 onEndStory={() => endStory(story.storyId!)}
                 onArchive={() => archiveStory(story.storyId!)}
               />
@@ -881,18 +961,26 @@ export default function Bookshelf({
             {activeTab === "reading" && (
               <BookSpine isNew onClick={() => onNewStory()} />
             )}
-            {activeTab === "finished" && completedStories.map((story) => (
-              <BookSpine
-                key={story.storyId}
-                title={getStoryTitle(story)}
-                genre={story.genre || "fantasy"}
-                currentPage={story.totalPages || 0}
-                totalPages={story.totalPages || 0}
-                isComplete={true}
-                onClick={() => onContinueStory(story.storyId!)}
-                onArchive={() => archiveStory(story.storyId!)}
-              />
-            ))}
+            {activeTab === "finished" && completedStories.map((story) => {
+              // Reopen is only available when the reader ended early (their
+              // last page was below the planned totalPages). A story that
+              // finished naturally at its last page can't be reopened.
+              const canReopen = !!story.totalPages && (story.currentPage ?? 0) < story.totalPages;
+              return (
+                <BookSpine
+                  key={story.storyId}
+                  title={getStoryTitle(story)}
+                  genre={story.genre || "fantasy"}
+                  currentPage={story.totalPages || 0}
+                  totalPages={story.totalPages || 0}
+                  isComplete={true}
+                  onClick={() => onContinueStory(story.storyId!)}
+                  onShowDetails={() => setStoryDetailsToShow(story)}
+                  onReopen={canReopen ? () => reopenStory(story.storyId!) : undefined}
+                  onArchive={() => archiveStory(story.storyId!)}
+                />
+              );
+            })}
             {activeTab === "archive" && archivedStories.map((story) => (
               <BookSpine
                 key={story.storyId}
@@ -903,6 +991,7 @@ export default function Bookshelf({
                 isComplete={true}
                 isArchived={true}
                 onClick={() => onContinueStory(story.storyId!)}
+                onShowDetails={() => setStoryDetailsToShow(story)}
                 onUnarchive={() => unarchiveStory(story.storyId!)}
                 onDelete={() => deleteStory(story.storyId!, getStoryTitle(story))}
               />
@@ -956,14 +1045,14 @@ export default function Bookshelf({
               bubbleClassName="bg-card border border-border"
               className="mb-4"
             >
-              <p className="text-sm leading-relaxed text-muted-foreground">{msg.content}</p>
+              <p className="text-base leading-relaxed text-foreground">{msg.content}</p>
             </GuideBubble>
           ),
         )}
         <div ref={qaEndRef} />
 
         {/* Version */}
-        <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.12.2</p>
+        <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.13.0</p>
       </div>
 
       {/* Sticky drawer — same peek/expand pattern as the in-story drawer.
@@ -983,7 +1072,7 @@ export default function Bookshelf({
           className="w-full flex flex-col items-center justify-center px-4 gap-4"
           style={{ height: "5rem" }}
         >
-          <div className="w-10 h-1 bg-muted-foreground/30 rounded-full" />
+          <div className="-mt-3 w-10 h-1 bg-muted-foreground/30 rounded-full" />
           <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
             <span>What do you want to do?</span>
             <ChevronUp
@@ -1040,6 +1129,23 @@ export default function Bookshelf({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Issue-report sheet — bookshelf-launched so library-specific
+          categories + no story context. */}
+      <IssueReportSheet
+        open={showIssueReport}
+        onOpenChange={setShowIssueReport}
+        includeContextDefault={false}
+        context={{}}
+        appVersion={APP_VERSION}
+        categoryIds={BOOKSHELF_CATEGORY_IDS}
+      />
+
+      {/* Story details modal — opened from the per-spine MoreVertical menu. */}
+      <StoryDetailsDialog
+        story={storyDetailsToShow}
+        onOpenChange={(open) => { if (!open) setStoryDetailsToShow(null); }}
+      />
     </div>
   );
 }

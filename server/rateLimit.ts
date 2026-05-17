@@ -77,18 +77,21 @@ export const aiLimiter = rateLimit({
   },
 });
 
-// Reserved for very expensive operations (image generation, bulk imports). Currently unused
-// but kept exported because adding rate-limited endpoints in the future is common.
+// Strict bucket — 5 per hour. Used for low-volume, anti-spam paths.
+// First user: POST /api/issue-report (v1.13.0). Keyed by session so a real
+// reader filing multiple bugs on the same WiFi doesn't blow out another
+// reader's bucket; falls back to IP when no session header is present.
 export const strictLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 5,
+  keyGenerator: keyBySession,
   store: new PostgresRateLimitStore('strict'),
   message: { error: 'Rate limit exceeded for this operation.' },
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => {
     if (process.env.NODE_ENV !== 'production') {
-      console.log(`[RateLimit] Strict limit exceeded for IP: ${req.ip}`);
+      console.log(`[RateLimit] Strict limit exceeded for key: ${keyBySession(req)}`);
     }
     res.status(429).json({
       error: 'This operation has a strict rate limit. Please try again later.',

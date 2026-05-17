@@ -60,6 +60,32 @@ interface RecentActivity {
   }>;
 }
 
+// v1.13.0 — in-app issue reports submitted via IssueReportSheet. The list view
+// defaults to unresolved-only; admins can mark a row resolved to clear it.
+interface IssueReport {
+  id: string;
+  sessionId: string | null;
+  storyId: string | null;
+  category: string;
+  description: string;
+  currentPage: number | null;
+  lastMessageIds: string[] | null;
+  appVersion: string | null;
+  userAgent: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+}
+
+const ISSUE_CATEGORY_LABELS: Record<string, string> = {
+  guide_reply: "Guide reply",
+  choices: "Choices",
+  stuck: "Stuck",
+  story_load: "Story load",
+  story_missing: "Story missing",
+  story_manage: "Story manage",
+  other: "Other",
+};
+
 export default function AdminDashboard() {
   const [adminKey, setAdminKey] = useState("");
   // 6-digit TOTP code from the admin's authenticator app (1Password, etc.).
@@ -79,6 +105,10 @@ export default function AdminDashboard() {
   const [modelOverride, setModelOverride] = useState<{ stored: string | null; resolved: string } | null>(null);
   const [modelToggleSaving, setModelToggleSaving] = useState(false);
   const [modelToggleError, setModelToggleError] = useState<string | null>(null);
+  // v1.13.0 — issue reports
+  const [issueReports, setIssueReports] = useState<IssueReport[]>([]);
+  const [issueFilter, setIssueFilter] = useState<"unresolved" | "all">("unresolved");
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   const fetchStats = useCallback(async () => {
     if (!adminKey || !totpCode) return;
@@ -92,14 +122,19 @@ export default function AdminDashboard() {
         "x-admin-totp": totpCode.replace(/\s+/g, ""),
       };
 
+      const issuesUrl =
+        issueFilter === "unresolved"
+          ? "/api/admin/issue-reports?resolved=false"
+          : "/api/admin/issue-reports";
       const responses = await Promise.all([
         fetch("/api/admin/spend", { headers }),
         fetch("/api/admin/sessions", { headers }),
         fetch("/api/admin/ai-quality", { headers }),
         fetch("/api/admin/recent-activity", { headers }),
         fetch("/api/admin/model-override", { headers }),
+        fetch(issuesUrl, { headers }),
       ]);
-      const [spendRes, sessionRes, qualityRes, activityRes, modelRes] = responses;
+      const [spendRes, sessionRes, qualityRes, activityRes, modelRes, issuesRes] = responses;
 
       // 401 on any response = wrong key or wrong TOTP (server collapses both
       // so the response doesn't leak which factor failed). Reset auth so the
@@ -132,12 +167,13 @@ export default function AdminDashboard() {
         return;
       }
 
-      const [spend, sessions, quality, activity, modelOv] = await Promise.all([
+      const [spend, sessions, quality, activity, modelOv, issues] = await Promise.all([
         spendRes.json(),
         sessionRes.json(),
         qualityRes.json(),
         activityRes.json(),
         modelRes.json(),
+        issuesRes.json(),
       ]);
 
       setSpendStats(spend);
@@ -145,6 +181,7 @@ export default function AdminDashboard() {
       setAiQualityStats(quality);
       setRecentActivity(activity);
       setModelOverride({ stored: modelOv.stored ?? null, resolved: modelOv.resolved });
+      setIssueReports(issues.reports ?? []);
       setIsAuthenticated(true);
       setLastUpdated(new Date());
     } catch (err) {
@@ -158,7 +195,33 @@ export default function AdminDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [adminKey, totpCode]);
+  }, [adminKey, totpCode, issueFilter]);
+
+  // v1.13.0 — flip a report to resolved. Optimistic update then refetch so
+  // the list shape matches the active filter immediately.
+  const resolveIssueReport = useCallback(
+    async (id: string) => {
+      if (resolvingId) return;
+      setResolvingId(id);
+      try {
+        const res = await fetch(`/api/admin/issue-reports/${id}/resolve`, {
+          method: "POST",
+          headers: {
+            "x-admin-key": adminKey,
+            "x-admin-totp": totpCode.replace(/\s+/g, ""),
+          },
+        });
+        if (!res.ok) throw new Error(`Resolve failed (${res.status})`);
+        // Refetch so the unresolved-filter view drops the resolved row.
+        await fetchStats();
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setResolvingId(null);
+      }
+    },
+    [adminKey, totpCode, resolvingId, fetchStats],
+  );
 
   // Auto-refresh every 30 seconds
   useEffect(() => {
@@ -579,6 +642,89 @@ export default function AdminDashboard() {
             </div>
           ) : (
             <p className="text-sm" style={{ color: "#5C5470" }}>No recent activity</p>
+          )}
+        </div>
+
+        {/* Issue reports (v1.13.0). Submitted via IssueReportSheet from the
+            bookshelf or in-story menu. Default filter is unresolved so the
+            view doubles as a queue. */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-lg font-semibold" style={{ color: "#5C5470" }}>
+              Issue Reports
+            </h2>
+            <div className="flex items-center gap-2 text-xs" style={{ color: "#5C5470" }}>
+              <button
+                type="button"
+                onClick={() => setIssueFilter("unresolved")}
+                className={`px-2 py-1 rounded ${issueFilter === "unresolved" ? "font-semibold underline" : "opacity-60"}`}
+              >
+                Unresolved
+              </button>
+              <button
+                type="button"
+                onClick={() => setIssueFilter("all")}
+                className={`px-2 py-1 rounded ${issueFilter === "all" ? "font-semibold underline" : "opacity-60"}`}
+              >
+                All
+              </button>
+            </div>
+          </div>
+          <p className="text-xs mb-4" style={{ color: "#5C5470" }}>
+            {issueReports.length} {issueFilter === "unresolved" ? "unresolved" : "total"}
+          </p>
+          {issueReports.length > 0 ? (
+            <div className="space-y-3">
+              {issueReports.map((report) => (
+                <div key={report.id} className="border rounded-md p-4" style={{ borderColor: "#DBD8E3" }}>
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className="text-[11px] font-semibold px-2 py-0.5 rounded"
+                        style={{ backgroundColor: "#F4C2A7", color: "#5C5470" }}
+                      >
+                        {ISSUE_CATEGORY_LABELS[report.category] ?? report.category}
+                      </span>
+                      <span className="text-xs" style={{ color: "#5C5470" }}>
+                        {new Date(report.createdAt).toLocaleString()}
+                      </span>
+                      {report.resolvedAt && (
+                        <span className="text-xs italic" style={{ color: "#5C5470", opacity: 0.6 }}>
+                          resolved {new Date(report.resolvedAt).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    {!report.resolvedAt && (
+                      <button
+                        type="button"
+                        onClick={() => resolveIssueReport(report.id)}
+                        disabled={resolvingId === report.id}
+                        className="text-xs underline shrink-0 disabled:opacity-50"
+                        style={{ color: "#5C5470" }}
+                      >
+                        {resolvingId === report.id ? "Resolving..." : "Mark resolved"}
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-sm whitespace-pre-wrap mb-3" style={{ color: "#5C5470" }}>
+                    {report.description}
+                  </p>
+                  <div className="text-[11px] font-mono space-y-1" style={{ color: "#5C5470", opacity: 0.7 }}>
+                    {report.sessionId && <div>session: {report.sessionId}</div>}
+                    {report.storyId && <div>story: {report.storyId}</div>}
+                    {report.currentPage !== null && <div>page: {report.currentPage}</div>}
+                    {report.lastMessageIds && report.lastMessageIds.length > 0 && (
+                      <div>last AI msgs: {report.lastMessageIds.join(", ")}</div>
+                    )}
+                    {report.appVersion && <div>version: {report.appVersion}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm" style={{ color: "#5C5470" }}>
+              {issueFilter === "unresolved" ? "No unresolved reports — inbox zero." : "No reports yet."}
+            </p>
           )}
         </div>
       </div>

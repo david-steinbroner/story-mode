@@ -8,6 +8,13 @@
       "when": 1779051149389,
       "tag": "0002_consolidated_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1779216000000,
+      "tag": "0003_issue_reports",
+      "breakpoints": true
     }
   ]
 }
