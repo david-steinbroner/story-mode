@@ -39,6 +39,7 @@ export interface IStorage {
   // Message history for AI conversations
   getMessages(sessionId: string, storyId?: string): Promise<Message[]>;
   getRecentMessages(sessionId: string, limit: number, storyId?: string): Promise<Message[]>;
+  getMessagesBefore(sessionId: string, beforeCreatedAt: Date, limit: number, storyId?: string): Promise<Message[]>;
   createMessage(message: InsertMessage): Promise<Message>;
   clearMessages(sessionId: string): Promise<void>;
 

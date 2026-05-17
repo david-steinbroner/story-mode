@@ -458,6 +458,28 @@ export class DbStorage implements IStorage {
     }
   }
 
+  // Cursor-based "load older" — returns the `limit` messages immediately
+  // older than `beforeCreatedAt`, in chronological order. Used by the client
+  // pagination flow when the reader scrolls up past the initial 50.
+  async getMessagesBefore(sessionId: string, beforeCreatedAt: Date, limit: number, storyId?: string): Promise<Message[]> {
+    try {
+      const conditions = [
+        eq(messages.sessionId, sessionId),
+        lt(messages.createdAt, beforeCreatedAt),
+      ];
+      if (storyId) conditions.push(eq(messages.storyId, storyId));
+      const result = await db
+        .select()
+        .from(messages)
+        .where(and(...conditions))
+        .orderBy(desc(messages.createdAt))
+        .limit(limit);
+      return result.reverse();
+    } catch (error) {
+      throw new Error(`Failed to get messages before cursor: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
   async createMessage(message: InsertMessage): Promise<Message> {
     try {
       const result = await db

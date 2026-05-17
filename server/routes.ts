@@ -945,10 +945,25 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
         }
         limit = Math.min(parsed, 100);
       }
+      // Cursor pagination (v1.11.5) — `?before=<ISO timestamp>` returns
+      // the `limit` messages immediately older than the cursor. Used by
+      // the client's "Load older messages" affordance to walk backward
+      // from the initial 50-message window without loading the whole
+      // story at once on long epics.
+      let before: Date | undefined;
+      if (req.query.before) {
+        const parsed = new Date(req.query.before as string);
+        if (isNaN(parsed.getTime())) {
+          return res.status(400).json({ error: "Invalid before parameter" });
+        }
+        before = parsed;
+      }
 
-      const messages = limit ?
-        await storage.getRecentMessages(sessionId, limit, storyId) :
-        await storage.getMessages(sessionId, storyId);
+      const messages = before
+        ? await storage.getMessagesBefore(sessionId, before, limit ?? 50, storyId)
+        : limit
+          ? await storage.getRecentMessages(sessionId, limit, storyId)
+          : await storage.getMessages(sessionId, storyId);
       res.json(messages);
     } catch (error) {
       console.error('Error fetching messages:', error);

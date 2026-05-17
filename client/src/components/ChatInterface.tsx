@@ -50,6 +50,12 @@ interface ChatInterfaceProps {
    *  character description immediately while the AI generates page 1.
    *  Cleared by App.tsx once the real messages are returned by the API. */
   pendingPlayerMessage?: string | null;
+  /** Pagination (v1.11.5). When `canLoadOlder` is true, a "Load older
+   *  messages" link appears above the message list; tapping it calls
+   *  `onLoadOlder` which prepends the next batch into the cache. */
+  canLoadOlder?: boolean;
+  isLoadingOlder?: boolean;
+  onLoadOlder?: () => void;
 }
 
 const FONT_SIZES = [
@@ -116,6 +122,9 @@ export default function ChatInterface({
   items = [],
   gameState,
   pendingPlayerMessage = null,
+  canLoadOlder = false,
+  isLoadingOlder = false,
+  onLoadOlder,
 }: ChatInterfaceProps) {
   const [inputText, setInputText] = useState("");
   const [fontSizeIndex, setFontSizeIndex] = useState(getInitialFontSizeIndex);
@@ -616,6 +625,19 @@ ${JSON.stringify(debugInfo, null, 2)}
         style={{ paddingBottom: gameState?.storyComplete ? 240 : showDrawer ? 112 : 16 }}
       >
         <div className="space-y-3 sm:space-y-4 max-w-full">
+            {canLoadOlder && messages.length > 0 && (
+              <div className="flex justify-center pt-1 pb-3">
+                <button
+                  type="button"
+                  onClick={onLoadOlder}
+                  disabled={isLoadingOlder}
+                  className="text-xs text-muted-foreground underline hover:text-foreground disabled:opacity-50"
+                  aria-label="Load older messages"
+                >
+                  {isLoadingOlder ? "Loading older messages..." : "Load older messages"}
+                </button>
+              </div>
+            )}
             {messages.length === 0 && pendingPlayerMessage && (
               // Optimistic first-message UI for the new-story Begin flow.
               // Renders the player's character description as a right-aligned

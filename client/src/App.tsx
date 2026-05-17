@@ -79,10 +79,60 @@ function GameApp() {
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 
+  // Pagination state (v1.11.5). Initial load fetches most-recent 50; older
+  // messages are loaded on demand via the "Load older messages" affordance
+  // in ChatInterface. Reset on story switch (cleared inside the queryFn so
+  // it always matches the data currently in cache).
+  const [canLoadOlder, setCanLoadOlder] = useState(false);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const INITIAL_MESSAGE_LIMIT = 50;
+
   const { data: messages = [], isLoading: messagesLoading } = useQuery<Message[]>({
     queryKey: ['/api/messages', activeStoryId],
     enabled: !!activeStoryId,
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/messages?limit=${INITIAL_MESSAGE_LIMIT}`);
+      const data: Message[] = await res.json();
+      // If the initial query returned a full page, there may be older
+      // messages to fetch. The "Load older" button only appears when this
+      // is true. Heuristic only — empty response on first older-fetch
+      // also flips it off.
+      setCanLoadOlder(data.length >= INITIAL_MESSAGE_LIMIT);
+      return data;
+    },
   });
+
+  const loadOlderMessages = async () => {
+    if (isLoadingOlder || messages.length === 0 || !activeStoryId) return;
+    setIsLoadingOlder(true);
+    try {
+      const oldest = messages[0];
+      const beforeIso =
+        typeof oldest.createdAt === 'string'
+          ? oldest.createdAt
+          : new Date(oldest.createdAt as Date).toISOString();
+      const res = await apiRequest(
+        'GET',
+        `/api/messages?limit=${INITIAL_MESSAGE_LIMIT}&before=${encodeURIComponent(beforeIso)}`,
+      );
+      const older: Message[] = await res.json();
+      if (older.length === 0) {
+        setCanLoadOlder(false);
+      } else {
+        queryClient.setQueryData<Message[]>(
+          ['/api/messages', activeStoryId],
+          (curr = []) => [...older, ...curr],
+        );
+        // If the returned batch is partial, we've reached the start of
+        // the story and there's no more to load.
+        if (older.length < INITIAL_MESSAGE_LIMIT) setCanLoadOlder(false);
+      }
+    } catch (err) {
+      console.error('[App] Failed to load older messages:', err);
+    } finally {
+      setIsLoadingOlder(false);
+    }
+  };
 
   const { data: gameState } = useQuery<GameState>({
     queryKey: ['/api/game-state', activeStoryId],
@@ -384,6 +434,9 @@ function GameApp() {
                 onEndAdventure={handleEndAdventure}
                 onNavigateToBookshelf={navigateToBookshelf}
                 pendingPlayerMessage={pendingPlayerMessage}
+                canLoadOlder={canLoadOlder}
+                isLoadingOlder={isLoadingOlder}
+                onLoadOlder={loadOlderMessages}
                 className="flex-1"
               />
             </Suspense>
