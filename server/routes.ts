@@ -19,7 +19,7 @@ import {
 import { z } from "zod";
 import { aiLimiter, generalLimiter } from "./rateLimit";
 import { spendTracker } from "./spendTracker";
-import { aiService, type AIResponse } from "./aiService";
+import { aiService, type AIResponse, extractTokenUsage } from "./aiService";
 import { logEvent } from "./eventLog";
 import { resolveModel, getAdminModelOverride, setAdminModelOverride, MODEL_ALIASES } from "./aiModel";
 import { eventLog as eventLogTable } from "@shared/schema";
@@ -734,13 +734,10 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
 
       // Track token usage. Surprise-me always runs on Haiku 3.5 (hardcoded
       // in the openai.chat.completions.create call above), so we attribute
-      // cost to that model regardless of any admin override.
+      // cost to that model regardless of any admin override. extractTokenUsage
+      // also surfaces any cache stats if the provider returned them.
       if (response.usage) {
-        await spendTracker.trackRequest(sessionId, {
-          promptTokens: response.usage.prompt_tokens,
-          completionTokens: response.usage.completion_tokens,
-          totalTokens: response.usage.total_tokens,
-        }, "anthropic/claude-3.5-haiku");
+        await spendTracker.trackRequest(sessionId, extractTokenUsage(response.usage), "anthropic/claude-3.5-haiku");
       }
 
       if (count === 1) {
@@ -1271,11 +1268,17 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
         todaysTokens: {
           prompt: stats.today.totalPromptTokens,
           completion: stats.today.totalCompletionTokens,
+          cached: stats.today.totalCachedTokens,
+          cacheWrite: stats.today.totalCacheWriteTokens,
         },
         allTimeTokens: {
           prompt: stats.allTime.totalPromptTokens,
           completion: stats.allTime.totalCompletionTokens,
+          cached: stats.allTime.totalCachedTokens,
+          cacheWrite: stats.allTime.totalCacheWriteTokens,
         },
+        cacheSavingsToday: stats.cacheSavingsToday,
+        cacheSavingsAllTime: stats.cacheSavingsAllTime,
       });
     } catch (error) {
       console.error('Error fetching admin spend stats:', error);

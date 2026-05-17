@@ -139,6 +139,11 @@ export const dailySpend = pgTable("daily_spend", {
   totalCostMicroDollars: integer("total_cost_micro_dollars").default(0).notNull(),
   totalPromptTokens: integer("total_prompt_tokens").default(0).notNull(),
   totalCompletionTokens: integer("total_completion_tokens").default(0).notNull(),
+  // Prompt-cache attribution (v1.10.0). Subsets of total_prompt_tokens; used
+  // by spendTracker to split input cost into uncached / cached-read / write
+  // buckets at Anthropic's per-bucket rates.
+  totalCachedTokens: integer("total_cached_tokens").default(0).notNull(),
+  totalCacheWriteTokens: integer("total_cache_write_tokens").default(0).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

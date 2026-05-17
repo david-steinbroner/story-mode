@@ -25,6 +25,38 @@ export interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  // Prompt-cache attribution from `prompt_tokens_details` on Anthropic
+  // responses via OpenRouter (v1.10.0). Both are subsets of promptTokens.
+  // Undefined when the provider doesn't return cache stats.
+  cachedTokens?: number;
+  cacheWriteTokens?: number;
+}
+
+/**
+ * Normalize an OpenRouter / OpenAI SDK `usage` object into our TokenUsage
+ * shape, surfacing Anthropic prompt-cache fields from
+ * `prompt_tokens_details` when present. Shared with summaryService and the
+ * surprise-me / helper call sites so cache stats are captured consistently
+ * even where we don't actively request caching.
+ */
+export function extractTokenUsage(usage: unknown): TokenUsage {
+  const u = (usage ?? {}) as {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+    prompt_tokens_details?: {
+      cached_tokens?: number;
+      cache_write_tokens?: number;
+    };
+  };
+  const details = u.prompt_tokens_details ?? {};
+  return {
+    promptTokens: u.prompt_tokens ?? 0,
+    completionTokens: u.completion_tokens ?? 0,
+    totalTokens: u.total_tokens ?? 0,
+    cachedTokens: details.cached_tokens,
+    cacheWriteTokens: details.cache_write_tokens,
+  };
 }
 
 export interface AIResponse {
@@ -461,10 +493,31 @@ Use the • character exactly. No "Option A" labels.`;
       const playerMessages = context.recentMessages.filter((m) => m.sender === "player");
       const momentumDirective = detectStallPattern(playerMessages) ?? "";
 
-      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      // System message structured as Anthropic-style content blocks so we
+      // can mark the stable prefix (~1.5K tokens) with cache_control:
+      // ephemeral (5-min TTL). Cache hits when consecutive page-turns share
+      // the same getSystemPrompt() output — i.e. same story + same page-
+      // pacing phase, which covers most of a story's body. The volatile
+      // suffix (momentum + retry hint) is appended as a second block with
+      // no cache marker so it doesn't poison the cache key. OpenRouter
+      // forwards this content-block shape to Anthropic verbatim; the
+      // OpenAI SDK types don't model cache_control, hence the cast.
+      const stableSystemText = this.getSystemPrompt(context.gameState);
+      const variableSystemText = momentumDirective + retryHint;
+      const systemContent: Array<{
+        type: "text";
+        text: string;
+        cache_control?: { type: "ephemeral" };
+      }> = [
+        { type: "text", text: stableSystemText, cache_control: { type: "ephemeral" } },
+      ];
+      if (variableSystemText.length > 0) {
+        systemContent.push({ type: "text", text: variableSystemText });
+      }
+      const messages = [
         {
           role: "system",
-          content: this.getSystemPrompt(context.gameState) + momentumDirective + retryHint
+          content: systemContent,
         },
         {
           role: "user",
@@ -529,7 +582,10 @@ Example Quest Actions:
 
       const response = await openai.chat.completions.create({
         model: modelUsed,
-        messages,
+        // Cast: OpenAI SDK types model system `content` as `string` only,
+        // but OpenRouter accepts (and forwards) Anthropic-style content
+        // blocks. The wire shape is valid JSON either way.
+        messages: messages as unknown as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
         response_format: { type: "json_object" },
         // 80-140 words of narrative + JSON wrapper + choices + actions block
         // comfortably fits under 2000 tokens. Without this, OpenRouter's
@@ -539,12 +595,13 @@ Example Quest Actions:
 
       const apiDuration = Date.now() - startTime;
 
-      // Capture token usage from API response
-      const tokenUsage: TokenUsage | undefined = response.usage ? {
-        promptTokens: response.usage.prompt_tokens || 0,
-        completionTokens: response.usage.completion_tokens || 0,
-        totalTokens: response.usage.total_tokens || 0,
-      } : undefined;
+      // Capture token usage including Anthropic prompt-cache stats.
+      // OpenRouter exposes cached/cache-write counts on
+      // `usage.prompt_tokens_details`; the OpenAI SDK doesn't type those
+      // fields so we read them off an `any`-shaped view.
+      const tokenUsage: TokenUsage | undefined = response.usage
+        ? extractTokenUsage(response.usage)
+        : undefined;
 
       if (!response.usage) {
         console.warn('[AI Service] OpenRouter returned no usage data — cost tracking using fallback estimate');
@@ -891,13 +948,7 @@ Example Quest Actions:
       // regardless of whether we successfully use the response.
       await spendTracker.trackRequest(
         sessionId,
-        response.usage
-          ? {
-              promptTokens: response.usage.prompt_tokens,
-              completionTokens: response.usage.completion_tokens,
-              totalTokens: response.usage.total_tokens,
-            }
-          : undefined,
+        response.usage ? extractTokenUsage(response.usage) : undefined,
         modelUsed,
       );
 
@@ -1022,13 +1073,7 @@ Format as JSON:
 
       await spendTracker.trackRequest(
         sessionId,
-        response.usage
-          ? {
-              promptTokens: response.usage.prompt_tokens,
-              completionTokens: response.usage.completion_tokens,
-              totalTokens: response.usage.total_tokens,
-            }
-          : undefined,
+        response.usage ? extractTokenUsage(response.usage) : undefined,
         modelUsed,
       );
 
@@ -1125,13 +1170,7 @@ Respond in this EXACT JSON format (no other text):
 
       await spendTracker.trackRequest(
         sessionId,
-        response.usage
-          ? {
-              promptTokens: response.usage.prompt_tokens,
-              completionTokens: response.usage.completion_tokens,
-              totalTokens: response.usage.total_tokens,
-            }
-          : undefined,
+        response.usage ? extractTokenUsage(response.usage) : undefined,
         modelUsed,
       );
 

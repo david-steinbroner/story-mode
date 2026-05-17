@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import type { Message } from "@shared/schema";
 import { captureError } from "./sentry";
 import { spendTracker } from "./spendTracker";
+import { extractTokenUsage } from "./aiService";
 
 // Same OpenRouter setup as aiService.ts
 const openai = new OpenAI({
@@ -13,10 +14,14 @@ const openai = new OpenAI({
   },
 });
 
+// Re-exported for callers that want the same shape, but functionally
+// identical to TokenUsage from aiService — both now include cache fields.
 export interface SummaryTokenUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  cachedTokens?: number;
+  cacheWriteTokens?: number;
 }
 
 export interface SummaryResult {
@@ -86,13 +91,11 @@ export async function generateStorySummary(
       ],
     });
 
-    // Extract token usage
+    // Extract token usage (defensively captures cache stats too, even
+    // though summaries don't request caching — they're under the 2048-token
+    // minimum and don't qualify).
     const tokenUsage: SummaryTokenUsage | undefined = response.usage
-      ? {
-          promptTokens: response.usage.prompt_tokens || 0,
-          completionTokens: response.usage.completion_tokens || 0,
-          totalTokens: response.usage.total_tokens || 0,
-        }
+      ? extractTokenUsage(response.usage)
       : undefined;
 
     // Track the request cost (spendTracker uses internal fallback if tokenUsage is undefined)

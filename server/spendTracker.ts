@@ -7,6 +7,12 @@ interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  // Prompt-cache attribution. Both default to 0 when the provider doesn't
+  // return cache stats (any non-Anthropic model, or Anthropic with caching
+  // not active). cachedTokens + cacheWriteTokens are SUBSETS of promptTokens,
+  // not in addition to it — the rest is treated as uncached input.
+  cachedTokens?: number;
+  cacheWriteTokens?: number;
 }
 
 interface DailyTotals {
@@ -15,6 +21,8 @@ interface DailyTotals {
   requestCount: number;
   totalPromptTokens: number;
   totalCompletionTokens: number;
+  totalCachedTokens: number;
+  totalCacheWriteTokens: number;
 }
 
 interface AllTimeStats {
@@ -22,6 +30,8 @@ interface AllTimeStats {
   requestCount: number;
   totalPromptTokens: number;
   totalCompletionTokens: number;
+  totalCachedTokens: number;
+  totalCacheWriteTokens: number;
 }
 
 interface SessionSpend {
@@ -46,7 +56,24 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
 // above, we'd rather over-count than under-count and quietly blow the cap.
 const FALLBACK_PRICING = { input: 0.003, output: 0.015 };
 
+// Anthropic prompt-cache multipliers (vs base input rate). Verified against
+// OpenRouter's caching guide as of 2026-05-17. If TTL changes to 1h the
+// write multiplier becomes 2.0×; we default to 5m TTL across the codebase.
+const CACHE_READ_MULTIPLIER = 0.10;
+const CACHE_WRITE_5M_MULTIPLIER = 1.25;
+
 const pricingFor = (model: string) => MODEL_PRICING[model] ?? FALLBACK_PRICING;
+
+// "How much did caching save me today" — naive estimate: each cached-read
+// token would have cost the full uncached input rate if we hadn't cached
+// it. Uses Sonnet 4 rates since that's what page-gen runs on, which is
+// where ~all our cache hits come from. Approximate — exact savings need
+// per-call model accounting, which isn't worth the schema complexity for
+// a single rollup number on the dashboard.
+const estimateCacheSavings = (cachedTokens: number): number => {
+  const baseRate = MODEL_PRICING["anthropic/claude-sonnet-4"].input;
+  return (cachedTokens / 1000) * baseRate * (1 - CACHE_READ_MULTIPLIER);
+};
 
 // Convert dollar cost to integer micro-dollars for safe atomic accumulation in
 // Postgres. Avoids floating-point drift when many small charges add up.
@@ -63,7 +90,19 @@ class SpendTracker {
 
   private calculateCost(usage: TokenUsage, model: string): number {
     const { input, output } = pricingFor(model);
-    return (usage.promptTokens / 1000) * input + (usage.completionTokens / 1000) * output;
+    const cached = usage.cachedTokens ?? 0;
+    const cacheWrite = usage.cacheWriteTokens ?? 0;
+    // The Anthropic usage block reports cached/write as SUBSETS of the
+    // total input, so subtract them out before billing the uncached portion
+    // at full rate. Math.max guards against any provider that reports
+    // overlap (shouldn't happen, but cheap insurance).
+    const uncachedInput = Math.max(0, usage.promptTokens - cached - cacheWrite);
+    return (
+      (uncachedInput / 1000) * input +
+      (cached / 1000) * input * CACHE_READ_MULTIPLIER +
+      (cacheWrite / 1000) * input * CACHE_WRITE_5M_MULTIPLIER +
+      (usage.completionTokens / 1000) * output
+    );
   }
 
   private async getDailyTotals(): Promise<DailyTotals> {
@@ -71,7 +110,7 @@ class SpendTracker {
     try {
       const rows = await db.select().from(dailySpend).where(eq(dailySpend.date, date)).limit(1);
       if (rows.length === 0) {
-        return { date, totalCost: 0, requestCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0 };
+        return { date, totalCost: 0, requestCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, totalCacheWriteTokens: 0 };
       }
       const row = rows[0];
       return {
@@ -80,12 +119,14 @@ class SpendTracker {
         requestCount: row.requestCount,
         totalPromptTokens: row.totalPromptTokens,
         totalCompletionTokens: row.totalCompletionTokens,
+        totalCachedTokens: row.totalCachedTokens,
+        totalCacheWriteTokens: row.totalCacheWriteTokens,
       };
     } catch (err) {
       captureError(err, { context: "spendTracker.getDailyTotals" });
       // On read failure we fail open — better to serve a request than to lock the
       // app out of the AI path because the spend table is briefly unreachable.
-      return { date, totalCost: 0, requestCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0 };
+      return { date, totalCost: 0, requestCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, totalCacheWriteTokens: 0 };
     }
   }
 
@@ -97,6 +138,8 @@ class SpendTracker {
           requestCount: sql<number>`COALESCE(SUM(${dailySpend.requestCount}), 0)::integer`,
           totalPromptTokens: sql<number>`COALESCE(SUM(${dailySpend.totalPromptTokens}), 0)::integer`,
           totalCompletionTokens: sql<number>`COALESCE(SUM(${dailySpend.totalCompletionTokens}), 0)::integer`,
+          totalCachedTokens: sql<number>`COALESCE(SUM(${dailySpend.totalCachedTokens}), 0)::integer`,
+          totalCacheWriteTokens: sql<number>`COALESCE(SUM(${dailySpend.totalCacheWriteTokens}), 0)::integer`,
         })
         .from(dailySpend);
       const r = rows[0];
@@ -105,10 +148,12 @@ class SpendTracker {
         requestCount: r?.requestCount ?? 0,
         totalPromptTokens: r?.totalPromptTokens ?? 0,
         totalCompletionTokens: r?.totalCompletionTokens ?? 0,
+        totalCachedTokens: r?.totalCachedTokens ?? 0,
+        totalCacheWriteTokens: r?.totalCacheWriteTokens ?? 0,
       };
     } catch (err) {
       captureError(err, { context: "spendTracker.getAllTimeTotals" });
-      return { totalCost: 0, requestCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0 };
+      return { totalCost: 0, requestCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, totalCacheWriteTokens: 0 };
     }
   }
 
@@ -145,6 +190,8 @@ class SpendTracker {
 
     const cost = this.calculateCost(tokenUsage, model);
     const costMicros = dollarsToMicros(cost);
+    const cachedTokens = tokenUsage.cachedTokens ?? 0;
+    const cacheWriteTokens = tokenUsage.cacheWriteTokens ?? 0;
     const date = todayKey();
 
     try {
@@ -156,6 +203,8 @@ class SpendTracker {
           totalCostMicroDollars: costMicros,
           totalPromptTokens: tokenUsage.promptTokens,
           totalCompletionTokens: tokenUsage.completionTokens,
+          totalCachedTokens: cachedTokens,
+          totalCacheWriteTokens: cacheWriteTokens,
         })
         .onConflictDoUpdate({
           target: dailySpend.date,
@@ -164,6 +213,8 @@ class SpendTracker {
             totalCostMicroDollars: sql`${dailySpend.totalCostMicroDollars} + ${costMicros}`,
             totalPromptTokens: sql`${dailySpend.totalPromptTokens} + ${tokenUsage.promptTokens}`,
             totalCompletionTokens: sql`${dailySpend.totalCompletionTokens} + ${tokenUsage.completionTokens}`,
+            totalCachedTokens: sql`${dailySpend.totalCachedTokens} + ${cachedTokens}`,
+            totalCacheWriteTokens: sql`${dailySpend.totalCacheWriteTokens} + ${cacheWriteTokens}`,
             updatedAt: sql`NOW()`,
           },
         });
@@ -228,6 +279,8 @@ class SpendTracker {
     dailyLimit: number;
     remainingBudget: number;
     averageCostPerRequest: number;
+    cacheSavingsToday: number;
+    cacheSavingsAllTime: number;
   }> {
     const [today, allTime] = await Promise.all([this.getDailyTotals(), this.getAllTimeTotals()]);
     return {
@@ -236,6 +289,13 @@ class SpendTracker {
       dailyLimit: DAILY_LIMIT_USD,
       remainingBudget: Math.max(0, DAILY_LIMIT_USD - today.totalCost),
       averageCostPerRequest: allTime.requestCount > 0 ? allTime.totalCost / allTime.requestCount : 0,
+      // Cost we would have paid if every cached token had been billed at the
+      // full uncached input rate, minus what we actually paid. Uses Sonnet 4
+      // pricing as the reference rate (cache hits today are page-gen calls,
+      // all on Sonnet). Cache-WRITE tokens are billed *higher* than base
+      // (1.25×) so they don't reduce cost — the savings comes from reads.
+      cacheSavingsToday: estimateCacheSavings(today.totalCachedTokens),
+      cacheSavingsAllTime: estimateCacheSavings(allTime.totalCachedTokens),
     };
   }
 

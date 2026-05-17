@@ -8,8 +8,11 @@ interface SpendStats {
   averageCostPerRequest: number;
   dailyBudgetRemaining: number;
   dailyLimit: number;
-  todaysTokens: { prompt: number; completion: number };
-  allTimeTokens: { prompt: number; completion: number };
+  todaysTokens: { prompt: number; completion: number; cached: number; cacheWrite: number };
+  allTimeTokens: { prompt: number; completion: number; cached: number; cacheWrite: number };
+  // Estimated $ saved vs. uncached input billing (v1.10.0). Both >= 0.
+  cacheSavingsToday: number;
+  cacheSavingsAllTime: number;
 }
 
 interface SessionStats {
@@ -380,6 +383,43 @@ export default function AdminDashboard() {
           </div>
         </div>
 
+        {/* Prompt Caching (v1.10.0). Cache reads are billed at 10% of base
+            input rate on Anthropic via OpenRouter; cache writes are billed
+            at 125% (5-min TTL). Savings = cached_tokens × base_rate × 90%.
+            All zeros until the first cache-write happens on a Sonnet 4 call
+            with a system prompt ≥ 2048 tokens (we hit that threshold on
+            every page-turn). */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+          <h2 className="text-lg font-semibold mb-1" style={{ color: "#5C5470" }}>
+            Prompt Caching
+          </h2>
+          <p className="text-xs mb-4" style={{ color: "#5C5470", opacity: 0.7 }}>
+            Anthropic prompt cache via OpenRouter. Reads at 10× discount, writes at 1.25× base.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <CacheCard
+              title="Cache reads today"
+              count={formatNumber(spendStats?.todaysTokens?.cached || 0)}
+              subtitle="tokens served from cache"
+            />
+            <CacheCard
+              title="Cache writes today"
+              count={formatNumber(spendStats?.todaysTokens?.cacheWrite || 0)}
+              subtitle="tokens written to cache"
+            />
+            <CacheCard
+              title="Savings today"
+              count={formatCurrency(spendStats?.cacheSavingsToday || 0)}
+              subtitle="vs. uncached billing"
+            />
+            <CacheCard
+              title="Savings all-time"
+              count={formatCurrency(spendStats?.cacheSavingsAllTime || 0)}
+              subtitle="vs. uncached billing"
+            />
+          </div>
+        </div>
+
         {/* Session Stats */}
         <div className="bg-white rounded-lg shadow-md p-6">
           <h2 className="text-lg font-semibold mb-4" style={{ color: "#5C5470" }}>
@@ -564,6 +604,16 @@ function QualityCard({
       <p className="text-xl font-semibold" style={{ color: "#5C5470" }}>{count}</p>
       <p className="text-xs" style={{ color: "#5C5470" }}>{pct}% of pages</p>
       <p className="text-[10px] mt-1 leading-tight" style={{ color: "#5C5470", opacity: 0.7 }}>{hint}</p>
+    </div>
+  );
+}
+
+function CacheCard({ title, count, subtitle }: { title: string; count: string; subtitle: string }) {
+  return (
+    <div className="rounded-md p-3" style={{ backgroundColor: "#FAF9F6", border: "1px solid #DBD8E3" }}>
+      <p className="text-xs font-medium mb-1" style={{ color: "#5C5470" }}>{title}</p>
+      <p className="text-xl font-semibold" style={{ color: "#5C5470" }}>{count}</p>
+      <p className="text-[10px] mt-1 leading-tight" style={{ color: "#5C5470", opacity: 0.7 }}>{subtitle}</p>
     </div>
   );
 }
