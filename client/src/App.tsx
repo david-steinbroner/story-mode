@@ -289,7 +289,6 @@ function GameApp() {
       queryClient.invalidateQueries({ queryKey: ['/api/messages', activeStoryId] });
       queryClient.invalidateQueries({ queryKey: ['/api/character'] });
       queryClient.invalidateQueries({ queryKey: ['/api/quests', activeStoryId] });
-      queryClient.invalidateQueries({ queryKey: ['/api/items'] });
       queryClient.invalidateQueries({ queryKey: ['/api/game-state', activeStoryId] });
     },
     onError: (error: any, _variables: string, context: { previousMessages?: Message[] } | undefined) => {

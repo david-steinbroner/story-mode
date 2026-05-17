@@ -6,8 +6,6 @@ import {
   type InsertCharacter,
   type Quest,
   type InsertQuest,
-  type Item,
-  type InsertItem,
   type Message,
   type InsertMessage,
   type GameState,
@@ -16,6 +14,8 @@ import {
   type InsertStorySummary,
   characters,
   quests,
+  // `items` table still referenced for story-deletion cleanup below; type-
+  // level Item / InsertItem are no longer needed here (v1.12.0).
   items,
   messages,
   gameState,
@@ -318,110 +318,13 @@ export class DbStorage implements IStorage {
   }
 
   // ============================================================
-  // INVENTORY MANAGEMENT
+  // INVENTORY MANAGEMENT (removed v1.12.0 — see audit PR-B)
+  //
+  // Per-item read/write methods deleted along with /api/items/* routes.
+  // The `items` table itself is preserved (data not dropped) and its rows
+  // are still cleaned up by clearAllAdventureData below when stories are
+  // archived/deleted, using direct Drizzle ops rather than storage methods.
   // ============================================================
-
-  async getItems(sessionId: string, storyId?: string): Promise<Item[]> {
-    try {
-      const conditions = [eq(items.sessionId, sessionId)];
-      if (storyId) conditions.push(eq(items.storyId, storyId));
-      const result = await db
-        .select()
-        .from(items)
-        .where(and(...conditions));
-
-      // Sort by equipped status first, then by rarity, then by type
-      const rarityOrder: Record<string, number> = { legendary: 0, epic: 1, rare: 2, uncommon: 3, common: 4 };
-      const typeOrder: Record<string, number> = { weapon: 0, armor: 1, consumable: 2, misc: 3 };
-
-      return result.sort((a, b) => {
-        if (a.equipped !== b.equipped) return a.equipped ? -1 : 1;
-        const rarityDiff = (rarityOrder[a.rarity] ?? 4) - (rarityOrder[b.rarity] ?? 4);
-        if (rarityDiff !== 0) return rarityDiff;
-        return (typeOrder[a.type] ?? 3) - (typeOrder[b.type] ?? 3);
-      });
-    } catch (error) {
-      throw new Error(`Failed to get items: ${error instanceof Error ? error.message : error}`);
-    }
-  }
-
-  async getItem(id: string, sessionId: string): Promise<Item | undefined> {
-    try {
-      const result = await db
-        .select()
-        .from(items)
-        .where(and(eq(items.id, id), eq(items.sessionId, sessionId)))
-        .limit(1);
-      return result[0] || undefined;
-    } catch (error) {
-      throw new Error(`Failed to get item: ${error instanceof Error ? error.message : error}`);
-    }
-  }
-
-  async createItem(item: InsertItem): Promise<Item> {
-    try {
-      const result = await db
-        .insert(items)
-        .values(item)
-        .returning();
-      return result[0];
-    } catch (error) {
-      throw new Error(`Failed to create item: ${error instanceof Error ? error.message : error}`);
-    }
-  }
-
-  async updateItem(id: string, sessionId: string, updates: Partial<Item>): Promise<Item | null> {
-    try {
-      // Get current item state
-      const currentResult = await db
-        .select()
-        .from(items)
-        .where(and(eq(items.id, id), eq(items.sessionId, sessionId)))
-        .limit(1);
-
-      const item = currentResult[0];
-      if (!item) {
-        return null;
-      }
-
-      const updatedItem = { ...item, ...updates };
-
-      // Ensure quantity isn't negative
-      if (updatedItem.quantity < 0) {
-        updatedItem.quantity = 0;
-      }
-
-      // If equipped, ensure quantity is at least 1
-      if (updatedItem.equipped && updatedItem.quantity === 0) {
-        updatedItem.equipped = false;
-      }
-
-      // Remove id and sessionId from updates to avoid overwriting
-      const { id: _id, sessionId: _sessionId, ...safeUpdates } = updatedItem;
-
-      const result = await db
-        .update(items)
-        .set(safeUpdates)
-        .where(and(eq(items.id, id), eq(items.sessionId, sessionId)))
-        .returning();
-
-      return result[0] || null;
-    } catch (error) {
-      throw new Error(`Failed to update item: ${error instanceof Error ? error.message : error}`);
-    }
-  }
-
-  async deleteItem(id: string, sessionId: string): Promise<boolean> {
-    try {
-      const result = await db
-        .delete(items)
-        .where(and(eq(items.id, id), eq(items.sessionId, sessionId)))
-        .returning();
-      return result.length > 0;
-    } catch (error) {
-      throw new Error(`Failed to delete item: ${error instanceof Error ? error.message : error}`);
-    }
-  }
 
   // ============================================================
   // MESSAGE HISTORY

@@ -26,7 +26,7 @@ import TypingDots from "./TypingDots";
 import CenteredHeader from "./CenteredHeader";
 import ChoiceButton from "./ChoiceButton";
 import PlayerBubble from "./PlayerBubble";
-import type { Message, Character, Quest, Item, GameState } from "@shared/schema";
+import type { Message, Character, Quest, GameState } from "@shared/schema";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { analytics } from "@/lib/posthog";
 import { useToast } from "@/hooks/use-toast";
@@ -42,7 +42,6 @@ interface ChatInterfaceProps {
   onNavigateToBookshelf?: () => void;
   character?: Character;
   quests?: Quest[];
-  items?: Item[];
   gameState?: GameState;
   /** Optimistic UI: when set, render this string as a right-aligned player
    *  bubble at the top of the conversation, plus a TypingDots indicator
@@ -119,7 +118,6 @@ export default function ChatInterface({
   onNavigateToBookshelf,
   character,
   quests = [],
-  items = [],
   gameState,
   pendingPlayerMessage = null,
   canLoadOlder = false,
@@ -301,12 +299,6 @@ export default function ChatInterface({
         status: q.status,
         progress: `${q.progress}/${q.maxProgress}`
       })),
-      items: items.map(i => ({
-        id: i.id,
-        name: i.name,
-        type: i.type,
-        quantity: i.quantity
-      })),
       recentMessages: messages.slice(-10).map(m => ({
         id: m.id,
         sender: m.sender,
@@ -330,9 +322,6 @@ ${debugInfo.gameState ? `- Scene: ${debugInfo.gameState.currentScene}
 
 QUESTS (${debugInfo.quests.length}):
 ${debugInfo.quests.map(q => `- [${q.status.toUpperCase()}] ${q.title} (${q.progress})`).join('\n') || 'None'}
-
-ITEMS (${debugInfo.items.length}):
-${debugInfo.items.slice(0, 5).map(i => `- ${i.name} (${i.type}) x${i.quantity}`).join('\n') || 'None'}
 
 RECENT MESSAGES (Last 10):
 ${debugInfo.recentMessages.map((m, i) => `${i + 1}. [${m.sender}] ${m.content}`).join('\n\n')}
@@ -379,7 +368,6 @@ ${JSON.stringify(debugInfo, null, 2)}
       } : null,
       questCount: quests.length,
       activeQuestCount: quests.filter(q => q.status === 'active').length,
-      itemCount: items.length,
       messageCount: messages.length,
       recentMessages: messages.slice(-10).map(m => ({
         id: m.id,

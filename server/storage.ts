@@ -3,8 +3,6 @@ import {
   type InsertCharacter,
   type Quest,
   type InsertQuest,
-  type Item,
-  type InsertItem,
   type Message,
   type InsertMessage,
   type GameState,
@@ -28,13 +26,6 @@ export interface IStorage {
   updateQuest(id: string, sessionId: string, updates: Partial<Quest>): Promise<Quest | null>;
   deleteQuest(id: string, sessionId: string): Promise<boolean>;
   clearQuests(sessionId: string): Promise<void>;
-
-  // Inventory management
-  getItems(sessionId: string, storyId?: string): Promise<Item[]>;
-  getItem(id: string, sessionId: string): Promise<Item | undefined>;
-  createItem(item: InsertItem): Promise<Item>;
-  updateItem(id: string, sessionId: string, updates: Partial<Item>): Promise<Item | null>;
-  deleteItem(id: string, sessionId: string): Promise<boolean>;
 
   // Message history for AI conversations
   getMessages(sessionId: string, storyId?: string): Promise<Message[]>;

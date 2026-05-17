@@ -6,14 +6,12 @@ import { storage } from "./storage";
 import {
   insertCharacterSchema,
   insertQuestSchema,
-  insertItemSchema,
   insertMessageSchema,
   insertGameStateSchema,
   storyCreationLocks as storyCreationLocksTable,
   chatLocks as chatLocksTable,
   type Character,
   type Quest,
-  type Item,
   type Message
 } from "@shared/schema";
 import { z } from "zod";
@@ -81,16 +79,6 @@ const updateQuestSchema = insertQuestSchema.partial().refine(
     return true;
   },
   { message: "Quest progress must be valid" }
-);
-
-const updateItemSchema = insertItemSchema.partial().refine(
-  (data) => {
-    if (data.quantity !== undefined) {
-      return data.quantity >= 0;
-    }
-    return true;
-  },
-  { message: "Item quantity must be non-negative" }
 );
 
 const updateQuestSchemaForAI = insertQuestSchema.partial().refine(
@@ -217,15 +205,6 @@ async function applyAIResponse(
       }
     }
 
-    // Give item if specified
-    if (actions.giveItem) {
-      const itemValidation = insertItemSchema.safeParse({ ...actions.giveItem, sessionId });
-      if (itemValidation.success) {
-        await storage.createItem(itemValidation.data);
-      } else {
-        console.warn('Invalid AI item creation:', itemValidation.error.errors);
-      }
-    }
   }
 
   // Detect side quest opportunities
@@ -358,22 +337,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             maxProgress: 3,
             isMainStory: true,
           });
-
-          // Clear existing items and add world-specific starting items
-          const currentItems = await storage.getItems(sessionId);
-          for (const item of currentItems) {
-            await storage.deleteItem(item.id, sessionId);
-          }
-
-          for (const item of worldData.startingItems) {
-            await storage.createItem({
-              sessionId,
-              ...item,
-              quantity: 1,
-              rarity: 'common',
-              equipped: item.type === 'weapon' || item.type === 'armor',
-            });
-          }
 
           // Clear messages and add welcome message
           await storage.clearMessages(sessionId);
@@ -851,83 +814,6 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
     } catch (error) {
       console.error('Error deleting quest:', error);
       res.status(500).json({ error: "Failed to delete quest" });
-    }
-  });
-
-  // Inventory routes
-  app.get("/api/items", async (req, res) => {
-    try {
-      const sessionId = getSessionId(req);
-      const storyId = getStoryId(req);
-      if (!storyId) return res.json([]);
-      const items = await storage.getItems(sessionId, storyId);
-      res.json(items);
-    } catch (error) {
-      console.error('Error fetching items:', error);
-      res.status(500).json({ error: "Failed to fetch items" });
-    }
-  });
-
-  app.get("/api/items/:id", async (req, res) => {
-    try {
-      const sessionId = getSessionId(req);
-      const item = await storage.getItem(req.params.id, sessionId);
-      if (!item) {
-        return res.status(404).json({ error: "Item not found" });
-      }
-      res.json(item);
-    } catch (error) {
-      console.error('Error fetching item:', error);
-      res.status(500).json({ error: "Failed to fetch item" });
-    }
-  });
-
-  app.post("/api/items", async (req, res) => {
-    try {
-      const sessionId = getSessionId(req);
-      const result = insertItemSchema.safeParse({ ...req.body, sessionId });
-      if (!result.success) {
-        return res.status(400).json({ error: "Invalid item data", details: sanitizeZodIssues(result.error.errors) });
-      }
-
-      const item = await storage.createItem(result.data);
-      res.json(item);
-    } catch (error) {
-      console.error('Error creating item:', error);
-      res.status(500).json({ error: "Failed to create item" });
-    }
-  });
-
-  app.patch("/api/items/:id", async (req, res) => {
-    try {
-      const sessionId = getSessionId(req);
-      const result = updateItemSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({ error: "Invalid item data", details: sanitizeZodIssues(result.error.errors) });
-      }
-
-      const item = await storage.updateItem(req.params.id, sessionId, result.data);
-      if (!item) {
-        return res.status(404).json({ error: "Item not found" });
-      }
-      res.json(item);
-    } catch (error) {
-      console.error('Error updating item:', error);
-      res.status(500).json({ error: "Failed to update item" });
-    }
-  });
-
-  app.delete("/api/items/:id", async (req, res) => {
-    try {
-      const sessionId = getSessionId(req);
-      const deleted = await storage.deleteItem(req.params.id, sessionId);
-      if (!deleted) {
-        return res.status(404).json({ error: "Item not found" });
-      }
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error deleting item:', error);
-      res.status(500).json({ error: "Failed to delete item" });
     }
   });
 
