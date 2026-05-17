@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.10.0**. Milestones 1–5 shipped pre-launch. **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; AI-powered intent matcher + `POST /api/guide/chat` endpoint still TODO. **Recent lane (2026-05-17):** cost-audit followup landed v1.9.8 → v1.10.0 — per-model pricing, helper-call tracking, and live Anthropic prompt caching with dashboard savings panel. **Also in progress:** 2026-05-15 security/correctness audit shipping in risk-isolated PRs (5 of 8 done; full plan and remaining work in `docs/specs/audit-2026-05-15.md`). Version-by-version detail in entries below.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.11.1**. Milestones 1–5 shipped pre-launch. **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; AI-powered intent matcher + `POST /api/guide/chat` endpoint still TODO. **Recent lane (2026-05-17):** cost-audit followup landed v1.9.8 → v1.10.0 (per-model pricing, helper-call tracking, Anthropic prompt caching with dashboard savings panel), followed by an ai-voice refinement at v1.11.0 (Rule #3 reframed as WHAT/HOW boundary, scene-change tax, verify/engage/refuse anti-example, hard word ceiling) and a same-day regression fix at v1.11.1 (missing-choices validator after Sonnet stopped emitting the choice block). **Also in progress:** 2026-05-15 security/correctness audit shipping in risk-isolated PRs (5 of 8 done; full plan and remaining work in `docs/specs/audit-2026-05-15.md`). Version-by-version detail in entries below.
 >
 > *Last updated: 2026-05-17.*
 
@@ -39,6 +39,44 @@ The original Milestone 6 plan called for a slide-up `GuideChat.tsx` modal trigge
 ---
 
 ## Completed Milestones
+
+### Fix: Rule #3 example regression caused Sonnet to omit choices (2026-05-17) — v1.11.1 ✅
+
+Same-day regression from v1.11.0. The "Sentient Bread" test story came through with 102 words of narrative and zero choice block — no `**What do you do?**`, no `•` bullets — leaving the reader with only the free-text input.
+
+**Root cause:** v1.11.0's refactor of Rule #3's RIGHT example replaced a one-sentence snippet (`"'Stairs,' the cat hisses..."`) with a four-sentence complete-page-shaped narrative. Sonnet generalized "produce a beat that lands and then stop" and started omitting the choice block entirely. The existing fake-choices validator was token-overlap-only — it couldn't catch "zero choices" because there were no choices to compare.
+
+**Two-part fix:**
+- **Prompt-side:** Rule #3 RIGHT example now ends with the literal `**What do you do?**` header and three bullet choices, so the example is a full page template rather than a fragment.
+- **Validator-side:** new `detectMissingChoices(content, isFinalPage)` in `server/aiValidators.ts` — fires when a non-final page has fewer than 2 bullet choices OR no `what do you do?` substring. Wired into `ViolationReport`, `runValidators`, `buildRetryHint`, and the `ai_quality_violation` event_log entry alongside the existing four detectors.
+
+The validator's retry hint reads: *"YOUR PREVIOUS ATTEMPT OMITTED THE CHOICE BLOCK: every non-final page MUST end with the literal header **What do you do?** followed by 2-3 bullet lines starting with the • character. Without choices the reader has no way to act. This is not optional."*
+
+**Cost note:** a missing-choices retry doubles that page's API spend (one extra Sonnet call ~$0.011 each). Bounded by `MAX_QUALITY_RETRIES = 1`. If the model misses choices on the retry too, the original (broken) response is returned — same failure mode as before this fix, but rarer. If retries pile up in admin Recent Activity, the next escalation is server-side injection of a generic choice block after two failures.
+
+### AI voice refinement: WHAT/HOW boundary + scene-change tax + verify/engage/refuse + hard word ceiling (2026-05-17) — v1.11.0 ✅
+
+Diagnosed from the "Other David" doppelgänger story (Sonnet 4, 6 pages, the protagonist held at the door for the entire transcript). Three rule violations identified in analysis:
+
+1. **Rule #3 (player agency) violated**: reader said *"I pretend I'm not home and take a photo"* — AI immediately had the doppelgänger say `'I know you're there. I can hear you typing.'` The reader's stealth strategy was nullified in the next line because the AI gave the doppelgänger supernatural perception.
+2. **Fake choices (Rule #2)**: pages 8 and 10 offered the verify/engage/refuse pattern — three options that all kept the protagonist in the same physical position, just with different rationales. The token-overlap validator missed it because the wording was varied.
+3. **Word-count violation**: every page was 150-210 words despite the 80-140 word target. Sonnet was treating the limit as a soft suggestion.
+
+Plus a fourth meta-issue (macro stall): after 6 pages and ~$0.08 in API spend, the protagonist hadn't moved from the door — each page introduced new evidence (scar, birthmark, ley lines) but no new scene or action. The Jaccard-based stall detector can only see lexical repetition, not semantic scene-holding.
+
+**Reconciliation principle (codified in Rule #3's new framing):** *Reader picks WHAT. Guide picks HOW + WHAT-COMES-NEXT.* The reader's action lands as taken (stealth happened); the world's response is the Guide's territory and is permitted to make the action insufficient or surprising — but it cannot defeat the action by giving another character supernatural perception in the very next line. Anti-stall language preserved ("The world MUST advance when the reader stalls across consecutive turns") so Story Momentum is intact.
+
+**System-prompt changes in `getSystemPrompt()`:**
+- **Rule #3 reframed** with the WHAT/HOW boundary, the prohibition against giving antagonists supernatural perception, and the doppelgänger anti-example baked in.
+- **Scene-change tax added to Rule #1**: if the protagonist's physical location has been unchanged for the last 3 pages, this page MUST move them or introduce a force that does (door breached, building shakes, third party arrives).
+- **Verify/engage/refuse anti-example added to Rule #2**: drawn from messages 8 and 10 of "The Other David", showing all three choices keeping the protagonist at the door = fake. RIGHT example shows three branches with different physical destinations.
+- **Word ceiling hardened**: "80 to 140 words" → "80 to 140 words. HARD CEILING: do not exceed 140 words even for dramatic moments. If you have more to say, save it for the next page."
+
+`docs/ai-voice.md` TL;DR + Style Targets + Choice Rules updated to mirror the new rules in the same commit.
+
+**Cost impact:** ~250 extra system-prompt tokens. With v1.10.0 prompt caching active, those tokens land in the cached prefix from page 2+ of any story — steady-state per-page increase is ~$0.00008 (negligible). First page of any new story pays ~$0.00094 more (cache write at 1.25× on 250 tokens).
+
+**Watchouts:** Sonnet 4 may still over-write past the 140 ceiling. If it persists, the next escalation is a `wordCountOverrun` validator (logged-only to start; retry if it lands often). Sonnet may also still violate Rule #3 despite the explicit example — Sonnet has strong "drama wants to win" tendencies. If repeat agency-overrides land, validator-side enforcement is the next step.
 
 ### Cost-tracking audit followup: prompt caching capture + dashboard savings panel (2026-05-17) — v1.10.0 ✅
 
@@ -558,4 +596,4 @@ These were removed during milestones 5–6:
 - **Update when:** any milestone work ships (committed code) — add a section under "Completed Milestones" or extend the current one. Also append to "Already deleted" when meaningful dead code is removed. Bump "Last updated" below.
 - **TL;DR rule:** current-state-only, ~60 words. Cover: live version, milestones 1–5 status, active milestone (Milestone 6) status, latest push pointer. **Do not** append a sentence per shipped version — version-by-version detail lives in the "Completed Milestones" entries below, and that's the format readers should reach for when they want history.
 - **Same commit as code:** the doc update rides along with the milestone commit, not as a separate hygiene commit.
-- **Last updated:** 2026-05-14
+- **Last updated:** 2026-05-17
