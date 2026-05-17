@@ -33,9 +33,20 @@ interface SessionSpend {
 const DAILY_LIMIT_USD = 10;
 const WARNING_THRESHOLD_USD = 8;
 
-// Claude 3.5 Haiku via OpenRouter.
-const INPUT_COST_PER_1K_USD = 0.0008;
-const OUTPUT_COST_PER_1K_USD = 0.004;
+// Per-1K-token USD pricing keyed by full OpenRouter model ID.
+// Source: openrouter.ai/models — must be updated when adding a model to
+// `MODEL_ALIASES` in `server/aiModel.ts`. Unknown models fall back to
+// FALLBACK_PRICING (Sonnet 4 rates) so we never under-charge.
+const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  "anthropic/claude-3.5-haiku": { input: 0.0008, output: 0.004 },
+  "anthropic/claude-sonnet-4": { input: 0.003, output: 0.015 },
+};
+
+// Safe over-estimate for unmapped models. If we forget to add a new model
+// above, we'd rather over-count than under-count and quietly blow the cap.
+const FALLBACK_PRICING = { input: 0.003, output: 0.015 };
+
+const pricingFor = (model: string) => MODEL_PRICING[model] ?? FALLBACK_PRICING;
 
 // Convert dollar cost to integer micro-dollars for safe atomic accumulation in
 // Postgres. Avoids floating-point drift when many small charges add up.
@@ -50,11 +61,9 @@ class SpendTracker {
   // totals come from Postgres.
   private sessionSpends = new Map<string, SessionSpend>();
 
-  private calculateCost(usage: TokenUsage): number {
-    return (
-      (usage.promptTokens / 1000) * INPUT_COST_PER_1K_USD +
-      (usage.completionTokens / 1000) * OUTPUT_COST_PER_1K_USD
-    );
+  private calculateCost(usage: TokenUsage, model: string): number {
+    const { input, output } = pricingFor(model);
+    return (usage.promptTokens / 1000) * input + (usage.completionTokens / 1000) * output;
   }
 
   private async getDailyTotals(): Promise<DailyTotals> {
@@ -116,15 +125,17 @@ class SpendTracker {
       };
     }
 
+    // Remaining-request estimate uses fallback pricing so the number is
+    // conservative when the active model is more expensive than Haiku.
     const remaining = DAILY_LIMIT_USD - today.totalCost;
-    const estimatedCostPerRequest = (1000 / 1000) * INPUT_COST_PER_1K_USD + (1000 / 1000) * OUTPUT_COST_PER_1K_USD;
+    const estimatedCostPerRequest = FALLBACK_PRICING.input + FALLBACK_PRICING.output;
     return {
       allowed: true,
       remaining: Math.floor(remaining / estimatedCostPerRequest),
     };
   }
 
-  async trackRequest(sessionId?: string, usage?: TokenUsage): Promise<void> {
+  async trackRequest(sessionId: string | undefined, usage: TokenUsage | undefined, model: string): Promise<void> {
     const tokenUsage: TokenUsage = usage ?? (() => {
       // Fallback estimate when OpenRouter doesn't return a usage block (rare).
       // Keeps the spend cap accurate enough that runaway costs are still capped.
@@ -132,7 +143,7 @@ class SpendTracker {
       return { promptTokens: 1500, completionTokens: 500, totalTokens: 2000 };
     })();
 
-    const cost = this.calculateCost(tokenUsage);
+    const cost = this.calculateCost(tokenUsage, model);
     const costMicros = dollarsToMicros(cost);
     const date = todayKey();
 
@@ -179,7 +190,7 @@ class SpendTracker {
     const today = await this.getDailyTotals();
     if (process.env.NODE_ENV !== "production") {
       console.log(
-        `[SpendTracker] Request tracked. Tokens: ${tokenUsage.promptTokens}+${tokenUsage.completionTokens}=${
+        `[SpendTracker] Request tracked. Model: ${model}, Tokens: ${tokenUsage.promptTokens}+${tokenUsage.completionTokens}=${
           tokenUsage.promptTokens + tokenUsage.completionTokens
         }, Cost: $${cost.toFixed(6)}, Today: $${today.totalCost.toFixed(4)} (${today.requestCount} requests)`
       );

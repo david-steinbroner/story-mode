@@ -1,8 +1,8 @@
 # Story Mode — API, Rate Limits, & Cost
 
-> **TL;DR (read this first):** AI is **Claude 3.5 Haiku via OpenRouter**, ~**$0.003 per page** (short story ~$0.09, novel ~$0.35, epic ~$0.88). **Rate limits:** 240 AI calls/hr, 1000 general/hr, both keyed by `sessionId`, Postgres-backed since v1.3.0. **Daily spend cap: $10** (hard ceiling, warns at $8). Max tokens 2000 per AI call. **Retry budget: 2 attempts max** — cap shared between parse-failure retries and Chunk B quality-validator retries (stall / fake choices / final-page breach). Realistic post-Chunk-A retry rate 5–15%, adding +$0.005 to +$0.015 per story. API responses use `{success, data}` / `{success: false, error}` shape. **Source of truth for current numbers:** `server/rateLimit.ts`, `server/spendTracker.ts`, `server/aiService.ts`, `server/aiValidators.ts`.
+> **TL;DR (read this first):** Two models in rotation via OpenRouter — page generation is whichever the admin toggle (`app_config.active_model`) points at (today **Claude Sonnet 4**, ~$0.01 per page), rolling summaries always run on **Claude 3.5 Haiku** for cost (~$0.001 per summary). Per-call cost is computed from a per-model `MODEL_PRICING` map in `server/spendTracker.ts`, so the cost column is correct even when the admin flips models mid-day. Sonnet-era short story ~$0.30, novel ~$1.10, epic ~$2.75. **Rate limits:** 240 AI calls/hr, 1000 general/hr, both keyed by `sessionId`, Postgres-backed since v1.3.0. **Daily spend cap: $10** (hard ceiling, warns at $8). Max tokens 2000 per AI call. **Retry budget: 2 attempts max** — cap shared between parse-failure retries and Chunk B quality-validator retries (stall / fake choices / final-page breach). API responses use `{success, data}` / `{success: false, error}` shape. **Source of truth for current numbers:** `server/rateLimit.ts`, `server/spendTracker.ts`, `server/aiService.ts`, `server/aiValidators.ts`, `server/aiModel.ts`.
 >
-> *Last updated: 2026-05-14 · Maintenance rule at the bottom.*
+> *Last updated: 2026-05-17 · Maintenance rule at the bottom.*
 
 ---
 
@@ -11,48 +11,58 @@
 | Field | Value | Where configured |
 |---|---|---|
 | Provider | OpenRouter | `server/aiService.ts`, `server/summaryService.ts` |
-| Model | `anthropic/claude-3.5-haiku` | Same files (literal string in `chat.completions.create`) |
+| Page-generation model | Admin toggle (`app_config.active_model`) — today: `anthropic/claude-sonnet-4` | `server/aiModel.ts → resolveModel()` |
+| Summary model (hardcoded) | `anthropic/claude-3.5-haiku` | `server/summaryService.ts → SUMMARY_MODEL` |
+| Surprise-me model (hardcoded) | `anthropic/claude-3.5-haiku` | `server/routes.ts` (in `/api/story/surprise-me`) |
 | Per-call max tokens | **2000** | `aiService.ts → generateResponse()` |
 | Response format | `{ type: "json_object" }` | Same |
 | Retry budget on parse failure | **2 retries** (3 total attempts), 150ms delay between | `generateResponse()` |
 | Em-dash post-processing | `, ` substitution | `generateResponse()` |
 
-History: started on Claude 3.5 Haiku → switched to Mistral Small Creative → switched to DeepSeek V3 → reverted to Haiku (commit `2621f8c`, *"feat: revert to Claude 3.5 Haiku for better writing quality"*). See `docs/MILESTONES.md` for the swap rationale.
+History: Haiku 3.5 was the default through v1.8.x; v1.9.0 added the admin runtime model toggle; v1.9.8 (this rev) flipped page-generation to Sonnet 4 as the active production model and made cost tracking per-call model-aware (was hardcoded Haiku constants before — see audit on 2026-05-17). See `docs/MILESTONES.md` for full swap rationale.
 
 ---
 
-## Per-page cost math
+## Per-call cost math
 
-Token rates from Anthropic via OpenRouter (defined in `server/spendTracker.ts`):
+Pricing is a per-model map keyed by full OpenRouter model ID, defined in `server/spendTracker.ts → MODEL_PRICING`:
 
-- **Input:** $0.0008 per 1K tokens
-- **Output:** $0.004 per 1K tokens
+| Model | Input ($/1K) | Output ($/1K) |
+|---|---|---|
+| `anthropic/claude-3.5-haiku` | $0.0008 | $0.004 |
+| `anthropic/claude-sonnet-4` | $0.003 | $0.015 |
 
-A typical page turn:
+Unknown models fall back to Sonnet 4 rates (`FALLBACK_PRICING`) so we never silently under-charge.
+
+A typical page turn at Sonnet 4 rates:
 - Input ~1,000–2,500 tokens (system prompt + recent messages + rolling summary + character context)
 - Output ~300–500 tokens (80–140 words narrative + JSON wrapper + choices)
-- **Per-page average: ~$0.003** (range $0.002–$0.004 depending on how deep into the story)
+- **Per-page average: ~$0.011** at Sonnet 4 (was ~$0.003 on Haiku 3.5)
 
-## Per-story cost estimates
+> **Caveat — prompt caching not yet captured.** OpenRouter passes through Anthropic's prompt-cache discount automatically: cached input tokens cost ~10% of the base rate. The tracker currently treats all input tokens as uncached, so its cost numbers run *higher* than the actual OpenRouter bill. This is the safer direction (over-counting against the daily cap) but means dashboard numbers will drift over real OpenRouter usage. Capturing `cache_read_input_tokens` from the API response is tracked as a follow-up.
 
-Includes rolling summary calls every 10 pages (~$0.005 each):
+## Per-story cost estimates (Sonnet 4 + Haiku summaries)
 
-| Length | Pages | All-in cost |
-|---|---|---|
-| Short Story | 25 | **~$0.09** |
-| Novella | 50 | ~$0.18 |
-| Novel | 100 | ~$0.35 |
-| Epic | 250 | ~$0.88 |
+Page generation runs on Sonnet 4; rolling summary calls every 10 pages run on Haiku 3.5 (~$0.001 each):
 
-Plus ~$0.0005 per "Surprise me" call (90-token output).
+| Length | Pages | All-in cost (Sonnet 4) | For reference: Haiku 3.5 |
+|---|---|---|---|
+| Short Story | 25 | **~$0.30** | ~$0.09 |
+| Novella | 50 | ~$0.55 | ~$0.18 |
+| Novel | 100 | ~$1.10 | ~$0.35 |
+| Epic | 250 | ~$2.75 | ~$0.88 |
 
-### Capacity by credit balance
+Plus ~$0.0005 per "Surprise me" call (90-token Haiku output — unchanged by the page-model toggle).
+
+### Capacity by credit balance (page-gen on Sonnet 4)
 
 | OpenRouter credit | Short stories | Novellas | Novels | Epics |
 |---|---|---|---|---|
-| $50 | ~550 | ~275 | ~140 | ~55 |
-| $200 | ~2,200 | ~1,100 | ~570 | ~225 |
-| $500 | ~5,500 | ~2,750 | ~1,425 | ~565 |
+| $50 | ~165 | ~90 | ~45 | ~18 |
+| $200 | ~660 | ~360 | ~180 | ~72 |
+| $500 | ~1,650 | ~900 | ~450 | ~180 |
+
+Flip the toggle back to Haiku to roughly 3.75× these counts.
 
 ---
 
@@ -188,5 +198,6 @@ Math floor when we do monetize: **a 100-page novel costs ~$0.35 in API**. Pricin
 
 - **Update when:** rate limits, max-tokens, model, daily cap, or pricing tier values change. Same commit as the code change. Bump "Last updated" below.
 - **TL;DR rule:** current-state-only — describes what the cost/limits *are*, not what changed when. Rewrite the top block whenever model swaps, rate-limit ceilings move materially, or the daily cap changes. Never a running log of rate-limit tweaks (those go in `docs/MILESTONES.md`).
-- **Source of truth conflicts:** code (`rateLimit.ts`, `spendTracker.ts`, `aiService.ts`) wins. If this doc disagrees, update this doc.
-- **Last updated:** 2026-05-14
+- **Adding a model:** update `MODEL_PRICING` in `server/spendTracker.ts` AND `MODEL_ALIASES` in `server/aiModel.ts` AND the model table above. Cost will be wrong otherwise.
+- **Source of truth conflicts:** code (`rateLimit.ts`, `spendTracker.ts`, `aiService.ts`, `aiModel.ts`) wins. If this doc disagrees, update this doc.
+- **Last updated:** 2026-05-17

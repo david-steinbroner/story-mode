@@ -33,6 +33,10 @@ export interface AIResponse {
   storyTitle?: string; // AI-generated title for new stories (2-5 words)
   error?: 'parse_failure' | 'api_error' | 'network_error'; // Error flag for tracking
   tokenUsage?: TokenUsage;
+  // Full OpenRouter model ID that actually answered this request. The route
+  // hands this to spendTracker so cost math uses the right per-1K rates,
+  // even when admin toggles or dev headers change the model mid-session.
+  modelUsed?: string;
   actions?: {
     updateQuest?: { id: string; updates: Partial<Quest> };
     createQuest?: Omit<Quest, 'id'>;
@@ -425,6 +429,9 @@ Use the • character exactly. No "Option A" labels.`;
 
   async generateResponse(sessionId: string, playerMessage: string, storyId?: string, retryAttempt: number = 0, retryHint: string = '', modelOverride?: string): Promise<AIResponse> {
     const startTime = Date.now();
+    // Resolved up-front so every return path (success, parse-failure fallback,
+    // outer-catch network error) can attribute cost to the correct model.
+    const modelUsed = resolveModel(modelOverride);
 
     try {
       // Validate API key exists
@@ -520,7 +527,7 @@ Example Quest Actions:
       ];
 
       const response = await openai.chat.completions.create({
-        model: resolveModel(modelOverride),
+        model: modelUsed,
         messages,
         response_format: { type: "json_object" },
         // 80-140 words of narrative + JSON wrapper + choices + actions block
@@ -643,6 +650,8 @@ Example Quest Actions:
             sender: 'dm',
             senderName: null,
             actions: undefined,
+            tokenUsage,
+            modelUsed,
             error: 'parse_failure' // Flag for frontend to detect this is an error
           };
         }
@@ -705,6 +714,7 @@ Example Quest Actions:
         senderName: aiResponse.sender === 'npc' ? aiResponse.senderName : null,
         storyTitle: aiResponse.storyTitle || undefined,
         tokenUsage,
+        modelUsed,
         actions: aiResponse.actions || undefined
       };
 
@@ -779,13 +789,13 @@ Example Quest Actions:
       console.error('[AI Service] ⚠️ RETURNING FALLBACK RESPONSE DUE TO ERROR:', errorType);
 
       // Provide contextual fallback based on player message
-      const contextualResponse = this.generateFallbackResponse(playerMessage, fallbackContent, errorType);
+      const contextualResponse = this.generateFallbackResponse(playerMessage, fallbackContent, errorType, modelUsed);
 
       return contextualResponse;
     }
   }
 
-  private generateFallbackResponse(playerMessage: string, errorMessage: string, errorType: 'api_error' | 'network_error' | 'parse_failure'): AIResponse {
+  private generateFallbackResponse(playerMessage: string, errorMessage: string, errorType: 'api_error' | 'network_error' | 'parse_failure', modelUsed: string): AIResponse {
     const lowerMessage = playerMessage.toLowerCase();
 
     // Analyze the player's message to provide contextual responses
@@ -794,6 +804,7 @@ Example Quest Actions:
         content: `${errorMessage} The tension in your story builds...`,
         sender: 'dm',
         senderName: null,
+        modelUsed,
         error: errorType
       };
     } else if (lowerMessage.includes('explore') || lowerMessage.includes('look') || lowerMessage.includes('search')) {
@@ -801,6 +812,7 @@ Example Quest Actions:
         content: `${errorMessage} You take in your surroundings, noticing new details...`,
         sender: 'dm',
         senderName: null,
+        modelUsed,
         error: errorType
       };
     } else if (lowerMessage.includes('talk') || lowerMessage.includes('speak') || lowerMessage.includes('conversation')) {
@@ -808,6 +820,7 @@ Example Quest Actions:
         content: `${errorMessage} The characters around you have more to say...`,
         sender: 'dm',
         senderName: null,
+        modelUsed,
         error: errorType
       };
     } else if (lowerMessage.includes('quest') || lowerMessage.includes('mission') || lowerMessage.includes('task')) {
@@ -815,6 +828,7 @@ Example Quest Actions:
         content: `${errorMessage} You reflect on what you need to do next...`,
         sender: 'dm',
         senderName: null,
+        modelUsed,
         error: errorType
       };
     } else if (lowerMessage.includes('rest') || lowerMessage.includes('sleep') || lowerMessage.includes('heal')) {
@@ -822,6 +836,7 @@ Example Quest Actions:
         content: `${errorMessage} You take a moment to catch your breath...`,
         sender: 'dm',
         senderName: null,
+        modelUsed,
         error: errorType
       };
     } else {
@@ -829,6 +844,7 @@ Example Quest Actions:
         content: `${errorMessage} The story continues. What would you like to do next?`,
         sender: 'dm',
         senderName: null,
+        modelUsed,
         error: errorType
       };
     }

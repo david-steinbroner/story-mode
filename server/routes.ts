@@ -588,7 +588,7 @@ IMPORTANT: Include a "storyTitle" field in your JSON response. Title rules:
 
       // Track token spend
       if (aiResponse.tokenUsage) {
-        await spendTracker.trackRequest(sessionId, aiResponse.tokenUsage);
+        await spendTracker.trackRequest(sessionId, aiResponse.tokenUsage, aiResponse.modelUsed ?? resolveModel(testModel));
       }
 
       // Save the AI's first page and apply any actions (quests, items, etc.).
@@ -732,13 +732,15 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
 
       const raw = response.choices?.[0]?.message?.content?.trim() || "";
 
-      // Track token usage
+      // Track token usage. Surprise-me always runs on Haiku 3.5 (hardcoded
+      // in the openai.chat.completions.create call above), so we attribute
+      // cost to that model regardless of any admin override.
       if (response.usage) {
         await spendTracker.trackRequest(sessionId, {
           promptTokens: response.usage.prompt_tokens,
           completionTokens: response.usage.completion_tokens,
           totalTokens: response.usage.total_tokens,
-        });
+        }, "anthropic/claude-3.5-haiku");
       }
 
       if (count === 1) {
@@ -1113,7 +1115,7 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
       const aiResponse = await aiService.generateResponse(sessionId, message, storyId, 0, '', testModel);
 
       // Track request with actual token usage
-      await spendTracker.trackRequest(sessionId, aiResponse.tokenUsage);
+      await spendTracker.trackRequest(sessionId, aiResponse.tokenUsage, aiResponse.modelUsed ?? resolveModel(testModel));
 
       // Per-call model attribution (v1.9.0) — admin can later aggregate
       // event_log to see Haiku vs Sonnet split over a date range.
@@ -1203,7 +1205,7 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
       const aiResponse = await aiService.generateResponse(sessionId, actionMessage, storyId, 0, '', testModel);
 
       // Track request with actual token usage
-      await spendTracker.trackRequest(sessionId, aiResponse.tokenUsage);
+      await spendTracker.trackRequest(sessionId, aiResponse.tokenUsage, aiResponse.modelUsed ?? resolveModel(testModel));
 
       logEvent(sessionId, "ai_call", {
         model: resolveModel(testModel),

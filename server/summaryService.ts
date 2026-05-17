@@ -28,6 +28,12 @@ export interface SummaryResult {
 // Constants for summary generation
 const SUMMARY_TARGET_WORDS = 400; // Target 300-500 words
 
+// Summaries always run on Haiku 3.5 regardless of the admin model toggle.
+// Summarization is a low-stakes condensation task where Haiku is "good enough"
+// and ~3.75× cheaper than Sonnet 4. Hardcoded here, then passed to
+// spendTracker so cost math attributes to the right model.
+const SUMMARY_MODEL = "anthropic/claude-3.5-haiku";
+
 /**
  * Generate a rolling story summary from a batch of messages.
  *
@@ -73,7 +79,7 @@ export async function generateStorySummary(
     const userPrompt = buildUserPrompt(conversationText, previousSummary);
 
     const response = await openai.chat.completions.create({
-      model: "anthropic/claude-3.5-haiku",
+      model: SUMMARY_MODEL,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
@@ -90,7 +96,7 @@ export async function generateStorySummary(
       : undefined;
 
     // Track the request cost (spendTracker uses internal fallback if tokenUsage is undefined)
-    await spendTracker.trackRequest(sessionId, tokenUsage);
+    await spendTracker.trackRequest(sessionId, tokenUsage, SUMMARY_MODEL);
 
     // Validate response
     if (!response.choices || response.choices.length === 0) {
