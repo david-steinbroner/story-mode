@@ -11,7 +11,7 @@ Live at **[mystorymode.com](https://mystorymode.com)**.
 | Frontend | React 18, TypeScript, Tailwind, shadcn/ui, TanStack Query |
 | Server | Express, Node 20 |
 | Database | PostgreSQL (Supabase), Drizzle ORM |
-| AI | Claude 3.5 Haiku via OpenRouter |
+| AI | Anthropic via OpenRouter — Sonnet 4 for page generation (admin-toggleable to Haiku 3.5 from `/admin`), Haiku 3.5 for summaries and surprise-me. Prompt caching active on page-gen (10× discount on cached input). Per-call cost math in `server/spendTracker.ts → MODEL_PRICING`. |
 | Analytics | PostHog (client) + `event_log` table (server, ground truth) |
 | Errors | Sentry (client + server) |
 | Deploy | Render (web service + managed Postgres), auto-deploy from `main` |

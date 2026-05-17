@@ -1,8 +1,8 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.9.7**. Milestones 1–5 shipped pre-launch. **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; AI-powered intent matcher + `POST /api/guide/chat` endpoint still TODO. **In progress:** 2026-05-15 audit shipping in risk-isolated PRs (5 of 8 done; full plan and remaining work in `docs/specs/audit-2026-05-15.md`). Version-by-version detail in entries below.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.10.0**. Milestones 1–5 shipped pre-launch. **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; AI-powered intent matcher + `POST /api/guide/chat` endpoint still TODO. **Recent lane (2026-05-17):** cost-audit followup landed v1.9.8 → v1.10.0 — per-model pricing, helper-call tracking, and live Anthropic prompt caching with dashboard savings panel. **Also in progress:** 2026-05-15 security/correctness audit shipping in risk-isolated PRs (5 of 8 done; full plan and remaining work in `docs/specs/audit-2026-05-15.md`). Version-by-version detail in entries below.
 >
-> *Last updated: 2026-05-15.*
+> *Last updated: 2026-05-17.*
 
 ---
 
@@ -39,6 +39,50 @@ The original Milestone 6 plan called for a slide-up `GuideChat.tsx` modal trigge
 ---
 
 ## Completed Milestones
+
+### Cost-tracking audit followup: prompt caching capture + dashboard savings panel (2026-05-17) — v1.10.0 ✅
+
+Third and largest of three back-to-back cost-tracking PRs (v1.9.8 → v1.9.9 → v1.10.0). Wires Anthropic ephemeral prompt caching into the page-generation path via OpenRouter and surfaces cache reads/writes/savings on the admin dashboard.
+
+**Why:** v1.9.8's per-model pricing fix made the dashboard cost match real OpenRouter billing — except cache-discounted billing was still being treated as full-rate input. With Sonnet 4's ~1500-token system prompt re-sent on every page-turn, Anthropic's 10× cached-read discount is worth ~$0.008 saved per cache-hit page. Capturing the data also lets us see whether the cache is actually activating (a real risk — minimum prefix is 2048 tokens, and the cache key includes the per-story world description).
+
+**Schema (`migrations/011_daily_spend_cache_columns.sql`).** Adds `total_cached_tokens` and `total_cache_write_tokens` to `daily_spend` (both `integer NOT NULL DEFAULT 0`). Applied directly via the `postgres` driver since drizzle-kit's migration runner isn't wired up here. Existing rows back-fill to 0/0, which is correct historically — caching wasn't active before this rev. Mirrored into `shared/schema.ts` as `totalCachedTokens` / `totalCacheWriteTokens`.
+
+**Cost math (`server/spendTracker.ts`).** `TokenUsage` extended with optional `cachedTokens` + `cacheWriteTokens` (subsets of `promptTokens`, both default 0 when the provider doesn't return cache stats). `calculateCost` is now a 4-way split: `uncached × base + cached × 0.10 + write × 1.25 + completion × output`. `trackRequest` atomically upserts the two new columns alongside the existing tallies. `getDailyTotals` / `getAllTimeTotals` return the new fields. `getAdminStats` adds `cacheSavingsToday` / `cacheSavingsAllTime` (estimated saved $ vs. uncached billing at Sonnet 4 input rate, since Sonnet is where ~all cache activity originates).
+
+**Request shape (`server/aiService.ts`).** `generateResponse` now sends the system message as a 2-block structured content array — block 1 = `getSystemPrompt(gameState)` with `cache_control: { type: "ephemeral" }`, block 2 = `momentumDirective + retryHint` (only included when non-empty, no cache marker). The OpenAI SDK types don't model `cache_control`, so the messages array is cast to bypass the type check; OpenRouter accepts and forwards the Anthropic-style shape verbatim. New `extractTokenUsage(usage)` helper (exported from aiService) normalizes the response shape including `prompt_tokens_details.cached_tokens` / `cache_write_tokens` defensively — used by aiService, summaryService, surprise-me, and the three quest/world helpers so cache stats are captured consistently everywhere.
+
+**Endpoint (`/api/admin/spend`).** Response now includes `todaysTokens.cached` / `cacheWrite`, `allTimeTokens.cached` / `cacheWrite`, plus `cacheSavingsToday` and `cacheSavingsAllTime`. Backwards-compatible for any consumer that ignores the new fields.
+
+**Dashboard (`AdminDashboard.tsx`).** New "Prompt Caching" section between Token Usage and AI Model. Four cards: Cache reads today, Cache writes today, Savings today, Savings all-time. New `CacheCard` component mirroring `QualityCard`'s shape.
+
+**Watchouts captured in `docs/api-and-cost.md`:**
+- First page of every new story = cache miss + write (1.25× the input cost of an uncached page). Subsequent pages recoup the premium.
+- 5-min TTL — > 5 min gap and the next page is a fresh write.
+- Pacing-phase transitions inside a story change the cached prefix and force a new write.
+- If `prompt_tokens_details` is absent the cost math falls back to fully-uncached billing (safer direction).
+
+**Documented for the next session of this lane:** `getSystemPrompt()` could be re-structured so the truly stable parts (voice, non-negotiables, banned patterns, choice format) sit before the cache marker and the per-story world description sits after — that would unlock cross-story cache hits. Deferred until we see real cache activation data in prod.
+
+### Cost-tracking audit followup: trackRequest on 3 untracked AI helpers (2026-05-17) — v1.9.9 ✅
+
+Mid-PR of the three. Closes the gap that `generateFollowUpQuest`, `generateSideQuest`, and `generateWorldFromCharacter` in `server/aiService.ts` were all making paid OpenRouter calls without calling `spendTracker.trackRequest` — so world-generation, side-quest creation, and follow-up-quest spend was completely invisible to the dashboard and didn't count against the daily cap.
+
+**Pattern matches summaryService.** Each helper now: resolves the model once into a local `modelUsed`, passes that to the chat-completions call, then immediately after the response returns (before parsing — the API has already billed us either way) calls `spendTracker.trackRequest(sessionId, extractTokenUsage(response.usage), modelUsed)`. Two of the three helpers didn't previously take a `sessionId`, so the signatures got the new required arg and the two callers (`applyAIResponse` for followup, `POST /api/character` for world-gen) updated to pass it through.
+
+**No backfill.** Historical helper-call spend is gone — only calls from this rev forward are tracked. OpenRouter's own usage page has the true historical bill if we ever need to reconcile.
+
+### Cost-tracking audit: per-model pricing + Sonnet 4 backfill (2026-05-17) — v1.9.8 ✅
+
+First of three back-to-back cost-tracking PRs. Found and fixed via the admin-dashboard validation request — pricing constants in `server/spendTracker.ts` were hardcoded to Haiku 3.5 ($0.0008 / $0.004 per 1K tokens), so every page-gen call after the 2026-05-15 Sonnet toggle was being under-counted by ~3.75×. Math verified against `daily_spend` rows: dashboard said all-time cost $0.8658, true cost ~$1.09 (matched the user's reported OpenRouter balance drop from ~$9 to ~$7.90).
+
+**Pricing now per-model.** Replaced the two constants with a `MODEL_PRICING: Record<string, { input, output }>` map keyed by full OpenRouter model ID. Two entries today (`anthropic/claude-3.5-haiku`, `anthropic/claude-sonnet-4`); unknown models fall back to `FALLBACK_PRICING` (Sonnet 4 rates) so we never silently under-charge. `calculateCost(usage, model)` and `trackRequest(sessionId, usage, model)` both gained a required `model` param.
+
+**Model surfacing through aiService.** `AIResponse` got a new `modelUsed?: string` field. `generateResponse` hoists `modelUsed = resolveModel(modelOverride)` to the top of the function so every return path (success, parse-failure fallback, outer-catch network error) carries the right attribution. All four `spendTracker.trackRequest` call sites in `server/routes.ts` (`/api/story/new`, `/api/story/surprise-me`, `/api/ai/chat`, `/api/ai/quick-action`) pass `aiResponse.modelUsed ?? resolveModel(testModel)`. `summaryService` extracted a `SUMMARY_MODEL` constant (still Haiku — summaries don't need Sonnet quality) and passes it through. Surprise-me hardcodes Haiku attribution since its `openai.chat.completions.create` call also hardcodes the model literal.
+
+**Backfill (`daily_spend` rows 2026-05-15 → 2026-05-17).** Repriced the 33 Sonnet-era requests at Sonnet 4 rates via `UPDATE daily_spend SET total_cost_micro_dollars = total_prompt_tokens * 3 + total_completion_tokens * 15 WHERE date >= '2026-05-15'`. All-time cost went $0.8658 → $1.0857. Caveat: 12 of the 27 calls on 5/15 happened *before* the Sonnet toggle fired at 04:36 UTC, so they were actually Haiku but got backfilled as Sonnet — that row over-estimates by ~$0.04. PM opted into the safer over-estimate direction.
+
+**Doc rewrite.** `docs/api-and-cost.md` TL;DR, model table, per-page math (~$0.011 at Sonnet 4 uncached), per-story cost table, capacity table — all rewritten for Sonnet 4 + the per-model pricing map. Added a maintenance rule: adding a model requires updating `MODEL_PRICING` in `spendTracker.ts` AND `MODEL_ALIASES` in `aiModel.ts` AND the model table in this doc, or cost will be wrong.
 
 ### Audit 2026-05-15 PR-A4: helmet + Content Security Policy in report-only mode (2026-05-15) — v1.9.7 ✅
 

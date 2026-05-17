@@ -1,6 +1,6 @@
 # Story Mode — API, Rate Limits, & Cost
 
-> **TL;DR (read this first):** Two models in rotation via OpenRouter — page generation is whichever the admin toggle (`app_config.active_model`) points at (today **Claude Sonnet 4**, ~$0.01 per page), rolling summaries always run on **Claude 3.5 Haiku** for cost (~$0.001 per summary). Per-call cost is computed from a per-model `MODEL_PRICING` map in `server/spendTracker.ts`, so the cost column is correct even when the admin flips models mid-day. Sonnet-era short story ~$0.30, novel ~$1.10, epic ~$2.75. **Rate limits:** 240 AI calls/hr, 1000 general/hr, both keyed by `sessionId`, Postgres-backed since v1.3.0. **Daily spend cap: $10** (hard ceiling, warns at $8). Max tokens 2000 per AI call. **Retry budget: 2 attempts max** — cap shared between parse-failure retries and Chunk B quality-validator retries (stall / fake choices / final-page breach). API responses use `{success, data}` / `{success: false, error}` shape. **Source of truth for current numbers:** `server/rateLimit.ts`, `server/spendTracker.ts`, `server/aiService.ts`, `server/aiValidators.ts`, `server/aiModel.ts`.
+> **TL;DR (read this first):** Two models in rotation via OpenRouter — page generation is whichever the admin toggle (`app_config.active_model`) points at (today **Claude Sonnet 4**, ~$0.011 per page uncached, less once cache reads kick in), rolling summaries and surprise-me always run on **Claude 3.5 Haiku** for cost (~$0.001 per call). Per-call cost is computed from a per-model `MODEL_PRICING` map in `server/spendTracker.ts`, so the cost column is correct even when the admin flips models mid-day. **Prompt caching is live on page-gen calls** (v1.10.0) — cached input tokens billed at 10% of base rate via Anthropic's ephemeral 5-min cache through OpenRouter; daily savings surfaced on the admin dashboard. Sonnet-era short story ~$0.30, novel ~$1.10, epic ~$2.75 before cache savings. **Every AI call path tracks spend** (v1.9.9 closed the followup/sidequest/world-gen gap). **Rate limits:** 240 AI calls/hr, 1000 general/hr, both keyed by `sessionId`, Postgres-backed since v1.3.0. **Daily spend cap: $10** (hard ceiling, warns at $8). Max tokens 2000 per AI call. **Retry budget: 2 attempts max** — cap shared between parse-failure retries and Chunk B quality-validator retries (stall / fake choices / final-page breach). API responses use `{success, data}` / `{success: false, error}` shape. **Source of truth for current numbers:** `server/rateLimit.ts`, `server/spendTracker.ts`, `server/aiService.ts`, `server/aiValidators.ts`, `server/aiModel.ts`.
 >
 > *Last updated: 2026-05-17 · Maintenance rule at the bottom.*
 
@@ -19,7 +19,7 @@
 | Retry budget on parse failure | **2 retries** (3 total attempts), 150ms delay between | `generateResponse()` |
 | Em-dash post-processing | `, ` substitution | `generateResponse()` |
 
-History: Haiku 3.5 was the default through v1.8.x; v1.9.0 added the admin runtime model toggle; v1.9.8 (this rev) flipped page-generation to Sonnet 4 as the active production model and made cost tracking per-call model-aware (was hardcoded Haiku constants before — see audit on 2026-05-17). See `docs/MILESTONES.md` for full swap rationale.
+History: Haiku 3.5 was the default through v1.8.x; v1.9.0 added the admin runtime model toggle; v1.9.8 flipped page-generation to Sonnet 4 as the active production model and made cost tracking per-call model-aware (was hardcoded Haiku constants before); v1.9.9 closed the helper-call tracking gap; v1.10.0 enabled Anthropic prompt caching on page-gen. See `docs/MILESTONES.md` for the cost-audit lane that landed those four versions.
 
 ---
 
@@ -34,12 +34,47 @@ Pricing is a per-model map keyed by full OpenRouter model ID, defined in `server
 
 Unknown models fall back to Sonnet 4 rates (`FALLBACK_PRICING`) so we never silently under-charge.
 
-A typical page turn at Sonnet 4 rates:
+A typical page turn at Sonnet 4 rates (without caching):
 - Input ~1,000–2,500 tokens (system prompt + recent messages + rolling summary + character context)
 - Output ~300–500 tokens (80–140 words narrative + JSON wrapper + choices)
-- **Per-page average: ~$0.011** at Sonnet 4 (was ~$0.003 on Haiku 3.5)
+- **Per-page average: ~$0.011** at Sonnet 4 uncached (was ~$0.003 on Haiku 3.5)
 
-> **Caveat — prompt caching not yet captured.** OpenRouter passes through Anthropic's prompt-cache discount automatically: cached input tokens cost ~10% of the base rate. The tracker currently treats all input tokens as uncached, so its cost numbers run *higher* than the actual OpenRouter bill. This is the safer direction (over-counting against the daily cap) but means dashboard numbers will drift over real OpenRouter usage. Capturing `cache_read_input_tokens` from the API response is tracked as a follow-up.
+---
+
+## Prompt caching (v1.10.0)
+
+Anthropic ephemeral prompt caching is live on the page-generation path via OpenRouter. Where it applies:
+
+- **`generateResponse`** in `server/aiService.ts` — system message is a 2-block structured content array. Block 1 = `getSystemPrompt(gameState)` output with `cache_control: { type: "ephemeral" }`. Block 2 = the per-call `momentumDirective + retryHint` (only present when non-empty), unmarked. Cache hits when consecutive page-turns within a story share the same pacing phase (i.e. most of a story's body).
+- **Not applied** to summary calls, surprise-me, or the three quest/world helpers — their prompts are under Sonnet 4's 2048-token minimum so caching wouldn't activate anyway.
+
+Pricing multipliers (vs. base input rate, via OpenRouter passthrough):
+
+| Bucket | Multiplier | Sonnet 4 effective rate |
+|---|---|---|
+| Uncached input | 1.0× | $3.00 / M |
+| Cached read | **0.10×** | $0.30 / M |
+| Cache write (5-min TTL) | 1.25× | $3.75 / M |
+| Cache write (1-hour TTL) | 2.00× | (not used; 5-min default everywhere) |
+
+Cost formula in `spendTracker.calculateCost`:
+
+```
+uncached = prompt_tokens - cached_tokens - cache_write_tokens
+cost = uncached × input_rate
+     + cached_tokens   × input_rate × 0.10
+     + cache_write     × input_rate × 1.25
+     + completion      × output_rate
+```
+
+Captured per-day in `daily_spend.total_cached_tokens` and `daily_spend.total_cache_write_tokens` (migration `011_daily_spend_cache_columns.sql`). The admin dashboard's "Prompt Caching" section shows cache reads/writes today and estimated $ saved vs. uncached billing.
+
+**Watchouts:**
+- First page of any new story has zero cache benefit (cache miss + write at 1.25×). Subsequent pages in the same story within the 5-min TTL recoup with interest.
+- Pacing-phase transitions (setup → rising → escalation → climax → final) flip the system-prompt text and cause a fresh cache write at the boundary.
+- If `prompt_tokens_details` is absent from a response, `extractTokenUsage` defaults cached/write to 0 — cost math falls back to fully-uncached billing. Safer direction.
+
+---
 
 ## Per-story cost estimates (Sonnet 4 + Haiku summaries)
 
@@ -137,7 +172,7 @@ Primary API surface (server/routes.ts). All require `x-session-id` header except
 ### Admin (require `x-admin-key` matching `ADMIN_KEY` env var + valid `x-admin-totp` per `ADMIN_TOTP_SECRET`)
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/admin/spend` | Today + all-time spend stats. |
+| GET | `/api/admin/spend` | Today + all-time spend stats. Response shape (v1.10.0) includes `todaysTokens` / `allTimeTokens` with `prompt`, `completion`, `cached`, `cacheWrite` fields, plus `cacheSavingsToday` and `cacheSavingsAllTime` (estimated $ saved vs. uncached billing at Sonnet 4 input rate). |
 | GET | `/api/admin/sessions` | Per-session usage (in-memory, since-last-restart). |
 | GET | `/api/admin/recent-activity` | Last 20 `event_log` rows for support lookup. |
 | GET | `/api/admin/ai-quality` | 24h Chunk-B validator violation counts + page_turned denominator. |
