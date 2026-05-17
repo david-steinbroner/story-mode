@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.11.1**. Milestones 1–5 shipped pre-launch. **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; AI-powered intent matcher + `POST /api/guide/chat` endpoint still TODO. **Recent lane (2026-05-17):** cost-audit followup landed v1.9.8 → v1.10.0 (per-model pricing, helper-call tracking, Anthropic prompt caching with dashboard savings panel), followed by an ai-voice refinement at v1.11.0 (Rule #3 reframed as WHAT/HOW boundary, scene-change tax, verify/engage/refuse anti-example, hard word ceiling) and a same-day regression fix at v1.11.1 (missing-choices validator after Sonnet stopped emitting the choice block). **Also in progress:** 2026-05-15 security/correctness audit shipping in risk-isolated PRs (5 of 8 done; full plan and remaining work in `docs/specs/audit-2026-05-15.md`). Version-by-version detail in entries below.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.12.0**. Milestones 1–5 shipped pre-launch. **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; AI-powered intent matcher + `POST /api/guide/chat` endpoint still TODO. **Recent lane (2026-05-17):** cost-audit followup landed v1.9.8 → v1.10.0 (per-model pricing, helper-call tracking, Anthropic prompt caching with dashboard savings panel), then ai-voice refinement at v1.11.0 + missing-choices regression fix v1.11.1, then audit PR-D shipped as 3 commits (v1.11.4 lazy-loading, v1.11.5 messages pagination, v1.11.6 token-aware context pruning) and audit PR-B at v1.12.0 (items lane deleted, -974 lines). **2026-05-15 audit now 7 of 8 PRs shipped** — only PR-E (migration journal) remains, deferred to a separate session per spec advice. CSP follow-up: promote `reportOnly: false` after ~24h of clean reports.
 >
 > *Last updated: 2026-05-17.*
 
@@ -39,6 +39,57 @@ The original Milestone 6 plan called for a slide-up `GuideChat.tsx` modal trigge
 ---
 
 ## Completed Milestones
+
+### Audit 2026-05-15 PR-B: items lane deleted + chart.tsx + recharts (2026-05-17) — v1.12.0 ✅
+
+Closes findings #4 + #20 from the 2026-05-15 audit. The items lane has been write-only since launch: `applyAIResponse` writes rows via the AI's `giveItem` action, but the client invalidates `/api/items` without ever reading it and nothing surfaces items in UI. Per PM call, the cleaner move was delete now rather than leave dead code lying around.
+
+**Server cleanup:**
+- Deleted 5 `/api/items/*` routes (GET / GET :id / POST / PATCH :id / DELETE :id) plus the `updateItemSchema`.
+- Deleted the `giveItem` branch in `applyAIResponse` and the world-gen "starting items" wipe-and-recreate block in `POST /api/character`.
+- Removed `items` from `getGameContext` + `createContextPrompt` + the EQUIPPED prompt section. Removed `giveItem` from `AIResponse.actions`. Removed the `giveItem` JSON example, the `startingItems` field from `generateWorldFromCharacter` (prompt + return type + validation + fallback), and the "give items as narrative rewards" line from the system prompt.
+- Removed `getItems` / `getItem` / `createItem` / `updateItem` / `deleteItem` from `IStorage` and `DbStorage`. Kept the `items` table import and the direct-Drizzle cleanup paths in `clearAllAdventureData` so archived/deleted stories still purge their item rows.
+
+**Client cleanup:**
+- Removed `['/api/items']` invalidation in `App.tsx`.
+- Removed the `items` prop / debug-section / `itemCount` analytics from `ChatInterface`.
+- Deleted `client/src/components/ui/chart.tsx` (verified only consumer of `recharts`) and dropped `recharts` from `package.json`.
+
+**DB:** items table preserved (data not dropped). Historical rows survive in case the lane is ever revived; if not, a separate migration can drop the table later.
+
+**Net diff:** -974 lines (998 deletions, 24 additions). Closes 7 of 8 PRs from the 2026-05-15 audit lane — only PR-E (migration journal) remains.
+
+### Audit 2026-05-15 PR-D #37: token-aware context pruning (2026-05-17) — v1.11.6 ✅
+
+Closes audit finding #37 (a new Round 3 / brains-trust catch). The user-prompt's RECENT CONVERSATION block was bounded by message count (last 5) only; long descriptive pages could push that window past 5K tokens, driving up cost on Sonnet 4 uncached input and risking Render request timeouts on cold-start replays.
+
+Added a char-based token estimator (~4 chars/token; the standard approximation, accurate enough for a rarely-firing safety net) and `truncateMessagesByTokens` helper in `server/aiService.ts`. The window is now bounded by BOTH message count (5) AND token budget (4K); when the slice exceeds the budget, oldest messages drop until it fits. Always keeps at least one message (freshest turn). Logged in non-prod so we can see when truncation fires.
+
+**Why char-based vs js-tiktoken:** the spec recommended `js-tiktoken`, but that would add ~100KB of WASM for ~5% accuracy gain on a utility that fires rarely. Char-based is the standard approximation; we're not billing on these counts, just deciding when to prune.
+
+### Audit 2026-05-15 PR-D #23: messages pagination (2026-05-17) — v1.11.5 ✅
+
+Closes audit finding #23, promoted from "defer until usage data shows it matters" to ship-soon per Round 3's brains-trust framing: engagement scales payload, so highest-engagement readers (50-150 page stories) hit the mobile-render-cost cliff before they generate the data we were waiting for.
+
+**Server:** new `getMessagesBefore(sessionId, beforeCreatedAt, limit, storyId)` storage method (added to both `IStorage` and `DbStorage`). `GET /api/messages` handler now accepts `?before=<ISO timestamp>` cursor in addition to the existing `?limit=`. Returns the `limit` messages immediately older than the cursor, in chronological order.
+
+**Client:** `App.tsx` query now passes `?limit=50` on story enter (was: fetch all). New `loadOlderMessages` callback fetches `?before=<oldest.createdAt>&limit=50` and prepends results into the React Query cache via `setQueryData`. `ChatInterface` renders a "Load older messages" link at the top of the message list when `canLoadOlder` is true; auto-hides when a partial or empty batch indicates we've hit the start of the story.
+
+**Net effect:** worst-case payload on a 250-page epic drops from ~500 messages to ~50 on story enter. Most readers never see the link (their stories are short).
+
+### Audit 2026-05-15 PR-D #26/#27: lazy-load 3 components + bundle measurement (2026-05-17) — v1.11.4 ✅
+
+Closes audit findings #26 + #27. Vite's build was emitting a single 574 kB chunk (180 kB gzipped) with an explicit warning recommending dynamic imports + manualChunks.
+
+Wraps `AdminDashboard`, `ChatInterface`, and `NewStoryCreation` in `React.lazy()` + `<Suspense>` in `App.tsx`. `Bookshelf` stays eager (entry view, ships on every paint for non-admin routes). Each lazy component has a per-route Suspense fallback that matches the existing "Loading story..." pattern so visual jumps are small.
+
+**Bundle results:**
+- Before: 574 kB single chunk (180 kB gzipped)
+- After: 535 kB main + 9-17 kB per lazy chunk (170 kB gzipped main)
+
+A reader who never visits `/admin` saves ~14 kB. A bookshelf-only visitor saves the full ~40 kB of `ChatInterface` + `NewStoryCreation` + `AdminDashboard`. Diminishing returns past this point are in vendor splitting (`manualChunks`) — tracked as audit finding #28, still deferred.
+
+**Bundle visualizer skipped:** the spec recommended running `npx vite-bundle-visualizer` first as gating measurement. Vite's own build warning surfaced the relevant signal (single chunk > 500 kB), and the lazy-load targets were obvious from file sizes (`Bookshelf.tsx` 1045 lines, `ChatInterface.tsx` 888, `AdminDashboard.tsx` 587, `NewStoryCreation.tsx` 510). Skipped the npx install to save session time; can run later if vendor-splitting becomes a priority.
 
 ### Fix: Rule #3 example regression caused Sonnet to omit choices (2026-05-17) — v1.11.1 ✅
 
