@@ -963,7 +963,7 @@ export default function Bookshelf({
         <div ref={qaEndRef} />
 
         {/* Version */}
-        <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.12.1</p>
+        <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.12.2</p>
       </div>
 
       {/* Sticky drawer — same peek/expand pattern as the in-story drawer.

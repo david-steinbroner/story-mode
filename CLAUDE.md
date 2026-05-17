@@ -147,7 +147,8 @@ Most recently shipped + what's queued → `docs/MILESTONES.md` TL;DR and `docs/R
 
 | File | What it does |
 |---|---|
-| `shared/schema.ts` | DB schema (Drizzle + Zod). Tables: `gameState`, `messages`, `characters`, `quests`, `items`, `storySummaries`, `dailySpend`, `storyCreationLocks`, `eventLog`, `appConfig` (v1.9.0 generic runtime config — currently holds the admin AI model toggle). **Touch with a migration plan approved by me first.** |
+| `shared/schema.ts` | DB schema (Drizzle + Zod). Tables: `gameState`, `messages`, `characters`, `quests`, `items`, `storySummaries`, `dailySpend`, `storyCreationLocks`, `chatLocks`, `rateLimitBuckets`, `eventLog`, `appConfig` (v1.9.0 generic runtime config — currently holds the admin AI model toggle). **Touch with a migration plan approved by me first.** Indexes and RLS posture live in migration SQL, not in `schema.ts` — see `migrations/0002_consolidated_snapshot.sql`. |
+| `migrations/` | Fresh-DB recovery path. **One active migration**: `0002_consolidated_snapshot.sql` (PR-E, v1.12.2) captures the full schema with `IF NOT EXISTS` semantics — idempotent against current prod, full create on a fresh DB. Historical per-step migrations (`0000`, `0001`, `003`–`011`) live in `migrations/archive/` with a per-file ledger; they are NOT in `_journal.json` and are not applied by `drizzle-kit migrate`. **Prod is still hand-managed via the Supabase SQL editor**; the consolidated snapshot only matters for disaster recovery / new-env setup. New schema changes: add a fresh migration file (e.g. `0003_*.sql`), apply it by hand in Supabase SQL editor, and add a `_journal.json` entry. |
 | `server/db.ts` | Connection pool (postgres-js + Drizzle). Pool: max 20, idle_timeout 20, connect_timeout 10. |
 | `server/dbStorage.ts` | All CRUD with session + story scoping and business logic. |
 | `server/storage.ts` | Exports `IStorage` interface + active `DbStorage` instance. |

@@ -1,6 +1,6 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.12.0**. Milestones 1–5 shipped pre-launch. **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; AI-powered intent matcher + `POST /api/guide/chat` endpoint still TODO. **Recent lane (2026-05-17):** cost-audit followup landed v1.9.8 → v1.10.0 (per-model pricing, helper-call tracking, Anthropic prompt caching with dashboard savings panel), then ai-voice refinement at v1.11.0 + missing-choices regression fix v1.11.1, then audit PR-D shipped as 3 commits (v1.11.4 lazy-loading, v1.11.5 messages pagination, v1.11.6 token-aware context pruning) and audit PR-B at v1.12.0 (items lane deleted, -974 lines). **2026-05-15 audit now 7 of 8 PRs shipped** — only PR-E (migration journal) remains, deferred to a separate session per spec advice. CSP follow-up: promote `reportOnly: false` after ~24h of clean reports.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.12.2**. Milestones 1–5 shipped pre-launch. **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; AI-powered intent matcher + `POST /api/guide/chat` endpoint still TODO. **2026-05-15 audit lane is now closed** — all 8 PRs shipped (A1–A4, B, C, D, E across v1.9.3 → v1.12.2); only remaining follow-up is the CSP `reportOnly: false` flip, tracked in `docs/ROADMAP.md` Maybe/TBD. See per-version entries below for what each PR shipped.
 >
 > *Last updated: 2026-05-17.*
 
@@ -39,6 +39,29 @@ The original Milestone 6 plan called for a slide-up `GuideChat.tsx` modal trigge
 ---
 
 ## Completed Milestones
+
+### Audit 2026-05-15 PR-E: migration journal consolidation (2026-05-17) — v1.12.2 ✅
+
+Closes findings #2 + #18 from the 2026-05-15 audit and the final PR in that lane. The drizzle journal tracked only the original two March migrations (`0000`, `0001`); files `003`–`011` were hand-written and applied via the Supabase SQL editor only, never entering the journal. Running `drizzle-kit migrate` against a fresh DB (disaster recovery, new env) would have produced a partial schema missing 5 tables, 15 indexes, and all RLS posture.
+
+**Approach (option b from the spec):** consolidate everything into a single `0002_consolidated_snapshot.sql` that captures the full current schema with `IF NOT EXISTS` semantics — idempotent against current prod, full create on a fresh DB. Archive the historical migrations to `migrations/archive/` with a per-file ledger explaining what each one did.
+
+**Pre-flight that paid off:** dry-run with a scratch `drizzle.config.dryrun.ts` against `/tmp/` surfaced three gaps the raw drizzle output didn't cover, all hand-augmented before writing the final SQL:
+- 12 → 15 missing indexes (one partial `WHERE deleted_at IS NOT NULL`; three multi-col with `DESC` ordering on event_log)
+- `ENABLE ROW LEVEL SECURITY` on all 12 tables (5 explicit in migration files; 7 set via SQL editor per the established "enable RLS, no policies, server bypasses via postgres role" pattern)
+- `IF NOT EXISTS` modifiers on every `CREATE TABLE` and `CREATE INDEX` (drizzle doesn't emit them natively)
+
+**Slot 002 mystery:** never existed. File naming jumped from drizzle's 4-digit `0001` to hand-written 3-digit `003`. Reclaimed for the consolidation.
+
+**Snapshot baseline:** drizzle's generated `0002_snapshot.json` is the new diff baseline. Indexes and RLS are not in `shared/schema.ts`, so future `drizzle-kit generate` runs won't try to "re-add" them — neutral, exactly the behavior we want.
+
+**Files:**
+- New: `migrations/0002_consolidated_snapshot.sql`, `migrations/meta/0002_snapshot.json`, `migrations/archive/README.md`
+- Rewritten: `migrations/meta/_journal.json` (single entry, idx 2)
+- Moved to `migrations/archive/`: 11 SQL files + 2 old snapshot.json files
+- Updated CLAUDE.md §9 with the new migrations row and the schema.ts row (added `chatLocks` + `rateLimitBuckets`, called out that indexes/RLS live in SQL not schema.ts)
+
+**Closes the 2026-05-15 audit lane** — all 8 PRs shipped. Only follow-up is the CSP `reportOnly: false` flip (tracked in `docs/ROADMAP.md` Maybe/TBD). Spec moved to `docs/specs/archive/`.
 
 ### Audit 2026-05-15 PR-B: items lane deleted + chart.tsx + recharts (2026-05-17) — v1.12.0 ✅
 

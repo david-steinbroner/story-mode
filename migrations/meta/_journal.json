@@ -3,17 +3,10 @@
   "dialect": "postgresql",
   "entries": [
     {
-      "idx": 0,
+      "idx": 2,
       "version": "7",
-      "when": 1773790247001,
-      "tag": "0000_acoustic_revanche",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1773802322160,
-      "tag": "0001_yummy_roulette",
+      "when": 1779051149389,
+      "tag": "0002_consolidated_snapshot",
       "breakpoints": true
     }
   ]
