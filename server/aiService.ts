@@ -12,6 +12,35 @@ import { spendTracker } from "./spendTracker";
 const SUMMARY_THRESHOLD = 10; // Trigger summarization when this many unsummarized messages exist
 const RECENT_MESSAGE_WINDOW = 5; // Always keep this many recent messages verbatim
 
+// Token-budget safety net (v1.11.6 — audit finding #37). The recent-conversation
+// block of the user prompt was bounded by message COUNT (5), not token count.
+// A run of long descriptive pages can push that window past 5K tokens, which
+// drives up cost (especially on Sonnet 4 uncached input) and risks request
+// timeouts on Render. This budget caps the recent-conversation slice so the
+// model always gets the freshest turns, dropping oldest first when needed.
+const RECENT_CONVERSATION_TOKEN_BUDGET = 4000;
+
+// Char-based token estimator. Real Claude tokenizer is ~4 chars/token for
+// English prose. js-tiktoken would be ~5% more accurate but adds ~100KB of
+// WASM for negligible practical benefit on a safety-net truncator.
+const estimateTokens = (text: string): number => Math.ceil(text.length / 4);
+
+// Keep the newest messages until adding the next would exceed `budget`.
+// Always returns at least one message (the freshest) so the AI never
+// loses its immediate context.
+function truncateMessagesByTokens<T extends { content: string }>(msgs: T[], budget: number): T[] {
+  if (msgs.length === 0) return msgs;
+  const kept: T[] = [];
+  let total = 0;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const cost = estimateTokens(msgs[i].content);
+    if (kept.length > 0 && total + cost > budget) break;
+    total += cost;
+    kept.unshift(msgs[i]);
+  }
+  return kept;
+}
+
   const openai = new OpenAI({
     apiKey: process.env.OPENROUTER_API_KEY || "sk-placeholder",
     baseURL: "https://openrouter.ai/api/v1",
@@ -383,9 +412,18 @@ Use the • character exactly. No "Option A" labels.`;
     // Recent conversation for context. Player turns are reader-typed input,
     // so they're wrapped in <reader_input> tags. DM/NPC turns are
     // AI-generated and pass through unwrapped (CLAUDE.md §5).
+    //
+    // Window is bounded by BOTH message count (last 5) AND token budget
+    // (~4K tokens, v1.11.6). The token cap is a safety net for descriptive-
+    // page-heavy runs where 5 messages could exceed 5K tokens; in normal
+    // play (80-140 word target) it rarely fires.
     if (recentMessages.length > 0) {
+      const recentWindow = truncateMessagesByTokens(recentMessages.slice(-RECENT_MESSAGE_WINDOW), RECENT_CONVERSATION_TOKEN_BUDGET);
+      if (recentWindow.length < Math.min(recentMessages.length, RECENT_MESSAGE_WINDOW) && process.env.NODE_ENV !== 'production') {
+        console.log(`[AI Service] Token pruning trimmed recent conversation: ${Math.min(recentMessages.length, RECENT_MESSAGE_WINDOW)} → ${recentWindow.length} messages`);
+      }
       prompt += "RECENT CONVERSATION:\\n";
-      recentMessages.slice(-5).forEach(msg => {
+      recentWindow.forEach(msg => {
         const speaker = msg.sender === 'dm' ? 'DM' : msg.sender === 'npc' ? (msg.senderName || 'NPC') : 'Player';
         if (msg.sender === 'player') {
           prompt += `Player: <reader_input>${msg.content}</reader_input>\\n`;
