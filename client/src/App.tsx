@@ -2,15 +2,28 @@ import { queryClient, apiRequest, setActiveStoryId } from "./lib/queryClient";
 import { QueryClientProvider, useQuery, useMutation } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useState, useEffect } from "react";
+import { lazy, Suspense, useState, useEffect } from "react";
 
-// Components
-import AdminDashboard from "./components/AdminDashboard";
-import ChatInterface from "./components/ChatInterface";
-import ColdStartLoader from "./components/ColdStartLoader";
+// Components.
+// Bookshelf stays eager — it's the entry view, no benefit to splitting.
+// The other three are lazy-loaded so first-paint ships only what's needed
+// for the route the user is on (v1.11.4 — addresses audit finding #26).
+// AdminDashboard especially: a reader who never visits /admin should never
+// download its bundle.
 import Bookshelf from "./components/Bookshelf";
-import NewStoryCreation from "./components/NewStoryCreation";
+import ColdStartLoader from "./components/ColdStartLoader";
 import TestModelBadge from "./components/TestModelBadge";
+const AdminDashboard = lazy(() => import("./components/AdminDashboard"));
+const ChatInterface = lazy(() => import("./components/ChatInterface"));
+const NewStoryCreation = lazy(() => import("./components/NewStoryCreation"));
+
+// Lightweight fallback while a lazy chunk loads. Matches the existing
+// "Loading story..." pattern in the game view so the visual jump is small.
+const LazyFallback = () => (
+  <div className="h-dvh flex items-center justify-center bg-background">
+    <p className="text-muted-foreground">Loading...</p>
+  </div>
+);
 import { useAnalytics, useSessionTracking } from "./hooks/useAnalytics";
 import { useToast } from "./hooks/use-toast";
 import { setUserContext, setGameContext } from "./lib/sentry";
@@ -305,6 +318,7 @@ function GameApp() {
 
   if (currentView === "newStory") {
     return (
+      <Suspense fallback={<LazyFallback />}>
       <NewStoryCreation
         isLoading={isCreatingStory}
         seedDescription={seedDescription}
@@ -337,6 +351,7 @@ function GameApp() {
         }}
         onBack={() => setCurrentView("bookshelf")}
       />
+      </Suspense>
     );
   }
 
@@ -355,21 +370,23 @@ function GameApp() {
               <p className="text-muted-foreground">Loading story...</p>
             </div>
           ) : (
-            <ChatInterface
-              messages={messages}
-              onSendMessage={handleSendMessage}
-              // While the new-story API is in flight, isCreatingStory drives
-              // the TypingDots indicator the same way aiChatMutation does
-              // for in-story replies.
-              isLoading={aiChatMutation.isPending || isCreatingStory}
-              character={character}
-              quests={quests}
-              gameState={gameState}
-              onEndAdventure={handleEndAdventure}
-              onNavigateToBookshelf={navigateToBookshelf}
-              pendingPlayerMessage={pendingPlayerMessage}
-              className="flex-1"
-            />
+            <Suspense fallback={<div className="flex items-center justify-center h-full"><p className="text-muted-foreground">Loading story...</p></div>}>
+              <ChatInterface
+                messages={messages}
+                onSendMessage={handleSendMessage}
+                // While the new-story API is in flight, isCreatingStory drives
+                // the TypingDots indicator the same way aiChatMutation does
+                // for in-story replies.
+                isLoading={aiChatMutation.isPending || isCreatingStory}
+                character={character}
+                quests={quests}
+                gameState={gameState}
+                onEndAdventure={handleEndAdventure}
+                onNavigateToBookshelf={navigateToBookshelf}
+                pendingPlayerMessage={pendingPlayerMessage}
+                className="flex-1"
+              />
+            </Suspense>
           )}
         </main>
       </div>
@@ -384,7 +401,9 @@ function App() {
     return (
       <>
         <TestModelBadge />
-        <AdminDashboard />
+        <Suspense fallback={<LazyFallback />}>
+          <AdminDashboard />
+        </Suspense>
       </>
     );
   }
