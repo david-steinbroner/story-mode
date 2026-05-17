@@ -1,8 +1,8 @@
 # Story Mode — AI Voice, Narration, & Storytelling
 
-> **TL;DR (read this first):** The Guide is the AI's persona. **Voice:** warm, playful, campfire-friend (not novelist). Second person. Plain words. Short sentences. **No em dashes** (stripped server-side; use `, ` instead). **No double quotes inside dialogue** (use single quotes — protects JSON parsing). **80–140 words per page.** One thing must change every page. **Choices must be different scenes/people/outcomes**, not three angles on the same beat. Pacing has milestone checkpoints (Setup → Rising Action → Escalation → Climax → Final). **Three non-negotiables** sit at the end of the system prompt for attention recency: (1) every page introduces one concrete change, (2) choices lead to different directions, (3) the reader is the author of WHAT, the Guide is the author of HOW (follow off-script input, don't redirect). **Banned prose patterns:** "something" as antagonist after first appearance, three-item-list cadence, hedge adverbs (slightly / almost imperceptibly / softly), em dashes. **Story titles** must be 1–3 words, concrete noun phrases ("The Glass Suitcase"), never "Whispers of..." / "Echoes of..." / atmospheric phrasings. **Quality validators (Chunk B)** retry once when post-process detectors fire: stall, fake choices, final-page breach. **Story Momentum** injects a "world must act" directive when the reader's recent inputs stall on the same beat (synonym-canonicalized via STALL_PATTERNS regex set). **Source code:** `server/aiService.ts → getSystemPrompt()` is the truth; `server/aiValidators.ts` is the post-process; this doc describes the rules and rationale.
+> **TL;DR (read this first):** The Guide is the AI's persona. **Voice:** warm, playful, campfire-friend (not novelist). Second person. Plain words. Short sentences. **No em dashes** (stripped server-side; use `, ` instead). **No double quotes inside dialogue** (use single quotes — protects JSON parsing). **80–140 words per page (HARD CEILING 140 since v1.11.0).** One thing must change every page; **scene-change tax** kicks in if the protagonist's physical location is unchanged across 3 pages (v1.11.0). **Choices must be different scenes/people/outcomes**, not three angles on the same beat — the verify/engage/refuse loop is the canonical fake-choice anti-pattern (v1.11.0). Pacing has milestone checkpoints (Setup → Rising Action → Escalation → Climax → Final). **Three non-negotiables** sit at the end of the system prompt for attention recency: (1) every page introduces one concrete change + scene-change tax, (2) choices lead to different physical destinations, (3) **Reader picks WHAT, Guide picks HOW + WHAT-COMES-NEXT** — render the reader's action as taken; the world advances by Guide authority but characters cannot magically perceive what the reader chose to hide (v1.11.0 refinement; previously framed as "reader is author of WHAT, Guide of HOW" which was too loose). **Banned prose patterns:** "something" as antagonist after first appearance, three-item-list cadence, hedge adverbs (slightly / almost imperceptibly / softly), em dashes. **Story titles** must be 1–3 words, concrete noun phrases ("The Glass Suitcase"), never "Whispers of..." / "Echoes of..." / atmospheric phrasings. **Quality validators (Chunk B)** retry once when post-process detectors fire: stall, fake choices, final-page breach. **Story Momentum** injects a "world must act" directive when the reader's recent inputs stall on the same beat (synonym-canonicalized via STALL_PATTERNS regex set). **Source code:** `server/aiService.ts → getSystemPrompt()` is the truth; `server/aiValidators.ts` is the post-process; this doc describes the rules and rationale.
 >
-> *Last updated: 2026-05-14 · Maintenance rule at the bottom.*
+> *Last updated: 2026-05-17 · Maintenance rule at the bottom.*
 
 ---
 
@@ -35,8 +35,9 @@ The AI character is **the Guide** — a warm, witty, imaginative storyteller who
 
 ### Style targets
 
-- **80–140 words per page.** One scene, one beat. Tight.
+- **80–140 words per page. HARD CEILING: 140 words** (v1.11.0 — system prompt now says "do not exceed 140 even for dramatic moments"). One scene, one beat. Tight.
 - One thing must change every page: new place, new person, new fact, consequence, escalation. If you can't name what changed, you wrote the wrong page.
+- **Scene-change tax (v1.11.0):** if the protagonist's physical location is unchanged for 3 pages, the next page MUST move them — or introduce a force that does (door breached, power cuts, third party arrives). Same room, same standoff, same conversation across 3 pages = stall, even if you've been introducing new evidence each page.
 - Show what happens. Don't decorate it.
 - Concrete sensory details, not atmosphere paragraphs.
 - Read the STORY SO FAR. If you already showed something, push past it. Don't restage scenes.
@@ -54,11 +55,18 @@ Each choice must lead to a **DIFFERENT direction**. Different scene, different p
 • Touch the device gently
 ```
 
-**RIGHT** (three real branches):
+**WRONG** (verify/engage/refuse loop — all three keep the protagonist in the same physical position; v1.11.0 anti-example added after the "Other David" story stalled the protagonist at the door for 6 pages):
 ```
-• Activate the device and see what happens
-• Smash the device with your boot
-• Leave the lab and find the agent
+• Open the door and confront the stranger
+• Test him with another personal detail only you would know
+• Demand he show you proof first
+```
+
+**RIGHT** (three real branches with different physical destinations):
+```
+• Open the door
+• Slip out the back and call your fiancé from the car
+• Grab the cat, head upstairs, and call 911
 ```
 
 Every non-final page ends in this exact format:
@@ -177,4 +185,4 @@ Final-page narrative rules (in `getPacingGuidance()`):
 - **Update when:** voice rules, pacing, banned vocabulary, surprise-me examples, fallback text, or final-page behavior change. Same commit as the code change in `server/aiService.ts` / `server/routes.ts`. Bump "Last updated" below.
 - **TL;DR rule:** current-state-only — describes what the voice *is*, not what changed when. Rewrite the top block whenever a core rule shifts (voice register, word target, choice format). Never a running log of voice tweaks (those go in `docs/MILESTONES.md`).
 - **Source of truth conflicts:** the code (`getSystemPrompt()` and friends) wins. If this doc disagrees, update this doc.
-- **Last updated:** 2026-05-14
+- **Last updated:** 2026-05-17
