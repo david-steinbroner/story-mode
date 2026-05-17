@@ -181,6 +181,24 @@ function extractChoices(content: string): string[] {
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// Detector 5: Missing choices on a non-final page
+//
+// Functionally the worst class of violation — the reader is stuck with no
+// way forward except the free-text input. Caught the v1.11.0 regression
+// where Rule #3's refined RIGHT example read as a complete page response
+// and taught Sonnet to omit the choice block entirely.
+// ──────────────────────────────────────────────────────────────────────
+export function detectMissingChoices(
+  content: string,
+  isFinalPage: boolean,
+): boolean {
+  if (isFinalPage) return false;
+  if (extractChoices(content).length < 2) return true;
+  if (!content.toLowerCase().includes("what do you do?")) return true;
+  return false;
+}
+
+// ──────────────────────────────────────────────────────────────────────
 // Detector 3: Final-page enforcement
 //
 // The system prompt says the final page must not offer choices. The model
@@ -244,6 +262,7 @@ export interface ViolationReport {
   stallDetected: boolean;
   fakeChoices: boolean;
   finalPageBroken: boolean;
+  missingChoices: boolean;
   // True if any retry-triggering violation fired. Story Momentum is NOT
   // a retry trigger; it's a pretext directive applied before the call.
   shouldRetry: boolean;
@@ -257,12 +276,14 @@ export function runValidators(
   const stallDetected = detectStall(newContent, priorAiMessages);
   const fakeChoices = detectFakeChoices(newContent);
   const finalPageBroken = detectFinalPageBreach(newContent, isFinalPage);
+  const missingChoices = detectMissingChoices(newContent, isFinalPage);
 
   return {
     stallDetected,
     fakeChoices,
     finalPageBroken,
-    shouldRetry: stallDetected || fakeChoices || finalPageBroken,
+    missingChoices,
+    shouldRetry: stallDetected || fakeChoices || finalPageBroken || missingChoices,
   };
 }
 
@@ -284,6 +305,11 @@ export function buildRetryHint(report: ViolationReport): string {
   if (report.finalPageBroken) {
     hints.push(
       `YOUR PREVIOUS ATTEMPT BROKE THE FINAL PAGE RULE: this is the last page of the story. Do NOT offer choices. Do NOT end with "What do you do?". Resolve the central conflict and end the story in 80-140 words.`
+    );
+  }
+  if (report.missingChoices) {
+    hints.push(
+      `YOUR PREVIOUS ATTEMPT OMITTED THE CHOICE BLOCK: every non-final page MUST end with the literal header **What do you do?** followed by 2-3 bullet lines starting with the • character. Without choices the reader has no way to act. This is not optional. Add the choice block to the end of the page.`
     );
   }
   if (hints.length === 0) return "";

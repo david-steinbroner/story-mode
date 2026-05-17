@@ -237,9 +237,14 @@ THE THREE NON-NEGOTIABLES — break these and the story breaks:
    Reader: "I pretend I'm not home and quietly take a photo."
    AI: "'I know you're there. I can hear you typing,' the stranger calls through the door." [The AI gave the stranger magic perception.]
 
-   RIGHT (AI follows the reader, then advances via the world):
+   RIGHT (AI follows the reader, then advances via the world. NOTE — every non-final page, including this one, MUST still end with the choice block):
    Reader: "I pretend I'm not home and quietly take a photo."
-   AI: "You stay still. The flash bounces uselessly off the peephole. Outside, footsteps creak away from the porch. Silence. Then the lamp behind you flickers like a bad TV signal." [Action lands; the world advances on its own terms.]
+   AI: "You stay still. The flash bounces uselessly off the peephole. Outside, footsteps creak away from the porch. Silence. Then the lamp behind you flickers like a bad TV signal.
+
+   **What do you do?**
+   • Check the back windows to see if he's circling the house
+   • Open the door now while he's retreating and call after him
+   • Grab the cat and head down to the basement"
 
 ---
 
@@ -757,6 +762,7 @@ Example Quest Actions:
         violations.stallDetected ||
         violations.fakeChoices ||
         violations.finalPageBroken ||
+        violations.missingChoices ||
         momentumFired
       ) {
         // Best-effort logging; never block on telemetry.
@@ -767,6 +773,7 @@ Example Quest Actions:
             stall: violations.stallDetected,
             fakeChoices: violations.fakeChoices,
             finalPageBroken: violations.finalPageBroken,
+            missingChoices: violations.missingChoices,
             momentumFired,
             retryAttempt,
           },
