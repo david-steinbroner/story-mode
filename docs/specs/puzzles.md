@@ -450,6 +450,66 @@ The daily spend cap is checked at the start of each AI call (`spendTracker.prech
 
 ---
 
+## Approach 7 — Resume, reporting, and observability
+
+### Goal
+
+Three production-load-bearing concerns the prior approaches don't cover: (a) what happens when a reader hits a problem mid-puzzle and reports it, (b) how support actually resolves that report, (c) what survives when the reader closes the app mid-puzzle and comes back later.
+
+### (a) Mid-puzzle issue reports
+
+The existing issue-report sheet (`client/src/components/IssueReportSheet.tsx`, v1.13.0) already mounts from `ChatInterface.tsx`, which is where puzzles render — so the *trigger* works mid-puzzle for free. Two extensions:
+
+- **Attach the active `puzzleId`.** When the report sheet opens and a `PuzzleCard` is on screen, the sheet's POST payload includes that puzzleId. Server-side, `issue_reports` gains a nullable `puzzle_id` column. The support email + admin view get a one-click link to the full puzzle record so the resolver isn't guessing which puzzle the reader meant.
+- **Add a "Puzzle problem" category** to the existing 4-bucket picker. Issue volume signal stays clean — puzzle-specific issues sort into their own bin.
+
+### (b) Resolver workflow (how support handles a reported puzzle issue)
+
+Given a `puzzleId` from a report, the data we already capture per puzzle (per §Data model) is sufficient to reconstruct the full reader experience: the `puzzles` row (type, theme, difficulty, payload, answer, all three hints, `is_fallback` flag) plus every `puzzle_attempts` row (submission text, correct/skipped flags, hints_used count, timestamp). Resolver clicks the link from the report, sees the puzzle and every attempt, diagnoses the failure mode (bad prompt → tune prompt; weak validator → tighten validator; ambiguous beat → adjust narration prompt), replies to the reader, optionally flags the puzzle row as a known-bad seed for future training data.
+
+### (c) Proactive observability (admin dashboard cards)
+
+Two soft-alarm cards in `AdminDashboard.tsx`, fed by aggregate queries over the puzzles + attempts tables. These commit to the two reviewer-advisory items previously deferred:
+
+- **Fallback rate.** % of `puzzles` rows in the last N days with `is_fallback=true`. Threshold for attention: > 5% (rough; tune after first week of real data). High rate = AI generation is failing more than expected; investigate prompts or validators.
+- **Frustration signal.** Puzzles in the last N days where `count(puzzle_attempts) >= 5` AND no attempt has `correct=true OR skipped=true`. These are puzzles readers got stuck on without giving up — likely too-hard or ambiguous; surface for human review.
+
+Both are admin-only views; never surfaced to readers.
+
+### (d) Resume mid-puzzle — option A (accept the loss)
+
+What survives a close-and-return is determined by what the spec already persists. The table below pins behavior so the implementation plan doesn't drift:
+
+| State | Persisted? | Resume behavior |
+|---|---|---|
+| Puzzle existence (chat history slot) | Yes — `messages` row + `puzzles` row | Puzzle re-renders correctly |
+| Past submission attempts | Yes — `puzzle_attempts` | Server has the history; client doesn't currently replay it (also fine — clean slate is less confusing) |
+| Resolved state (correct OR skipped) | Yes — `/api/puzzle/attempt` idempotent on resolved state (§Approach 6) | Reader sees the resolved end state; narration's resolution signal still fires correctly via the `puzzle_signals_consumed` flow |
+| Hint reveal count | **No — intentional v1 loss** | Hints reset to hidden; reader re-taps to reveal |
+| In-progress submission text (mid-typing) | **No — intentional v1 loss** | Input clears |
+| Skip-button visibility timer (60s inactivity) | **No — intentional v1 loss** | Timer resets on remount |
+
+**Why accept the loss:** puzzles are designed as *moments*, not multi-day grinds. Re-revealing hints is cheap (three taps max). Cross-device resume (start on phone, finish on laptop) is not a common reading flow in current product data. Post-launch we'll measure puzzle-session span via `puzzle_attempts.attempted_at`; if a meaningful fraction of puzzles span > N minutes across sessions, revisit with server-side hint persistence (a `POST /api/puzzle/hint-revealed` endpoint and a small per-puzzle state row).
+
+### Implementation surface
+
+- `shared/schema.ts` — add nullable `puzzleId` column to `issueReports`.
+- `migrations/0004_puzzles.sql` — one extra line: `ALTER TABLE issue_reports ADD COLUMN IF NOT EXISTS puzzle_id VARCHAR;` (not a separate migration file).
+- `client/src/components/IssueReportSheet.tsx` — accept optional `puzzleId` prop; include in POST payload when present; add "Puzzle problem" to the category picker.
+- `client/src/components/ChatInterface.tsx` — when a `PuzzleCard` is active for the current screen, pass its `puzzleId` into the issue-report sheet's props.
+- `server/routes.ts` — `/api/issue-report` accepts and persists optional `puzzleId`.
+- `server/dbStorage.ts` — extend issue-report write path to persist `puzzleId`; add `getPuzzleFallbackRate(daysBack)` and `getStuckPuzzles(daysBack, minAttempts)` to `IStorage`.
+- `client/src/components/AdminDashboard.tsx` — two new soft-alarm cards (fallback rate, frustration signal).
+
+### Trade-offs
+
+- **Pro:** Closes the support loop. Reports include enough context to actually fix problems, not guess.
+- **Pro:** Observability cards make failure modes self-surfacing instead of buried in row-by-row inspection.
+- **Pro:** Resume option A ships zero new endpoints and zero new state tables for client-UX continuity — the spec already persists the load-bearing pieces.
+- **Con:** Resume option A is mildly annoying if a reader closes mid-puzzle with hints already revealed. Mitigation: measure first; if real, fast-follow with option B (localStorage) or C (server endpoint).
+
+---
+
 ## Data model
 
 All conventions match the existing project (per audit of `shared/schema.ts` and `migrations/0003_issue_reports.sql`): `varchar` PKs with `gen_random_uuid()::text` defaults, `TIMESTAMPTZ` timestamps, RLS enabled with no policies, no FK ON-UPDATE/ON-DELETE clauses beyond what's noted.
@@ -546,6 +606,19 @@ ALTER TABLE puzzle_signals_consumed ENABLE ROW LEVEL SECURITY;
 
 Tracks which puzzle resolutions have already been folded into a narration call's context, so each resolution is surfaced to the AI exactly once.
 
+### `issue_reports` (existing — extend)
+
+```sql
+ALTER TABLE issue_reports ADD COLUMN IF NOT EXISTS puzzle_id VARCHAR;
+```
+
+```ts
+// shared/schema.ts — addition only
+puzzleId: varchar("puzzle_id"),
+```
+
+Populated when a reader opens the report sheet while a `PuzzleCard` is on screen (per §Approach 7). Nullable for backward compat with existing rows + reports filed outside a puzzle context. No FK constraint — the link is informational; we want the report to survive even if the puzzle row is later cleaned up.
+
 ### `app_config` (existing — add rows)
 
 ```sql
@@ -559,7 +632,7 @@ ON CONFLICT (key) DO NOTHING;
 
 ### Migration
 
-`migrations/0004_puzzles.sql` (next sequential after `0003_issue_reports.sql`). Contents: `messages` column adds, three new tables with their indexes, two `app_config` inserts, RLS enable on the three new tables. Applied by hand in Supabase per current project flow; add a `_journal.json` entry.
+`migrations/0004_puzzles.sql` (next sequential after `0003_issue_reports.sql`). Contents: `messages` column adds, three new tables with their indexes, two `app_config` inserts, RLS enable on the three new tables, **and the `issue_reports.puzzle_id` column add** (per §Approach 7). Applied by hand in Supabase per current project flow; add a `_journal.json` entry.
 
 ---
 
@@ -603,24 +676,26 @@ The endpoint is **idempotent on the resolved state** — see §Approach 6 "Edge:
 
 | File | Change |
 |---|---|
-| `shared/schema.ts` | Add `type` + `puzzleId` columns on `messages`; new `puzzles` / `puzzleAttempts` / `puzzleSignalsConsumed` Drizzle tables + insert schemas |
+| `shared/schema.ts` | Add `type` + `puzzleId` columns on `messages`; new `puzzles` / `puzzleAttempts` / `puzzleSignalsConsumed` Drizzle tables + insert schemas; add nullable `puzzleId` to `issueReports` |
 | `shared/types/puzzles.ts` | **NEW.** Discriminated union for payload by type; `Hints` tuple type |
-| `migrations/0004_puzzles.sql` | **NEW.** `messages` ALTER, three new tables, `app_config` seeds, RLS enables; matches `0003_issue_reports.sql` style |
+| `migrations/0004_puzzles.sql` | **NEW.** `messages` ALTER, three new tables, `app_config` seeds, RLS enables, **plus `issue_reports.puzzle_id` ALTER**; matches `0003_issue_reports.sql` style |
 | `server/puzzleService.ts` | **NEW.** Per-type generation prompts, `generatePuzzle()`, `validatePuzzle()`, fallback pool loader |
 | `server/puzzleConfig.ts` | **NEW.** Module-level budget cache, `loadBudgets()` / `getBudgets()` / `setBudgets()` mirroring `aiModel.ts` admin-override pattern |
 | `server/puzzles/wordlist.txt` | **NEW.** Bundled ~10k-word English noun list for scramble validation (PD source documented in file header) |
 | `server/puzzles/fallback/*.json` | **NEW.** Hand-curated fallback pool: 20+ puzzles per type |
 | `server/aiModel.ts` | Extend `resolveModel(headerValue, opts?)` with optional `opts.purpose`; `'puzzle-generation'` short-circuits to `aliasToId('haiku')` |
 | `server/aiService.ts` | Narration system prompt: add puzzle_request section (gated on `puzzles_enabled`); extend Zod schema; thread `puzzle_count_so_far` / `puzzle_target` / `puzzle_cap` / `current_progress` + recent resolution signals into context |
-| `server/dbStorage.ts` / `server/storage.ts` | CRUD for puzzles, puzzle_attempts, puzzle_signals_consumed; `countPuzzlesForStory`; `getUnconsumedResolutionsForStory`; `markResolutionConsumed` (extend `IStorage` interface) |
-| `server/routes.ts` | `POST /api/puzzle/attempt` |
+| `server/dbStorage.ts` / `server/storage.ts` | CRUD for puzzles, puzzle_attempts, puzzle_signals_consumed; `countPuzzlesForStory`; `getUnconsumedResolutionsForStory`; `markResolutionConsumed`; `getPuzzleFallbackRate(daysBack)`; `getStuckPuzzles(daysBack, minAttempts)`; extend issue-report write path to persist optional `puzzleId` (extend `IStorage` interface) |
+| `server/routes.ts` | `POST /api/puzzle/attempt`; extend `/api/issue-report` to accept and persist optional `puzzleId` |
 | `server/rateLimit.ts` | New `puzzleAttemptLimiter` (30/hour per `(session, puzzle)`) |
 | `server/index.ts` | Call `loadBudgets(storage)` at boot, sibling to `loadAdminModelOverride` |
 | `client/src/components/PuzzleCard.tsx` | **NEW.** Container; dispatches to type-specific subcomponent; manages hints + skip timer |
 | `client/src/components/puzzles/ScrambleCard.tsx` | **NEW.** |
 | `client/src/components/puzzles/CryptogramCard.tsx` | **NEW.** |
 | `client/src/components/puzzles/FillInBlankCard.tsx` | **NEW.** |
-| `client/src/components/ChatInterface.tsx` | Branch on `msg.type` above the existing sender dispatch |
+| `client/src/components/ChatInterface.tsx` | Branch on `msg.type` above the existing sender dispatch; pass active `puzzleId` (if any) into `IssueReportSheet` props |
+| `client/src/components/IssueReportSheet.tsx` | Accept optional `puzzleId` prop; include in POST payload when present; add "Puzzle problem" to the category picker |
+| `client/src/components/AdminDashboard.tsx` | Two new soft-alarm cards: puzzle fallback rate + frustration signal (per §Approach 7) |
 | `client/src/lib/queryClient.ts` | No change (existing helpers work) |
 | `docs/api-and-cost.md` | Document new endpoint, haiku puzzle-gen call, per-puzzle cost estimate |
 | `docs/MILESTONES.md` | Entry on ship |
@@ -659,6 +734,7 @@ This work hits **four** triggers from `CLAUDE.md` §10 — surface in any implem
 - Fallback-pool loader: deterministic seed test, empty-pool warning path.
 - Budget calculator: `puzzleCountForStory(length, soFar) → { target, cap, canEmit }`.
 - Resolver-signal threading: insert resolved puzzle, assert `getUnconsumedResolutionsForStory` returns it; call `markResolutionConsumed`, assert second call returns empty.
+- Fallback rate + frustration-signal queries: seed `puzzles` + `puzzle_attempts` fixtures spanning the lookback window; assert counts match expectations; assert puzzles outside the window are excluded.
 
 ### Integration
 - End-to-end happy path: seed story → mock narration to return `puzzle_request` → assert puzzle row created → POST attempt with correct answer → call narration again → assert resolution signal appears in injected context → assert `puzzle_signals_consumed` row exists.
@@ -666,6 +742,7 @@ This work hits **four** triggers from `CLAUDE.md` §10 — surface in any implem
 - Budget gate: set `puzzle_count_so_far = puzzle_cap`, assert narration prompt-build forbids emitting `puzzle_request` (verifiable by inspecting injected context fields).
 - Cross-session safety: session A creates puzzle in story A; session B POSTs `/api/puzzle/attempt` with that puzzleId; assert rejection (NOT FOUND or 403 — exact code per `docs/api-and-cost.md` convention).
 - Idempotency: POST `/api/puzzle/attempt` correct → assert success → POST again with submission → assert same success response, NO new `puzzle_attempts` row.
+- Issue-report puzzle attachment: POST `/api/issue-report` with `puzzleId` present → assert `issue_reports` row has `puzzle_id` populated. Same call without `puzzleId` → assert column is NULL. Validate that "Puzzle problem" category persists correctly.
 
 ### Smoke (manual, per `CLAUDE.md` Definition of Done)
 Private window on `localhost:3000`:
@@ -708,4 +785,4 @@ Behind an `app_config` flag, `puzzles_enabled` (default `false`).
 
 ---
 
-*Last updated: 2026-05-18 (v2, post-spec-document-reviewer pass).*
+*Last updated: 2026-05-18 (v3, added §Approach 7: resume, reporting, and observability).*
