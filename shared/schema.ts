@@ -69,6 +69,55 @@ export const messages = pgTable("messages", {
   // `createdAt` is the monotonic sort key the UI orders by.
   timestamp: text("timestamp").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  // Discriminator for non-chat message kinds (v1.14.0). Existing rows are
+  // 'chat'; new puzzle insertions set 'puzzle'. Default keeps every existing
+  // caller unchanged.
+  type: text("type").default('chat').notNull(),
+  // Populated only for type='puzzle' rows. FK added in migration SQL; nullable
+  // so a hard-deleted puzzle leaves the message row intact for audit.
+  puzzleId: varchar("puzzle_id"),
+});
+
+// Generative puzzles (v1.14.0). Created when narration emits a
+// `puzzle_request`. `answer` and `hints` are server-only — never selected
+// into client responses. `is_fallback=true` flags rows pulled from the
+// hand-curated fallback pool when AI generation + re-roll both failed
+// validation. See docs/specs/puzzles.md §Data model + §Approach 7 (c).
+export const puzzles = pgTable("puzzles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  storyId: varchar("story_id").notNull(),
+  sessionId: varchar("session_id").notNull(),
+  type: text("type").notNull(),  // 'scramble' | 'cryptogram' | 'fill-in-the-blank'
+  theme: text("theme").notNull(),
+  difficulty: text("difficulty").notNull(),  // 'easy' | 'medium' | 'hard'
+  payload: jsonb("payload").notNull(),
+  answer: text("answer").notNull(),
+  hints: jsonb("hints").$type<[string, string, string]>().notNull(),
+  isFallback: boolean("is_fallback").default(false).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// One row per submission OR skip. `correct=true` OR `skipped=true` marks a
+// puzzle resolved; the puzzle has one terminal state but every attempt is
+// logged for analytics.
+export const puzzleAttempts = pgTable("puzzle_attempts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  puzzleId: varchar("puzzle_id").notNull(),
+  sessionId: varchar("session_id").notNull(),
+  submission: text("submission"),
+  correct: boolean("correct").default(false).notNull(),
+  skipped: boolean("skipped").default(false).notNull(),
+  hintsUsed: integer("hints_used").default(0).notNull(),
+  attemptedAt: timestamp("attempted_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Tracks which resolution signals have already been folded into a
+// narration call's user-prompt context, so each resolution surfaces to the
+// AI exactly once. See docs/specs/puzzles.md §Approach 6 threading.
+export const puzzleSignalsConsumed = pgTable("puzzle_signals_consumed", {
+  puzzleId: varchar("puzzle_id").primaryKey(),
+  storyId: varchar("story_id").notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // Rolling summaries condense older message history so the AI can keep narrative
@@ -208,6 +257,10 @@ export const issueReports = pgTable("issue_reports", {
   description: text("description").notNull(),
   currentPage: integer("current_page"),
   lastMessageIds: jsonb("last_message_ids").$type<string[]>(),
+  // Populated when a reader opens the report sheet while a PuzzleCard is
+  // active on screen (v1.14.0). Nullable for backward compat + reports
+  // filed outside puzzle context. No Drizzle FK — link is informational.
+  puzzleId: varchar("puzzle_id"),
   appVersion: text("app_version"),
   userAgent: text("user_agent"),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
@@ -220,6 +273,9 @@ export const insertItemSchema = createInsertSchema(items);
 export const insertMessageSchema = createInsertSchema(messages);
 export const insertGameStateSchema = createInsertSchema(gameState);
 export const insertStorySummarySchema = createInsertSchema(storySummaries);
+export const insertPuzzleSchema = createInsertSchema(puzzles);
+export const insertPuzzleAttemptSchema = createInsertSchema(puzzleAttempts);
+export const insertPuzzleSignalConsumedSchema = createInsertSchema(puzzleSignalsConsumed);
 
 export const updateCharacterSchema = insertCharacterSchema.omit({ name: true, class: true }).partial();
 export const updateQuestSchema = insertQuestSchema.partial();
@@ -251,3 +307,9 @@ export type InsertItem = z.infer<typeof insertItemSchema>;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type InsertGameState = z.infer<typeof insertGameStateSchema>;
 export type InsertStorySummary = z.infer<typeof insertStorySummarySchema>;
+
+export type Puzzle = typeof puzzles.$inferSelect;
+export type InsertPuzzle = typeof puzzles.$inferInsert;
+export type PuzzleAttempt = typeof puzzleAttempts.$inferSelect;
+export type InsertPuzzleAttempt = typeof puzzleAttempts.$inferInsert;
+export type PuzzleSignalConsumed = typeof puzzleSignalsConsumed.$inferSelect;

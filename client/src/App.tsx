@@ -187,6 +187,8 @@ function GameApp() {
         createdAt: new Date(),
         sessionId: '',
         storyId: activeStoryId,
+        type: 'chat',
+        puzzleId: null,
       };
       queryClient.setQueryData<Message[]>(
         ['/api/messages', activeStoryId],
