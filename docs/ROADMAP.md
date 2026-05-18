@@ -1,8 +1,8 @@
 # Story Mode — Roadmap
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.12.0**. **Next up (priority order):** Milestone 6 (AI-powered Guide chatbot), monetization decision, paid/free tier model routing, AI quality pass remaining (Chunks C + D + Sonnet comparison), palette consolidation, audit PR-E (migration journal — needs a dedicated session). **2026-05-15 audit:** 7 of 8 PRs shipped (v1.9.3 → v1.12.0); only PR-E remains. **Maybe/TBD:** audio drama, AI-generated puzzles, walk-to-earn — each parked for a dedicated brainstorm. Full version-by-version history → `docs/MILESTONES.md`.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.13.0**. **Next up (priority order):** Milestone 6 (AI-powered Guide chatbot), monetization decision, paid/free tier model routing, AI quality pass remaining (Chunks C + D + Sonnet comparison), palette consolidation, audit PR-E (migration journal — needs a dedicated session). **New pillar in design ("Story Mode beyond reading"):** generative puzzles specced (`docs/specs/puzzles.md`, not yet built); AR/location, voice chat, and in-character texts parked as siblings for later. **Maybe/TBD:** audio drama parked for a dedicated brainstorm. Full version-by-version history → `docs/MILESTONES.md`.
 >
-> *Last updated: 2026-05-17.*
+> *Last updated: 2026-05-18.*
 
 ---
 
@@ -46,6 +46,30 @@ In rough priority order.
 
 ---
 
+## Pillar: Story Mode beyond reading
+
+Framing established in the 2026-05-18 puzzles brainstorm. All four modes are ways the story stops being words-on-a-screen and becomes something the reader *does*. Chosen approach: **piecemeal** (ship one, learn, then pick the next) — not compositional architecture from day one. The umbrella is direction-setting only, not architecture. Vision will keep evolving as we build; one tiny shared seam (`messages.type` discriminator) is the only forward-thinking architectural commitment.
+
+### Generative puzzles (specced, not built)
+- **What:** AI-generated word puzzles (scramble, cryptogram, fill-in-the-blank) inserted by the narration AI as a new `messages.type='puzzle'`. Per-story budget (2/2/4/6 across 25/50/100/200-page lengths) stored in `app_config` for admin tuning. Three-tier hints; always-skippable; solving gets a small narrative bonus.
+- **Status:** Spec at `docs/specs/puzzles.md` (v2, post-spec-document-reviewer pass). Awaiting PM final review before implementation planning.
+- **Why it's first:** smallest infra change of the four; plays to the AI's biggest strength (language); validates the core question for the whole pillar — *do readers want the story to ask something of them beyond a choice?*
+
+### AR / location stories (parked — dedicated brainstorm later)
+- **What:** Pokemon-Go-style story mode. Reader walks to a real location; camera reveals an AR overlay (chalk symbol, hidden object, character apparition); they interact with it to advance the story. Supersedes the old "walk-to-earn" framing, which was about credits/currency; the body-and-place mechanic moved to the foreground, the credit/economy question is no longer attached.
+- **Scope shape:** likely needs a native shell or PWA-with-native-bridge for GPS + camera + location-anchored content. Authoring tooling for placing virtual things at real coordinates. Geo-permissions story.
+- **Status:** parked. Brainstorm after puzzles ships and we've learned whether the engagement-mode thesis holds.
+
+### Voice chat with the story (parked — dedicated brainstorm later)
+- **What:** Eyes-free mode for commutes / walks / chores. Story narrated via TTS; reader replies by voice (STT); choices presented audibly with voice confirmation. Different from "audio drama" (Maybe/TBD below) — that's narration of the existing screen experience; this is the story leaving the screen entirely.
+- **Status:** parked. Needs TTS + STT infra; interruption handling; voice consistency for the Guide.
+
+### In-character texts (parked — dedicated brainstorm later)
+- **What:** Story characters text the reader in-character during the day, via push notification or SMS. Inverts the relationship: instead of opening the app to find the story, the story finds the reader. ARG-adjacent (Lifeline, Bury Me My Love, A Dark Room).
+- **Status:** parked. Added to the pillar 2026-05-18. Notification infra exists; SMS would need Twilio. Hardest part is probably authoring/scheduling — when does Sarah text you, and what makes it feel real vs. spammy?
+
+---
+
 ## Maybe / TBD
 
 Items raised but not committed to. Decide before doing.
@@ -53,9 +77,7 @@ Items raised but not committed to. Decide before doing.
 - **Cross-story character travel** — was Milestone 7. Lets a reader's character carry between stories. Open question: does it break the "fresh start" simplicity?
 - **Community story library** — was Milestone 8. Browse stories other readers have completed. Big scope; needs moderation/safety story.
 - **Adaptive genre theming** — was Milestone 9. UI shifts subtly based on inferred genre.
-- **Audio drama / SFX library** — turn the reading experience into an interactive audio drama via TTS narration + curated SFX triggered by AI-tagged cues. Cost framing: ~$0.30–$0.60/story for narration on top of writing. Brand shift from "interactive fiction" to "interactive audio drama" (Audible-adjacent). Deserves a dedicated brainstorm session.
-- **AI-generated puzzles on the fly** — small puzzles woven into stories, unique per playthrough. Tricky: LLMs are notoriously bad at solvability without rigid templates + validation. ~$0.005–0.02 per puzzle as an extra AI call. UX risk: must not interrupt narrative flow. Deserves a dedicated brainstorm session.
-- **Walk-to-earn / Pokemon-Go mechanics** — gamification idea floated 2026-05-12: users earn credits or unlock content via real-world activity. Open questions: how does this fit a story-reading product, what's the credit currency-vs-streak shape. Deserves a dedicated brainstorm session.
+- **Audio drama / SFX library** — turn the reading experience into an interactive audio drama via TTS narration + curated SFX triggered by AI-tagged cues. Cost framing: ~$0.30–$0.60/story for narration on top of writing. Brand shift from "interactive fiction" to "interactive audio drama" (Audible-adjacent). Deserves a dedicated brainstorm session. NOTE: this is *not* part of the "Story Mode beyond reading" pillar below — that pillar is about the story reaching the reader in their daily life; audio drama is still a screen-anchored reading experience with audio on top.
 - **Sentry sample rate** — currently 10% trace. Revisit if costs spike or we miss errors.
 - **AI retry budget + rate-limit ceiling revisit** — current is 3 attempts + 240/hr. Once we have real concurrent-user data, retune.
 - **Desktop UX polish for end-story / delete on active stories** — currently no path on desktop to end an in-progress story without long-press (mouse equivalent exists via the kebab, but UX is awkward).
