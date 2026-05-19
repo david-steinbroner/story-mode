@@ -1,0 +1,354 @@
+[
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "TREASURE",
+    "payload": { "letters": "AETRESUR" },
+    "hints": [
+      "Something a pirate seeks for years.",
+      "Starts with T and ends with E.",
+      "T_E_S_R_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "LIBRARY",
+    "payload": { "letters": "RABYRLI" },
+    "hints": [
+      "A place where stories live on quiet shelves.",
+      "Starts with L.",
+      "L_B_A_Y"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "FOREST",
+    "payload": { "letters": "ESTROF" },
+    "hints": [
+      "A wide green place full of tall trunks.",
+      "Starts with F.",
+      "F_R_S_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "CASTLE",
+    "payload": { "letters": "ELCSTA" },
+    "hints": [
+      "Built on a hill with high stone walls.",
+      "Starts with C.",
+      "C_S_L_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "HARBOR",
+    "payload": { "letters": "ORBAHR" },
+    "hints": [
+      "Where ships rest at the end of a voyage.",
+      "Starts with H.",
+      "H_R_O_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "GARDEN",
+    "payload": { "letters": "NEDRAG" },
+    "hints": [
+      "A tended plot of flowers and herbs.",
+      "Starts with G.",
+      "G_R_E_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "BRIDGE",
+    "payload": { "letters": "GIBRDE" },
+    "hints": [
+      "How you cross a river without swimming.",
+      "Starts with B.",
+      "B_I_G_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "MARKET",
+    "payload": { "letters": "KRAETM" },
+    "hints": [
+      "A square full of stalls and shouting sellers.",
+      "Starts with M.",
+      "M_R_E_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "ANCHOR",
+    "payload": { "letters": "RANCHO" },
+    "hints": [
+      "What holds a ship still in deep water.",
+      "Starts with A.",
+      "A_C_O_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "HIDDEN",
+    "payload": { "letters": "IDNDEH" },
+    "hints": [
+      "Out of sight, waiting to be found.",
+      "Starts with H.",
+      "H_D_E_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "SILVER",
+    "payload": { "letters": "ILVRES" },
+    "hints": [
+      "A bright metal cooler in color than gold.",
+      "Starts with S.",
+      "S_L_E_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "SECRET",
+    "payload": { "letters": "ETSRCE" },
+    "hints": [
+      "Something you keep close and don't share.",
+      "Starts with S.",
+      "S_C_E_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "CANDLE",
+    "payload": { "letters": "LECDAN" },
+    "hints": [
+      "A small flame on a stick of wax.",
+      "Starts with C.",
+      "C_N_L_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "PUZZLE",
+    "payload": { "letters": "EPUZLZ" },
+    "hints": [
+      "Pieces you arrange until they fit.",
+      "Starts with P.",
+      "P_Z_L_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "CHEST",
+    "payload": { "letters": "TSEHC" },
+    "hints": [
+      "A wooden box used to store coins or cloth.",
+      "Starts with C.",
+      "C_E_T"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "STORM",
+    "payload": { "letters": "MROST" },
+    "hints": [
+      "Wind and rain together, loud and fast.",
+      "Starts with S.",
+      "S_O_M"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "FLAME",
+    "payload": { "letters": "MEAFL" },
+    "hints": [
+      "What dances above a candle wick.",
+      "Starts with F.",
+      "F_A_E"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "CROWN",
+    "payload": { "letters": "NORCW" },
+    "hints": [
+      "Worn on a royal head.",
+      "Starts with C.",
+      "C_O_N"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "RIVER",
+    "payload": { "letters": "VERRI" },
+    "hints": [
+      "Water flowing toward the sea.",
+      "Starts with R.",
+      "R_V_R"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "STONE",
+    "payload": { "letters": "NOETS" },
+    "hints": [
+      "Heavy and gray, used to build walls.",
+      "Starts with S.",
+      "S_O_E"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "JOURNEY",
+    "payload": { "letters": "ERNYJOU" },
+    "hints": [
+      "A long trip with miles between stops.",
+      "Starts with J.",
+      "J_U_N_Y"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "MYSTERY",
+    "payload": { "letters": "RTYSMYE" },
+    "hints": [
+      "A riddle no one has solved yet.",
+      "Starts with M.",
+      "M_S_E_Y"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "EMERALD",
+    "payload": { "letters": "ALEMDER" },
+    "hints": [
+      "A green gem prized by kings.",
+      "Starts with E.",
+      "E_E_A_D"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "VILLAGE",
+    "payload": { "letters": "AGLLIEV" },
+    "hints": [
+      "Smaller than a town, bigger than a farm.",
+      "Starts with V.",
+      "V_L_A_E"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "RAINBOW",
+    "payload": { "letters": "OWAINRB" },
+    "hints": [
+      "Seven colors arching across the sky after rain.",
+      "Starts with R.",
+      "R_I_B_W"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "COTTAGE",
+    "payload": { "letters": "GTOCATE" },
+    "hints": [
+      "A small house in the countryside.",
+      "Starts with C.",
+      "C_T_A_E"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "HARVEST",
+    "payload": { "letters": "VSEHATR" },
+    "hints": [
+      "What farmers gather at the end of summer.",
+      "Starts with H.",
+      "H_R_E_T"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "CRYSTAL",
+    "payload": { "letters": "LATSCRY" },
+    "hints": [
+      "A clear gem that catches the light.",
+      "Starts with C.",
+      "C_Y_T_L"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "SUNRISE",
+    "payload": { "letters": "NIESURS" },
+    "hints": [
+      "When the sky turns gold at dawn.",
+      "Starts with S.",
+      "S_N_I_E"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "MOUNTAIN",
+    "payload": { "letters": "AINOUMNT" },
+    "hints": [
+      "A peak you climb for days to reach the top.",
+      "Starts with M.",
+      "M_U_T_I_"
+    ]
+  },
+  {
+    "difficulty": "hard",
+    "theme": "generic",
+    "answer": "TOMORROW",
+    "payload": { "letters": "ROORWOMT" },
+    "hints": [
+      "The day that follows today.",
+      "Starts with T.",
+      "T_M_R_O_"
+    ]
+  },
+  {
+    "difficulty": "hard",
+    "theme": "generic",
+    "answer": "ADVENTURE",
+    "payload": { "letters": "DTRAENUEV" },
+    "hints": [
+      "A bold journey full of risk and surprise.",
+      "Starts with A.",
+      "A_V_N_U_E"
+    ]
+  }
+]

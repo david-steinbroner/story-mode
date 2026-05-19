@@ -9,6 +9,7 @@ import { setupVite, serveStatic, log } from "./vite";
 import { generalLimiter } from "./rateLimit";
 import { testConnection } from "./db";
 import { loadAdminModelOverride } from "./aiModel";
+import { loadBudgets } from "./puzzleConfig";
 import { storage } from "./storage";
 
 const app = express();
@@ -104,6 +105,11 @@ app.use((req, res, next) => {
   // aiModel.ts's in-memory cache. Silent failure leaves the override at
   // null and falls through to env/DEFAULT_MODEL.
   await loadAdminModelOverride(storage);
+
+  // Load per-story-length puzzle budgets from app_config into the
+  // puzzleConfig in-memory cache. Failures fall back to DEFAULT_BUDGETS
+  // so a flaky DB at startup doesn't break narration. v1.14.0.
+  await loadBudgets(storage);
 
   const server = await registerRoutes(app);
 

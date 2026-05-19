@@ -113,8 +113,21 @@ function aliasToId(value: string): string {
  *
  * @param headerValue — value of the `X-Test-Model` header. Pass `undefined`
  *   if absent. Ignored entirely when NODE_ENV === 'production'.
+ * @param opts.purpose — when 'puzzle-generation', short-circuits to the haiku
+ *   alias regardless of header / admin / env overrides. Rationale: puzzle gen
+ *   is a structural task; the admin model toggle exists to A/B narration
+ *   voice. Keeping puzzles deterministic on Haiku means cost predictability
+ *   and lets the admin A/B narration without unintentionally swapping the
+ *   puzzle generator. v1.14.0.
  */
-export function resolveModel(headerValue: string | undefined): string {
+export function resolveModel(
+  headerValue: string | undefined,
+  opts?: { purpose?: 'narration' | 'puzzle-generation' },
+): string {
+  if (opts?.purpose === 'puzzle-generation') {
+    return aliasToId('haiku');
+  }
+
   const isProd = process.env.NODE_ENV === "production";
 
   if (!isProd && typeof headerValue === "string" && headerValue.trim()) {

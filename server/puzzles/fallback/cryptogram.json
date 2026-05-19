@@ -1,0 +1,736 @@
+[
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "THE KEY IS HIDDEN",
+    "payload": {
+      "ciphertext": "OLA XAM RF LRCCAQ",
+      "mapping": {
+        "O": "T",
+        "L": "H",
+        "A": "E",
+        "X": "K",
+        "M": "Y",
+        "R": "I",
+        "F": "S",
+        "C": "D",
+        "Q": "N"
+      },
+      "revealed": [
+        "O"
+      ]
+    },
+    "hints": [
+      "A short instruction about something concealed.",
+      "It ends with a six-letter word starting with H.",
+      "Three small words come before the final one."
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "FOLLOW THE NORTH STAR",
+    "payload": {
+      "ciphertext": "ZJIIJC XMU VJDXM PXBD",
+      "mapping": {
+        "Z": "F",
+        "J": "O",
+        "I": "L",
+        "C": "W",
+        "X": "T",
+        "M": "H",
+        "U": "E",
+        "V": "N",
+        "D": "R",
+        "P": "S",
+        "B": "A"
+      },
+      "revealed": [
+        "Z"
+      ]
+    },
+    "hints": [
+      "A direction to take from someone old and wise.",
+      "The third word names a compass point.",
+      "Sailors used this method for centuries."
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "THE MAP LIES UNDER STONE",
+    "payload": {
+      "ciphertext": "KVJ FCX GYJW QABJD WKZAJ",
+      "mapping": {
+        "K": "T",
+        "V": "H",
+        "J": "E",
+        "F": "M",
+        "C": "A",
+        "X": "P",
+        "G": "L",
+        "Y": "I",
+        "W": "S",
+        "Q": "U",
+        "A": "N",
+        "B": "D",
+        "D": "R",
+        "Z": "O"
+      },
+      "revealed": [
+        "K"
+      ]
+    },
+    "hints": [
+      "A clue about where a chart was hidden.",
+      "Five words; the final word names a rock.",
+      "Look below the surface for the page."
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "TRUST THE OLD MAN",
+    "payload": {
+      "ciphertext": "VYIBV VFW GXQ PCJ",
+      "mapping": {
+        "V": "T",
+        "Y": "R",
+        "I": "U",
+        "B": "S",
+        "F": "H",
+        "W": "E",
+        "G": "O",
+        "X": "L",
+        "Q": "D",
+        "P": "M",
+        "C": "A",
+        "J": "N"
+      },
+      "revealed": [
+        "V"
+      ]
+    },
+    "hints": [
+      "Reassurance about a wise stranger.",
+      "Four words; the last word is three letters long.",
+      "Start by believing what an elder tells you."
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "BEWARE THE DARK FOREST",
+    "payload": {
+      "ciphertext": "GCAXYC NUC VXYL QMYCZN",
+      "mapping": {
+        "G": "B",
+        "C": "E",
+        "A": "W",
+        "X": "A",
+        "Y": "R",
+        "N": "T",
+        "U": "H",
+        "V": "D",
+        "L": "K",
+        "Q": "F",
+        "M": "O",
+        "Z": "S"
+      },
+      "revealed": [
+        "G"
+      ]
+    },
+    "hints": [
+      "A warning about a place full of trees.",
+      "Four words; the last word names a wooded land.",
+      "Don't enter where it grows wild."
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "GO TO THE OLD BRIDGE",
+    "payload": {
+      "ciphertext": "AU JU JPK UFW YXVWAK",
+      "mapping": {
+        "A": "G",
+        "U": "O",
+        "J": "T",
+        "P": "H",
+        "K": "E",
+        "F": "L",
+        "W": "D",
+        "Y": "B",
+        "X": "R",
+        "V": "I"
+      },
+      "revealed": [
+        "A"
+      ]
+    },
+    "hints": [
+      "Where to head next.",
+      "Five words; the place is a span over water.",
+      "The destination crosses a river."
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "THE TREASURE LIES WEST",
+    "payload": {
+      "ciphertext": "CFK CDKYVNDK OQKV ZKVC",
+      "mapping": {
+        "C": "T",
+        "F": "H",
+        "K": "E",
+        "D": "R",
+        "Y": "A",
+        "V": "S",
+        "N": "U",
+        "O": "L",
+        "Q": "I",
+        "Z": "W"
+      },
+      "revealed": [
+        "C"
+      ]
+    },
+    "hints": [
+      "A hint about direction and reward.",
+      "Four words; the last is a compass point.",
+      "What the pirates seek is in one direction."
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "SEEK THE SILVER LOCK",
+    "payload": {
+      "ciphertext": "NXXA UDX NYBPXF BGQA",
+      "mapping": {
+        "N": "S",
+        "X": "E",
+        "A": "K",
+        "U": "T",
+        "D": "H",
+        "Y": "I",
+        "B": "L",
+        "P": "V",
+        "F": "R",
+        "G": "O",
+        "Q": "C"
+      },
+      "revealed": [
+        "N"
+      ]
+    },
+    "hints": [
+      "Search instructions for a shiny fastener.",
+      "Four words; the metal is white, not yellow.",
+      "Find the four-letter object that opens with a key."
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "THE ANSWER IS GOLD",
+    "payload": {
+      "ciphertext": "YJK XMBUKC PB ZAFQ",
+      "mapping": {
+        "Y": "T",
+        "J": "H",
+        "K": "E",
+        "X": "A",
+        "M": "N",
+        "B": "S",
+        "U": "W",
+        "C": "R",
+        "P": "I",
+        "Z": "G",
+        "A": "O",
+        "F": "L",
+        "Q": "D"
+      },
+      "revealed": [
+        "Y"
+      ]
+    },
+    "hints": [
+      "A statement about what the solution is.",
+      "Four words; the final word names a precious metal.",
+      "The reply is yellow and shiny."
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "OPEN THE WOODEN BOX",
+    "payload": {
+      "ciphertext": "JLIC ASI RJJVIC YJQ",
+      "mapping": {
+        "J": "O",
+        "L": "P",
+        "I": "E",
+        "C": "N",
+        "A": "T",
+        "S": "H",
+        "R": "W",
+        "V": "D",
+        "Y": "B",
+        "Q": "X"
+      },
+      "revealed": [
+        "J"
+      ]
+    },
+    "hints": [
+      "An instruction about a wooden container.",
+      "Four words; lift the lid of the timber chest.",
+      "Reveal what's inside the carved cube."
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "THE GARDEN HIDES TRUTH",
+    "payload": {
+      "ciphertext": "CKL ZXMJLB KOJLF CMQCK",
+      "mapping": {
+        "C": "T",
+        "K": "H",
+        "L": "E",
+        "Z": "G",
+        "X": "A",
+        "M": "R",
+        "J": "D",
+        "B": "N",
+        "O": "I",
+        "F": "S",
+        "Q": "U"
+      },
+      "revealed": [
+        "C"
+      ]
+    },
+    "hints": [
+      "A flower bed conceals something honest.",
+      "Four words; what's real lies among the herbs.",
+      "Look below the roses for the answer."
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "FIND THE BROKEN MIRROR",
+    "payload": {
+      "ciphertext": "ALSG UCW JYQBWS VLYYQY",
+      "mapping": {
+        "A": "F",
+        "L": "I",
+        "S": "N",
+        "G": "D",
+        "U": "T",
+        "C": "H",
+        "W": "E",
+        "J": "B",
+        "Y": "R",
+        "Q": "O",
+        "B": "K",
+        "V": "M"
+      },
+      "revealed": [
+        "A"
+      ]
+    },
+    "hints": [
+      "Locate a shattered looking glass.",
+      "Four words; the reflective surface is cracked.",
+      "Search for the silvered piece in pieces."
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "WATCH THE HARBOR LIGHTS",
+    "payload": {
+      "ciphertext": "KYAZF AFQ FYUJMU DBPFAN",
+      "mapping": {
+        "K": "W",
+        "Y": "A",
+        "A": "T",
+        "Z": "C",
+        "F": "H",
+        "Q": "E",
+        "U": "R",
+        "J": "B",
+        "M": "O",
+        "D": "L",
+        "B": "I",
+        "P": "G",
+        "N": "S"
+      },
+      "revealed": [
+        "K"
+      ]
+    },
+    "hints": [
+      "Observe the glow over the docks.",
+      "Four words; eyes on the port at dusk.",
+      "Stare at the lamps beside the water."
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "READ THE OLD LETTERS",
+    "payload": {
+      "ciphertext": "ZYQC WBY GFC FYWWYZV",
+      "mapping": {
+        "Z": "R",
+        "Y": "E",
+        "Q": "A",
+        "C": "D",
+        "W": "T",
+        "B": "H",
+        "G": "O",
+        "F": "L",
+        "V": "S"
+      },
+      "revealed": [
+        "Z"
+      ]
+    },
+    "hints": [
+      "Look over correspondence from long ago.",
+      "Four words; open the dusty envelopes.",
+      "Study the faded handwriting."
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "BURY IT BENEATH THE OAK",
+    "payload": {
+      "ciphertext": "SVQP CD SWJWGDF DFW AGL",
+      "mapping": {
+        "S": "B",
+        "V": "U",
+        "Q": "R",
+        "P": "Y",
+        "C": "I",
+        "D": "T",
+        "W": "E",
+        "J": "N",
+        "G": "A",
+        "F": "H",
+        "A": "O",
+        "L": "K"
+      },
+      "revealed": [
+        "S"
+      ]
+    },
+    "hints": [
+      "Put something under a famous tree.",
+      "Five words; the final word names a kind of tree.",
+      "Deposit beneath the great trunk."
+    ]
+  },
+  {
+    "difficulty": "hard",
+    "theme": "generic",
+    "answer": "TURN LEFT AT THE TOWER",
+    "payload": {
+      "ciphertext": "VMIZ XSJV GV VQS VPASI",
+      "mapping": {
+        "V": "T",
+        "M": "U",
+        "I": "R",
+        "Z": "N",
+        "X": "L",
+        "S": "E",
+        "J": "F",
+        "G": "A",
+        "Q": "H",
+        "P": "O",
+        "A": "W"
+      },
+      "revealed": [
+        "V"
+      ]
+    },
+    "hints": [
+      "A direction at a tall building.",
+      "Five words; change course where the spire stands.",
+      "Pivot port at the high stone column."
+    ]
+  },
+  {
+    "difficulty": "hard",
+    "theme": "generic",
+    "answer": "COUNT THE STONE STEPS",
+    "payload": {
+      "ciphertext": "GYAFX XQB LXYFB LXBKL",
+      "mapping": {
+        "G": "C",
+        "Y": "O",
+        "A": "U",
+        "F": "N",
+        "X": "T",
+        "Q": "H",
+        "B": "E",
+        "L": "S",
+        "K": "P"
+      },
+      "revealed": [
+        "G"
+      ]
+    },
+    "hints": [
+      "Tally each rocky riser.",
+      "Four words; number the granite stairs as you climb.",
+      "Add up the slabs on the way up."
+    ]
+  },
+  {
+    "difficulty": "hard",
+    "theme": "generic",
+    "answer": "WAIT UNTIL THE MOON RISES",
+    "payload": {
+      "ciphertext": "YZQD CXDQK DGJ PAAX FQVJV",
+      "mapping": {
+        "Y": "W",
+        "Z": "A",
+        "Q": "I",
+        "D": "T",
+        "C": "U",
+        "X": "N",
+        "K": "L",
+        "G": "H",
+        "J": "E",
+        "P": "M",
+        "A": "O",
+        "F": "R",
+        "V": "S"
+      },
+      "revealed": [
+        "Y"
+      ]
+    },
+    "hints": [
+      "A timing instruction for after dark.",
+      "Five words; be patient until lunar light appears.",
+      "Stay still until the night orb climbs."
+    ]
+  },
+  {
+    "difficulty": "hard",
+    "theme": "generic",
+    "answer": "THE WIZARD KNOWS",
+    "payload": {
+      "ciphertext": "CGA LBXVUY FPQLM",
+      "mapping": {
+        "C": "T",
+        "G": "H",
+        "A": "E",
+        "L": "W",
+        "B": "I",
+        "X": "Z",
+        "V": "A",
+        "U": "R",
+        "Y": "D",
+        "F": "K",
+        "P": "N",
+        "Q": "O",
+        "M": "S"
+      },
+      "revealed": [
+        "C"
+      ]
+    },
+    "hints": [
+      "A statement about a magic user.",
+      "Three words; the robed elder has the answer.",
+      "Ask the bearded spellcaster."
+    ]
+  },
+  {
+    "difficulty": "hard",
+    "theme": "generic",
+    "answer": "RING THE BRASS BELL",
+    "payload": {
+      "ciphertext": "YJAF DKV MYUZZ MVOO",
+      "mapping": {
+        "Y": "R",
+        "J": "I",
+        "A": "N",
+        "F": "G",
+        "D": "T",
+        "K": "H",
+        "V": "E",
+        "M": "B",
+        "U": "A",
+        "Z": "S",
+        "O": "L"
+      },
+      "revealed": [
+        "Y"
+      ]
+    },
+    "hints": [
+      "Sound an instrument by the door.",
+      "Four words; pull the rope to make it chime.",
+      "Strike the metal cup at the entrance."
+    ]
+  },
+  {
+    "difficulty": "hard",
+    "theme": "generic",
+    "answer": "ASK THE OLD FISHERMAN",
+    "payload": {
+      "ciphertext": "YBJ CGX QPW ZABGXVUYD",
+      "mapping": {
+        "Y": "A",
+        "B": "S",
+        "J": "K",
+        "C": "T",
+        "G": "H",
+        "X": "E",
+        "Q": "O",
+        "P": "L",
+        "W": "D",
+        "Z": "F",
+        "A": "I",
+        "V": "R",
+        "U": "M",
+        "D": "N"
+      },
+      "revealed": [
+        "Y"
+      ]
+    },
+    "hints": [
+      "Question a person from the docks.",
+      "Four words; inquire of the man who casts nets.",
+      "Speak with the elder sailor."
+    ]
+  },
+  {
+    "difficulty": "hard",
+    "theme": "generic",
+    "answer": "CROSS THE WIDE RIVER",
+    "payload": {
+      "ciphertext": "JAKZZ PBM GLXM ALQMA",
+      "mapping": {
+        "J": "C",
+        "A": "R",
+        "K": "O",
+        "Z": "S",
+        "P": "T",
+        "B": "H",
+        "M": "E",
+        "G": "W",
+        "L": "I",
+        "X": "D",
+        "Q": "V"
+      },
+      "revealed": [
+        "J"
+      ]
+    },
+    "hints": [
+      "Go over a stream of water.",
+      "Four words; find a ford or a bridge.",
+      "Move from one bank to the other."
+    ]
+  },
+  {
+    "difficulty": "hard",
+    "theme": "generic",
+    "answer": "FOLLOW THE GREEN PATH",
+    "payload": {
+      "ciphertext": "UDJJDX YBA MCAAI QKYB",
+      "mapping": {
+        "U": "F",
+        "D": "O",
+        "J": "L",
+        "X": "W",
+        "Y": "T",
+        "B": "H",
+        "A": "E",
+        "M": "G",
+        "C": "R",
+        "I": "N",
+        "Q": "P",
+        "K": "A"
+      },
+      "revealed": [
+        "U"
+      ]
+    },
+    "hints": [
+      "Take the trail with grass on either side.",
+      "Four words; stay on the route framed by leaves.",
+      "Walk the verdant trail."
+    ]
+  },
+  {
+    "difficulty": "hard",
+    "theme": "generic",
+    "answer": "SHE WAITS AT MIDNIGHT",
+    "payload": {
+      "ciphertext": "FOJ RYKQF YQ ZKCVKAOQ",
+      "mapping": {
+        "F": "S",
+        "O": "H",
+        "J": "E",
+        "R": "W",
+        "Y": "A",
+        "K": "I",
+        "Q": "T",
+        "Z": "M",
+        "C": "D",
+        "V": "N",
+        "A": "G"
+      },
+      "revealed": [
+        "F"
+      ]
+    },
+    "hints": [
+      "A woman lingers at the witching hour.",
+      "Four words; look for her at twelve at night.",
+      "The lady stands when bells toll twelve."
+    ]
+  },
+  {
+    "difficulty": "hard",
+    "theme": "generic",
+    "answer": "BURN THE PAPER NOTE",
+    "payload": {
+      "ciphertext": "SCJD YGM WKWMJ DLYM",
+      "mapping": {
+        "S": "B",
+        "C": "U",
+        "J": "R",
+        "D": "N",
+        "Y": "T",
+        "G": "H",
+        "M": "E",
+        "W": "P",
+        "K": "A",
+        "L": "O"
+      },
+      "revealed": [
+        "S"
+      ]
+    },
+    "hints": [
+      "Set fire to a written message.",
+      "Four words; reduce the page to ash.",
+      "Hold the letter to the flame."
+    ]
+  }
+]

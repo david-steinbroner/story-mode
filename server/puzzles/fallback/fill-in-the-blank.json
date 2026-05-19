@@ -1,0 +1,366 @@
+[
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "MOON",
+    "payload": {
+      "sentence": "By the light of the silver ___, the path becomes clear.",
+      "blankLengthHint": { "min": 4, "max": 4 }
+    },
+    "hints": [
+      "Glows pale in the night sky.",
+      "Four letters, starts with M.",
+      "M_O_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "KEY",
+    "payload": {
+      "sentence": "The locked door yielded only when she turned the brass ___.",
+      "blankLengthHint": { "min": 3, "max": 3 }
+    },
+    "hints": [
+      "A small metal tool that opens locks.",
+      "Three letters, starts with K.",
+      "K_Y"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "DOOR",
+    "payload": {
+      "sentence": "Wind howled through the cracks of the old wooden ___.",
+      "blankLengthHint": { "min": 4, "max": 4 }
+    },
+    "hints": [
+      "Hinges, knob, and a frame.",
+      "Four letters, starts with D.",
+      "D_O_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "MAP",
+    "payload": {
+      "sentence": "Faded ink traced rivers and roads across the parchment ___.",
+      "blankLengthHint": { "min": 3, "max": 3 }
+    },
+    "hints": [
+      "Drawn lines that show where places are.",
+      "Three letters, starts with M.",
+      "M_P"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "STAR",
+    "payload": {
+      "sentence": "Sailors once steered by the brightest ___ in the night sky.",
+      "blankLengthHint": { "min": 4, "max": 4 }
+    },
+    "hints": [
+      "A point of light far away.",
+      "Four letters, starts with S.",
+      "S_A_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "RING",
+    "payload": {
+      "sentence": "On her finger she wore a small golden ___.",
+      "blankLengthHint": { "min": 4, "max": 4 }
+    },
+    "hints": [
+      "A circle of metal worn on a finger.",
+      "Four letters, starts with R.",
+      "R_N_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "BOAT",
+    "payload": {
+      "sentence": "They pushed the little fishing ___ out onto the lake.",
+      "blankLengthHint": { "min": 4, "max": 4 }
+    },
+    "hints": [
+      "Small craft that floats on water.",
+      "Four letters, starts with B.",
+      "B_A_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "WIND",
+    "payload": {
+      "sentence": "Sails snapped tight as the steady ___ filled them.",
+      "blankLengthHint": { "min": 4, "max": 4 }
+    },
+    "hints": [
+      "Air in motion.",
+      "Four letters, starts with W.",
+      "W_N_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "FIRE",
+    "payload": {
+      "sentence": "They huddled close to the small camp ___ for warmth.",
+      "blankLengthHint": { "min": 4, "max": 4 }
+    },
+    "hints": [
+      "Hot, bright, and flickering.",
+      "Four letters, starts with F.",
+      "F_R_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "GOLD",
+    "payload": {
+      "sentence": "Inside the chest gleamed an unexpected pile of ___.",
+      "blankLengthHint": { "min": 4, "max": 4 }
+    },
+    "hints": [
+      "A yellow metal coveted by kings.",
+      "Four letters, starts with G.",
+      "G_L_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "PATH",
+    "payload": {
+      "sentence": "A narrow ___ wound between the trees and over the hill.",
+      "blankLengthHint": { "min": 4, "max": 4 }
+    },
+    "hints": [
+      "A worn line of ground that shows you where to walk.",
+      "Four letters, starts with P.",
+      "P_T_"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "TOWER",
+    "payload": {
+      "sentence": "She climbed the spiral stairs to the top of the stone ___.",
+      "blankLengthHint": { "min": 5, "max": 5 }
+    },
+    "hints": [
+      "A tall, narrow building reaching up.",
+      "Five letters, starts with T.",
+      "T_W_R"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "HORSE",
+    "payload": {
+      "sentence": "The rider tied her chestnut ___ to a post outside the inn.",
+      "blankLengthHint": { "min": 5, "max": 5 }
+    },
+    "hints": [
+      "A four-legged animal often ridden.",
+      "Five letters, starts with H.",
+      "H_R_E"
+    ]
+  },
+  {
+    "difficulty": "easy",
+    "theme": "generic",
+    "answer": "RIVER",
+    "payload": {
+      "sentence": "A wide blue ___ separated the village from the dark woods.",
+      "blankLengthHint": { "min": 5, "max": 5 }
+    },
+    "hints": [
+      "A long stream of water flowing through the land.",
+      "Five letters, starts with R.",
+      "R_V_R"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "CANDLE",
+    "payload": {
+      "sentence": "On the table sat a single wax ___, burning low.",
+      "blankLengthHint": { "min": 6, "max": 6 }
+    },
+    "hints": [
+      "A small flame on a wick of wax.",
+      "Six letters, starts with C.",
+      "C_N_L_"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "SECRET",
+    "payload": {
+      "sentence": "She leaned in and whispered her closely kept ___.",
+      "blankLengthHint": { "min": 6, "max": 6 }
+    },
+    "hints": [
+      "Something hidden you don't tell others.",
+      "Six letters, starts with S.",
+      "S_C_E_"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "GARDEN",
+    "payload": {
+      "sentence": "Beyond the kitchen door lay an overgrown ___ of roses and herbs.",
+      "blankLengthHint": { "min": 6, "max": 6 }
+    },
+    "hints": [
+      "Where flowers and herbs are tended.",
+      "Six letters, starts with G.",
+      "G_R_E_"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "ANCHOR",
+    "payload": {
+      "sentence": "The captain ordered the crew to drop the heavy iron ___.",
+      "blankLengthHint": { "min": 6, "max": 6 }
+    },
+    "hints": [
+      "What holds a ship in place.",
+      "Six letters, starts with A.",
+      "A_C_O_"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "SHADOW",
+    "payload": {
+      "sentence": "A long, narrow ___ stretched across the cobblestones at dusk.",
+      "blankLengthHint": { "min": 6, "max": 6 }
+    },
+    "hints": [
+      "What follows you when you walk in sunlight.",
+      "Six letters, starts with S.",
+      "S_A_O_"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "MIRROR",
+    "payload": {
+      "sentence": "Above the basin hung a tarnished silver ___.",
+      "blankLengthHint": { "min": 6, "max": 6 }
+    },
+    "hints": [
+      "A surface that shows your own face back.",
+      "Six letters, starts with M.",
+      "M_R_O_"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "BRIDGE",
+    "payload": {
+      "sentence": "The road ended at a narrow stone ___ spanning the river.",
+      "blankLengthHint": { "min": 6, "max": 6 }
+    },
+    "hints": [
+      "Built to cross over water.",
+      "Six letters, starts with B.",
+      "B_I_G_"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "MARKET",
+    "payload": {
+      "sentence": "On Saturdays the square filled with the noise of the open-air ___.",
+      "blankLengthHint": { "min": 6, "max": 6 }
+    },
+    "hints": [
+      "Where stalls sell fish, fruit, and cloth.",
+      "Six letters, starts with M.",
+      "M_R_E_"
+    ]
+  },
+  {
+    "difficulty": "medium",
+    "theme": "generic",
+    "answer": "WIZARD",
+    "payload": {
+      "sentence": "An old man in a star-flecked robe claimed to be a ___.",
+      "blankLengthHint": { "min": 6, "max": 6 }
+    },
+    "hints": [
+      "A user of spells and ancient lore.",
+      "Six letters, starts with W.",
+      "W_Z_R_"
+    ]
+  },
+  {
+    "difficulty": "hard",
+    "theme": "generic",
+    "answer": "LIBRARY",
+    "payload": {
+      "sentence": "He spent his rainy afternoons in the dusty old ___ by the river.",
+      "blankLengthHint": { "min": 7, "max": 7 }
+    },
+    "hints": [
+      "A quiet building where books wait on shelves.",
+      "Seven letters, starts with L.",
+      "L_B_A_Y"
+    ]
+  },
+  {
+    "difficulty": "hard",
+    "theme": "generic",
+    "answer": "JOURNEY",
+    "payload": {
+      "sentence": "Their long ___ across the mountains had only just begun.",
+      "blankLengthHint": { "min": 7, "max": 7 }
+    },
+    "hints": [
+      "A long trip with many stops.",
+      "Seven letters, starts with J.",
+      "J_U_N_Y"
+    ]
+  },
+  {
+    "difficulty": "hard",
+    "theme": "generic",
+    "answer": "MYSTERY",
+    "payload": {
+      "sentence": "Who left the note on the doorstep remained a complete ___.",
+      "blankLengthHint": { "min": 7, "max": 7 }
+    },
+    "hints": [
+      "A puzzle no one has yet solved.",
+      "Seven letters, starts with M.",
+      "M_S_E_Y"
+    ]
+  }
+]
