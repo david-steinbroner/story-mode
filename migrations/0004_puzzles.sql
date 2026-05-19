@@ -74,9 +74,19 @@ ALTER TABLE issue_reports ADD COLUMN IF NOT EXISTS puzzle_id VARCHAR;
 -- app_config seeds: budgets per story length + master feature gate.
 -- Default budgets per docs/specs/puzzles.md §Approach 4. The flag starts
 -- FALSE so this migration is inert until rollout (Chunk 6).
+--
+-- v1.14.1 + /ultrareview bug_004: split into two statements so the budgets
+-- row UPSERTS (re-running the migration with an updated JSON actually lands
+-- the new value in prod) while the flag row stays DO NOTHING (we never want
+-- to clobber a flag flip by re-applying the migration).
 INSERT INTO app_config (key, value, updated_at) VALUES
   ('puzzle_budgets',
    '{"25":{"target":2,"cap":2},"50":{"target":2,"cap":3},"100":{"target":4,"cap":5},"250":{"target":7,"cap":10}}',
-   NOW()),
+   NOW())
+ON CONFLICT (key) DO UPDATE
+  SET value = EXCLUDED.value,
+      updated_at = NOW();
+
+INSERT INTO app_config (key, value, updated_at) VALUES
   ('puzzles_enabled', 'false', NOW())
 ON CONFLICT (key) DO NOTHING;
