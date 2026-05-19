@@ -262,17 +262,33 @@ export function _loadFallbackPools(): FallbackPools {
  * Pick a fallback entry of the given type + difficulty. If no entry matches
  * the difficulty exactly, fall back to any entry of that type. Random pick
  * (Math.random) — deterministic seeding is a Vitest test-only concern and
- * gets injected via the second arg.
+ * gets injected via the trailing arg.
+ *
+ * v1.14.1 + /ultrareview bug_007: also accepts `recentAnswers` to filter
+ * out repeats from the same session. If the filter empties the candidate
+ * set (small pools like hard-scramble only have 2 entries), falls through
+ * to the unfiltered pool — preserves the "always returns something" contract
+ * and matches the AI-side intent (best-effort guidance, not a hard exclusion).
  */
 export function pickFallback(
   type: PuzzleType,
   difficulty: PuzzleDifficulty,
+  recentAnswers: string[] = [],
   rng: () => number = Math.random,
 ): FallbackEntry | null {
   const pool = _loadFallbackPools()[type];
   if (!pool || pool.length === 0) return null;
   const matched = pool.filter(e => e.difficulty === difficulty);
   const candidates = matched.length > 0 ? matched : pool;
+  if (recentAnswers.length > 0) {
+    const recent = new Set(recentAnswers.map(a => a.toUpperCase()));
+    const filtered = candidates.filter(e => !recent.has(e.answer.toUpperCase()));
+    if (filtered.length > 0) {
+      return filtered[Math.floor(rng() * filtered.length)];
+    }
+    // Filter emptied the set (small pool, all recent) — fall through to
+    // unfiltered random pick so the caller still gets a puzzle.
+  }
   return candidates[Math.floor(rng() * candidates.length)];
 }
 
@@ -479,8 +495,11 @@ export async function generatePuzzle(req: PuzzleRequest): Promise<GenerationResu
     // Generator threw (e.g., OpenRouter outage). Fall through to fallback.
   }
 
-  // Fallback pool
-  const fb = pickFallback(req.type, req.difficulty);
+  // Fallback pool. Pass recentAnswers so the picker can avoid repeats from
+  // the same session — matches the AI-side anti-repetition intent.
+  // /ultrareview bug_007: pre-fix this was uniformly random and could reuse
+  // STONE / TREASURE / etc. even when the AI prompt warned against them.
+  const fb = pickFallback(req.type, req.difficulty, req.recentAnswers ?? []);
   if (!fb) {
     throw new Error(`No fallback puzzle available for type=${req.type}`);
   }
