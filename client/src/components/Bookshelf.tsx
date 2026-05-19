@@ -30,7 +30,7 @@ import IssueReportSheet, { BOOKSHELF_CATEGORY_IDS } from "./IssueReportSheet";
 import StoryDetailsDialog from "./StoryDetailsDialog";
 import type { GameState } from "@shared/schema";
 
-const APP_VERSION = "1.13.0";
+const APP_VERSION = "1.14.0";
 
 // --- Long-press hook ---
 function useLongPress(onLongPress: () => void, delay = 500) {
@@ -1052,7 +1052,7 @@ export default function Bookshelf({
         <div ref={qaEndRef} />
 
         {/* Version */}
-        <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.13.0</p>
+        <p className="text-center text-[10px] text-muted-foreground/40 mt-6 pb-2">v1.14.0</p>
       </div>
 
       {/* Sticky drawer — same peek/expand pattern as the in-story drawer.

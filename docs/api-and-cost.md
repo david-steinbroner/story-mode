@@ -1,8 +1,8 @@
 # Story Mode — API, Rate Limits, & Cost
 
-> **TL;DR (read this first):** Two models in rotation via OpenRouter — page generation is whichever the admin toggle (`app_config.active_model`) points at (today **Claude Sonnet 4**, ~$0.011 per page uncached, less once cache reads kick in), rolling summaries and surprise-me always run on **Claude 3.5 Haiku** for cost (~$0.001 per call). Per-call cost is computed from a per-model `MODEL_PRICING` map in `server/spendTracker.ts`, so the cost column is correct even when the admin flips models mid-day. **Prompt caching is live on page-gen calls** (v1.10.0) — cached input tokens billed at 10% of base rate via Anthropic's ephemeral 5-min cache through OpenRouter; daily savings surfaced on the admin dashboard. Sonnet-era short story ~$0.30, novel ~$1.10, epic ~$2.75 before cache savings. **Every AI call path tracks spend** (v1.9.9 closed the followup/sidequest/world-gen gap). **Rate limits:** 240 AI calls/hr, 1000 general/hr, both keyed by `sessionId`, Postgres-backed since v1.3.0. **Daily spend cap: $10** (hard ceiling, warns at $8). Max tokens 2000 per AI call. **Retry budget: 2 attempts max** — cap shared between parse-failure retries and Chunk B quality-validator retries (stall / fake choices / final-page breach). API responses use `{success, data}` / `{success: false, error}` shape. **Source of truth for current numbers:** `server/rateLimit.ts`, `server/spendTracker.ts`, `server/aiService.ts`, `server/aiValidators.ts`, `server/aiModel.ts`.
+> **TL;DR (read this first):** Two models in rotation via OpenRouter — page generation is whichever the admin toggle (`app_config.active_model`) points at (today **Claude Sonnet 4**, ~$0.011 per page uncached, less once cache reads kick in), rolling summaries / surprise-me / **puzzle generation** all run on **Claude 3.5 Haiku** for cost (~$0.001 per call). Per-call cost is computed from a per-model `MODEL_PRICING` map in `server/spendTracker.ts`, so the cost column is correct even when the admin flips models mid-day. **Prompt caching is live on page-gen calls** (v1.10.0) — cached input tokens billed at 10% of base rate via Anthropic's ephemeral 5-min cache through OpenRouter; daily savings surfaced on the admin dashboard. Sonnet-era short story ~$0.30, novel ~$1.10, epic ~$2.75 before cache savings; **puzzles add <$0.01/story** at the cap. **Every AI call path tracks spend** (v1.9.9 closed the followup/sidequest/world-gen gap). **Rate limits:** 240 AI calls/hr, 1000 general/hr, plus **30 puzzle attempts/hr per `(session, puzzle)`** (v1.14.0), all keyed by `sessionId`, Postgres-backed since v1.3.0. **Daily spend cap: $10** (hard ceiling, warns at $8). Max tokens 2000 per AI call. **Retry budget: 2 attempts max** — cap shared between parse-failure retries and Chunk B quality-validator retries (stall / fake choices / final-page breach). API responses use `{success, data}` / `{success: false, error}` shape. **Source of truth for current numbers:** `server/rateLimit.ts`, `server/spendTracker.ts`, `server/aiService.ts`, `server/aiValidators.ts`, `server/aiModel.ts`, `server/puzzleService.ts`.
 >
-> *Last updated: 2026-05-17 · Maintenance rule at the bottom.*
+> *Last updated: 2026-05-19 · Maintenance rule at the bottom.*
 
 ---
 
@@ -14,6 +14,7 @@
 | Page-generation model | Admin toggle (`app_config.active_model`) — today: `anthropic/claude-sonnet-4` | `server/aiModel.ts → resolveModel()` |
 | Summary model (hardcoded) | `anthropic/claude-3.5-haiku` | `server/summaryService.ts → SUMMARY_MODEL` |
 | Surprise-me model (hardcoded) | `anthropic/claude-3.5-haiku` | `server/routes.ts` (in `/api/story/surprise-me`) |
+| Puzzle-generation model (hardcoded) | `anthropic/claude-3.5-haiku` (v1.14.0) | `server/aiModel.ts → resolveModel(_, { purpose: 'puzzle-generation' })` — bypasses dev header + admin override + env override |
 | Per-call max tokens | **2000** | `aiService.ts → generateResponse()` |
 | Response format | `{ type: "json_object" }` | Same |
 | Retry budget on parse failure | **2 retries** (3 total attempts), 150ms delay between | `generateResponse()` |
@@ -122,6 +123,8 @@ Defined in `server/rateLimit.ts`. Both limits are **per session**, not per IP �
 |---|---|---|
 | General API | **1000 / hour** | All non-AI endpoints |
 | AI calls | **240 / hour** | `/api/ai/chat`, `/api/story/new`, `/api/story/surprise-me` |
+| Strict | **5 / hour** | `/api/issue-report` |
+| Puzzle attempts | **30 / hour per `(session, puzzleId)` tuple** (v1.14.0) | `/api/puzzle/attempt` |
 
 The daily $10 cap is the real cost ceiling. These limits are politeness against runaway clients, not budget.
 
@@ -167,7 +170,18 @@ Primary API surface (server/routes.ts). All require `x-session-id` header except
 ### AI
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/api/ai/chat` | Generate next page. Per-(session, story) chat lock (in-memory, 60s). Logs `page_turned` + `ai_fallback` on error. |
+| POST | `/api/ai/chat` | Generate next page. Per-(session, story) chat lock (in-memory, 60s). Logs `page_turned` + `ai_fallback` on error. When `app_config.puzzles_enabled='true'`, the AI may emit an optional `puzzle_request` alongside narration; `applyAIResponse` dispatches it AFTER the narration message persists so the puzzle row has a strictly later `created_at`. |
+
+### Puzzles (v1.14.0)
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/puzzle/:id` | Client-safe view of a puzzle (no `answer`, no `isFallback`). Returns `resolved: { correct, skipped } \| null` so the client can render the terminal state on reload. Session+story scoped (cross-session returns 404). |
+| POST | `/api/puzzle/attempt` | Submit (or skip) a puzzle attempt. Body: `{ puzzleId, submission?, skip?, hintsUsed }`; `submission` and `skip` are mutually exclusive. Idempotent on resolved state — once a puzzle has any `correct=true` or `skipped=true` attempt, subsequent calls return the prior `{ correct, skipped }` state without inserting a new `puzzle_attempts` row. **Cross-session / cross-story → 404** (we don't leak existence vs ownership; same 404 message for both). Rate-limited via `puzzleAttemptLimiter` (30/hr per session+puzzle). |
+
+### Issue reports (v1.13.0)
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/issue-report` | In-app bug report. Body includes `category`, `description`, `includeContext`, and (v1.14.0) optional `puzzleId` when the report is filed mid-puzzle. Rate-limited via `strictLimiter`. Fire-and-forget email via Resend when configured; DB save is source of truth. |
 
 ### Admin (require `x-admin-key` matching `ADMIN_KEY` env var + valid `x-admin-totp` per `ADMIN_TOTP_SECRET`)
 | Method | Path | Notes |
@@ -178,6 +192,7 @@ Primary API surface (server/routes.ts). All require `x-session-id` header except
 | GET | `/api/admin/ai-quality` | 24h Chunk-B validator violation counts + page_turned denominator. |
 | GET | `/api/admin/model-override` | Current AI model toggle (v1.9.0). Returns `{ stored, resolved, aliases }` — `stored` is the alias persisted in `app_config.active_model` (or `null`), `resolved` is the full OpenRouter model ID resolution would pick right now. |
 | POST | `/api/admin/model-override` | Flip the AI model toggle (v1.9.0). Body: `{ model: 'haiku' \| 'sonnet' }`. Persists to `app_config` AND updates `server/aiModel.ts`'s in-memory cache synchronously — the next AI call uses the new value. Logs `admin_model_override_set` to `event_log` for audit. |
+| GET | `/api/admin/puzzle-health` | (v1.14.0) Soft alarms — fallback rate + stuck puzzles (≥5 attempts, unresolved) over the last `daysBack` days (default 7). Backs the Puzzles section on `/admin`. |
 
 ---
 

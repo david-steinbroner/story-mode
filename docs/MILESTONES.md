@@ -1,8 +1,8 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.13.0**. Milestones 1–5 shipped pre-launch. **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; AI-powered intent matcher + `POST /api/guide/chat` endpoint still TODO. **2026-05-15 audit lane is closed** — all 8 PRs shipped across v1.9.3 → v1.12.2; only remaining follow-up is the CSP `reportOnly: false` flip, tracked in `docs/ROADMAP.md` Maybe/TBD. **Latest (v1.13.0):** in-app issue reporting (IssueReportSheet + admin queue + optional Resend email) plus a heavy UI polish bundle — surface-consistent header chrome with iOS safe-area handling, hamburger menu, copy buttons on chat messages, story-details modal, scroll-up button, reopen-story flow, font-size parity work, and more. See the v1.13.0 entry below.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.14.0**. Milestones 1–5 shipped pre-launch. **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; AI-powered intent matcher + `POST /api/guide/chat` endpoint still TODO. **Latest (v1.14.0):** generative puzzles (scramble / cryptogram / fill-in-the-blank) shipped behind `puzzles_enabled='false'` master flag — first feature of the new "Story Mode beyond reading" pillar. Narration AI emits an optional `puzzle_request` when a beat features decodable text; a separate Haiku call generates the actual puzzle; deterministic validators + ≥20-entry fallback pool per type guard against bad puzzles. Vitest introduced as the project's first test runner (30 unit/integration tests). Three v1.14.1 UX iterations logged to ROADMAP from smoke testing. See the v1.14.0 entry below.
 >
-> *Last updated: 2026-05-17.*
+> *Last updated: 2026-05-19.*
 
 ---
 
@@ -39,6 +39,36 @@ The original Milestone 6 plan called for a slide-up `GuideChat.tsx` modal trigge
 ---
 
 ## Completed Milestones
+
+### Generative puzzles — first feature of "Story Mode beyond reading" pillar (2026-05-19) — v1.14.0 ✅
+
+**What shipped:** AI-generated word puzzles (scramble, cryptogram, fill-in-the-blank) inserted into stories as a new `messages.type='puzzle'` value. Behind `puzzles_enabled='false'` master flag in `app_config` — production behavior is unchanged until rollout is manually flipped.
+
+**Architecture (two-stage AI):**
+- Narration AI (Sonnet today) optionally emits a `puzzle_request: { type, theme, difficulty }` alongside its JSON response when a beat features decodable text.
+- A separate Haiku call generates the actual puzzle content (answer + scrambled letters / cipher mapping / sentence-with-blank), validated server-side by deterministic per-type validators (word-list check for scramble, bijection + revealed-letter check for cryptogram, single-slot check for fill-in-the-blank).
+- If AI gen fails validation twice, a hand-curated fallback pool (≥20 entries per type, 83 total, all self-validated) provides the puzzle. `is_fallback=true` flag surfaced on admin dashboard.
+- Resolution-signal threading: when a reader solves or skips a puzzle, the next narration's user-prompt context includes the resolution so the AI weaves it in naturally. Idempotent via `puzzle_signals_consumed` join table.
+
+**Schema additions (migration 0004):** `messages.type` + `messages.puzzle_id` columns; new tables `puzzles` / `puzzle_attempts` / `puzzle_signals_consumed` (all RLS-enabled, no policies); FK `messages.puzzle_id → puzzles.id ON DELETE SET NULL`; `issue_reports.puzzle_id` for mid-puzzle bug reports; `app_config` seeds for `puzzle_budgets` (per-length JSON) and `puzzles_enabled` (master flag, default false).
+
+**API surface:**
+- `POST /api/puzzle/attempt` — idempotent on resolved state, cross-session 404, rate-limited 30/hr per (session, puzzleId).
+- `GET /api/puzzle/:id` — client-safe view (no `answer`), includes `resolved` state for clean re-render on reload.
+- `GET /api/admin/puzzle-health` — fallback rate + stuck-puzzle soft alarms.
+- `POST /api/issue-report` extended to accept optional `puzzleId`; mid-puzzle reports include a one-click diagnostic link in the resolver email.
+
+**Client UI:** `PuzzleCard.tsx` container + 3 type-specific subcomponents (`ScrambleCard`, `CryptogramCard`, `FillInBlankCard`); inline help text on cryptogram (mechanic is non-obvious for first-time players); wrong-answer inline feedback; hint reveal after 30s or first wrong submit; skip button after 60s or third hint revealed. Two admin dashboard cards: fallback rate + stuck puzzles.
+
+**Test infrastructure (project's first):** Vitest installed; 30 unit/integration tests covering validators (per type), fallback pool self-validation, budget loader, model resolution, resolution-signal threading idempotency, cross-session ACL behavior. Pragmatic rigor — high-stakes logic only; UI smoke-tested manually.
+
+**Prompt-engineering note:** Initial puzzle integration shipped with passive prompt language ("MAY include"), which Sonnet over-applied — skipping puzzles even on perfect bait. After smoke surfaced this, dispatched a `prompt-engineering-patterns` agent to redesign the puzzle prompts holistically (XML-tagged `<puzzles>` block in system prompt with named sub-sections, decision-tree type selection, output-discipline guards against preamble/code-fence leakage, explicit "never preview puzzle content" rule prohibiting specific letters in narration prose). Three more design-led improvements logged to ROADMAP as v1.14.1 work (turn-based puzzles, attempt cap with failure consequences, cryptogram interactive UX).
+
+**Files added:** `server/puzzleService.ts`, `server/puzzleConfig.ts`, `server/puzzleDispatch.ts`, `server/puzzles/wordlist.txt`, `server/puzzles/fallback/{scramble,cryptogram,fill-in-the-blank}.json`, `shared/types/puzzles.ts`, `client/src/components/PuzzleCard.tsx` + 3 subcomponents, `vitest.config.ts`, `migrations/0004_puzzles.sql`.
+
+Specced: `docs/specs/puzzles.md` (v3, post-spec-document-reviewer pass). Implementation plan: `docs/plans/2026-05-18-puzzles.md` (6 chunks, 4 explicit PM check-ins matching CLAUDE.md §10 stop-and-ask triggers).
+
+---
 
 ### In-app issue reporting + UI polish bundle (2026-05-17) — v1.13.0 ✅
 

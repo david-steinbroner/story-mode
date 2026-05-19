@@ -1,8 +1,8 @@
 # Story Mode — Roadmap
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.13.0**. **Next up (priority order):** Milestone 6 (AI-powered Guide chatbot), monetization decision, paid/free tier model routing, AI quality pass remaining (Chunks C + D + Sonnet comparison), palette consolidation, audit PR-E (migration journal — needs a dedicated session). **New pillar in design ("Story Mode beyond reading"):** generative puzzles specced (`docs/specs/puzzles.md`, not yet built); AR/location, voice chat, and in-character texts parked as siblings for later. **Maybe/TBD:** audio drama parked for a dedicated brainstorm. Full version-by-version history → `docs/MILESTONES.md`.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.14.0**. **Next up (priority order):** Milestone 6 (AI-powered Guide chatbot), monetization decision, paid/free tier model routing, AI quality pass remaining (Chunks C + D + Sonnet comparison), palette consolidation. **New pillar in motion ("Story Mode beyond reading"):** generative puzzles **shipped behind `puzzles_enabled='false'` flag** in v1.14.0 — rollout pending PM-driven internal validation via Supabase SQL flag flip; AR/location, voice chat, and in-character texts parked as siblings for later. **Maybe/TBD:** audio drama parked for a dedicated brainstorm; three v1.14.1 puzzle UX iterations (turn-based puzzles, attempt cap with failure influence, interactive cryptogram UX) logged from smoke. Full version-by-version history → `docs/MILESTONES.md`.
 >
-> *Last updated: 2026-05-18.*
+> *Last updated: 2026-05-19.*
 
 ---
 
@@ -50,10 +50,13 @@ In rough priority order.
 
 Framing established in the 2026-05-18 puzzles brainstorm. All four modes are ways the story stops being words-on-a-screen and becomes something the reader *does*. Chosen approach: **piecemeal** (ship one, learn, then pick the next) — not compositional architecture from day one. The umbrella is direction-setting only, not architecture. Vision will keep evolving as we build; one tiny shared seam (`messages.type` discriminator) is the only forward-thinking architectural commitment.
 
-### Generative puzzles (specced, not built)
+### Generative puzzles (shipped behind flag in v1.14.0, rollout pending)
 - **What:** AI-generated word puzzles (scramble, cryptogram, fill-in-the-blank) inserted by the narration AI as a new `messages.type='puzzle'`. Per-story budget (2/2/4/6 across 25/50/100/200-page lengths) stored in `app_config` for admin tuning. Three-tier hints; always-skippable; solving gets a small narrative bonus.
-- **Status:** Spec at `docs/specs/puzzles.md` (v2, post-spec-document-reviewer pass). Awaiting PM final review before implementation planning.
-- **Why it's first:** smallest infra change of the four; plays to the AI's biggest strength (language); validates the core question for the whole pillar — *do readers want the story to ask something of them beyond a choice?*
+- **Status:** Shipped in v1.14.0 behind `puzzles_enabled='false'` master flag. All three puzzle types validated end-to-end via local smoke. Production behavior unchanged until rollout.
+- **Rollout (manual, PM-driven):** flip `UPDATE app_config SET value='true' WHERE key='puzzles_enabled';` in Supabase SQL editor when ready. No admin UI for this flag yet (logged as v1.14.x followup). Watch event_log for puzzle_generated/attempted/skipped + the admin dashboard's fallback-rate / stuck-puzzles cards for the first week.
+- **v1.14.1 design-led iterations queued** (from smoke testing — see Maybe/TBD below): turn-based puzzles (solve → narration → choices), attempt cap with failure consequences, interactive cryptogram letter-substitution UX.
+- **Why it's first under the pillar:** smallest infra change of the four; plays to the AI's biggest strength (language); validates the core question for the whole pillar — *do readers want the story to ask something of them beyond a choice?*
+- **Detail:** spec at `docs/specs/puzzles.md` (v3); implementation plan at `docs/plans/2026-05-18-puzzles.md` (6 chunks); shipped commits across 8 commits between v1.13.0 → v1.14.0 on main.
 
 ### AR / location stories (parked — dedicated brainstorm later)
 - **What:** Pokemon-Go-style story mode. Reader walks to a real location; camera reveals an AR overlay (chalk symbol, hidden object, character apparition); they interact with it to advance the story. Supersedes the old "walk-to-earn" framing, which was about credits/currency; the body-and-place mechanic moved to the foreground, the credit/economy question is no longer attached.
