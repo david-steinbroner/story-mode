@@ -164,6 +164,28 @@ function validateFillInBlank(p: RawPuzzle): ValidationResult {
   }
   const hintLeak = checkHintsDontLeakAnswer(p.answer, p.hints);
   if (!hintLeak.ok) return hintLeak;
+
+  // v1.14.1 + /ultrareview bug_012: synonym tolerance means acceptedAnswers
+  // are submittable, so each must clear the same guarantees as the primary —
+  // no hint leak, min length 3, length within blankLengthHint range.
+  const acceptedAnswers = p.payload.acceptedAnswers;
+  if (Array.isArray(acceptedAnswers)) {
+    const blankHint = p.payload.blankLengthHint as { min: number; max: number } | undefined;
+    for (const entry of acceptedAnswers) {
+      if (typeof entry !== 'string') {
+        return { ok: false, reason: `acceptedAnswers contains non-string entry` };
+      }
+      if (entry.length < 3) {
+        return { ok: false, reason: `acceptedAnswers entry "${entry}" below minimum length (3)` };
+      }
+      if (blankHint && (entry.length < blankHint.min || entry.length > blankHint.max)) {
+        return { ok: false, reason: `acceptedAnswers entry "${entry}" length ${entry.length} outside blankLengthHint range [${blankHint.min}, ${blankHint.max}]` };
+      }
+      const entryLeak = checkHintsDontLeakAnswer(entry, p.hints);
+      if (!entryLeak.ok) return { ok: false, reason: `acceptedAnswers entry "${entry}" leaked in hints: ${entryLeak.reason}` };
+    }
+  }
+
   return { ok: true };
 }
 

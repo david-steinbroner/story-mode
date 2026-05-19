@@ -1357,8 +1357,12 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
           );
           break;
         case 'fill-in-the-blank': {
+          // Always merge puzzle.answer in so the canonical answer can never
+          // be silently rejected — Haiku occasionally drifts from the
+          // "first entry is the primary" rule and omits the primary from
+          // acceptedAnswers. /ultrareview bug_012.
           const accepted = Array.isArray(payload.acceptedAnswers) && payload.acceptedAnswers.length > 0
-            ? (payload.acceptedAnswers as string[])
+            ? [puzzle.answer, ...(payload.acceptedAnswers as string[])]
             : [puzzle.answer];
           correct = isValidFillInBlankSubmission(submission, accepted);
           break;
