@@ -18,6 +18,12 @@ const client = postgres(DATABASE_URL, {
 });
 export const db = drizzle(client, { schema });
 
+// Test-only handle (v1.14.0). Production code uses storage.* through IStorage;
+// this is for test fixtures that need to clean up rows the IStorage interface
+// has no delete method for (e.g. puzzles, puzzle_attempts, puzzle_signals_consumed).
+// Do NOT import this outside *.test.ts files.
+export const _testDb = db;
+
 export async function testConnection(): Promise<boolean> {
   try {
     await client`SELECT 1 as connected`;

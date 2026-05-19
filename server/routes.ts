@@ -18,6 +18,11 @@ import { z } from "zod";
 import { aiLimiter, generalLimiter, strictLimiter } from "./rateLimit";
 import { spendTracker } from "./spendTracker";
 import { aiService, type AIResponse, extractTokenUsage } from "./aiService";
+import {
+  dispatchPuzzleFromResponse,
+  parsePuzzleRequest,
+  markConsumedSignals,
+} from "./puzzleDispatch";
 import { logEvent } from "./eventLog";
 import { sendIssueReportEmail } from "./emailService";
 import { resolveModel, getAdminModelOverride, setAdminModelOverride, MODEL_ALIASES } from "./aiModel";
@@ -125,6 +130,39 @@ async function applyAIResponse(
     senderName: aiResponseData.senderName,
     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   });
+
+  // v1.14.0 — puzzle dispatch. Must run AFTER the AI message persists so the
+  // type='puzzle' message row has a strictly later createdAt (the chat orders
+  // by createdAt). Silent failure: a puzzle gen error means the reader just
+  // doesn't see a puzzle this turn; narration is already saved.
+  if (storyId && aiResponseData.puzzle_request) {
+    const validReq = parsePuzzleRequest(aiResponseData.puzzle_request);
+    if (validReq) {
+      const gameState = await storage.getGameState(sessionId, storyId);
+      const puzzleId = await dispatchPuzzleFromResponse(validReq, storyId, sessionId, gameState);
+      if (puzzleId) {
+        await storage.createMessage({
+          sessionId,
+          storyId,
+          content: '',
+          sender: 'system',
+          senderName: null,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          type: 'puzzle',
+          puzzleId,
+        });
+      }
+    }
+  }
+
+  // Mark resolution signals consumed AFTER narration persists. If routes.ts
+  // bails earlier (parse failure return path), signals stay unconsumed and
+  // get included again in the next narration call's context. Correct behavior.
+  if (aiResponseData.consumedSignals && aiResponseData.consumedSignals.length > 0) {
+    await markConsumedSignals(
+      aiResponseData.consumedSignals.map(s => ({ ...s, type: '', correct: false, skipped: false }))
+    );
+  }
 
   // Apply any game actions from the AI response with validation
   if (aiResponseData.actions) {

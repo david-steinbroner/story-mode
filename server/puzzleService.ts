@@ -18,7 +18,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import OpenAI from "openai";
 import type { PuzzleType, PuzzleDifficulty } from "../shared/types/puzzles";
+import { resolveModel } from "./aiModel";
+import { captureError } from "./sentry";
 
 // ESM-safe base directory. Works under tsx (dev/tests) and under the
 // esbuild ESM bundle in production. Both place puzzles/ as a sibling.
@@ -255,15 +258,102 @@ export function _setGeneratorForTesting(g: Generator | null): void {
   _generator = g;
 }
 
-async function defaultGenerator(_req: PuzzleRequest): Promise<RawPuzzle> {
-  // Real OpenRouter call wired in here. Will use resolveModel(undefined, {
-  // purpose: 'puzzle-generation' }) — always returns haiku alias.
-  // Implementation pulled into a separate module in Chunk 3 if it grows;
-  // for now lives inline.
-  throw new Error(
-    'defaultGenerator: not yet wired. Tests must use _setGeneratorForTesting; ' +
-    'real generation lands when aiService.ts wires through in Chunk 3.'
-  );
+// ---------------------------------------------------------------------------
+// Real puzzle generation via OpenRouter. The puzzle subsystem owns its own
+// OpenAI SDK client to keep generation cleanly separable from narration.
+// Model is always Haiku (per resolveModel({ purpose: 'puzzle-generation' })).
+//
+// Client is lazy so this module can be imported in environments without an
+// API key (tests inject a generator via `_setGeneratorForTesting` and never
+// hit the real client; the OpenAI SDK throws at construction if `apiKey`
+// is empty so eager construction would break those imports).
+// ---------------------------------------------------------------------------
+
+let _openai: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (_openai) return _openai;
+  _openai = new OpenAI({
+    apiKey: process.env.OPENROUTER_API_KEY,
+    baseURL: "https://openrouter.ai/api/v1",
+  });
+  return _openai;
+}
+
+const PROMPTS: Record<PuzzleType, (req: PuzzleRequest) => string> = {
+  'scramble': (req) => `Generate a scramble puzzle.
+THEME: ${req.theme}
+DIFFICULTY: ${req.difficulty}
+${req.stricterRetry ? `RETRY: prior attempt failed (${req.stricterRetry}). Pick a more common, shorter answer.` : ''}
+
+REQUIREMENTS:
+- "answer": one common English noun, 4–9 letters, uppercase. Must fit the theme.
+- "payload.letters": the same letters as answer, shuffled, uppercase.
+- "hints": exactly 3 hints, decreasing difficulty:
+  [0] category (no answer word verbatim),
+  [1] starting letter,
+  [2] every other letter visible (e.g. "T_E_S_R_").
+Return JSON only. Schema:
+{ "answer": "TREASURE", "payload": { "letters": "AETRESUR" }, "hints": ["something a sailor seeks", "starts with T", "T_E_S_R_"] }`,
+
+  'cryptogram': (req) => `Generate a cryptogram puzzle.
+THEME: ${req.theme}
+DIFFICULTY: ${req.difficulty}
+${req.stricterRetry ? `RETRY: prior attempt failed (${req.stricterRetry}).` : ''}
+
+REQUIREMENTS:
+- "answer": a short phrase fitting the theme, 8–40 chars, uppercase, ASCII A-Z + spaces only.
+- "payload.ciphertext": the answer encoded by a bijective letter substitution; keep spaces.
+- "payload.mapping": { "<ciphertext letter>": "<plaintext letter>" } covering EVERY ciphertext letter. Must be a bijection (no two ciphertext letters map to the same plaintext letter).
+- "payload.revealed": array of at least 1 ciphertext letter whose mapping is pre-revealed.
+- "hints": exactly 3 hints, decreasing difficulty.
+Return JSON only.`,
+
+  'fill-in-the-blank': (req) => `Generate a fill-in-the-blank puzzle.
+THEME: ${req.theme}
+DIFFICULTY: ${req.difficulty}
+${req.stricterRetry ? `RETRY: prior attempt failed (${req.stricterRetry}).` : ''}
+
+REQUIREMENTS:
+- "answer": one word, 3+ letters, uppercase, fits the theme.
+- "payload.sentence": a single sentence with the answer replaced by exactly one "___" slot.
+- "payload.blankLengthHint": { "min": <answer.length>, "max": <answer.length> }.
+- "hints": exactly 3 hints, decreasing difficulty.
+Return JSON only.`,
+};
+
+async function defaultGenerator(req: PuzzleRequest): Promise<RawPuzzle> {
+  if (!process.env.OPENROUTER_API_KEY) {
+    throw new Error("OPENROUTER_API_KEY missing");
+  }
+  const model = resolveModel(undefined, { purpose: 'puzzle-generation' });
+  const userPrompt = PROMPTS[req.type](req);
+
+  try {
+    const response = await getOpenAI().chat.completions.create({
+      model,
+      messages: [
+        { role: "system", content: "You generate puzzles. Reply with JSON only, no preface or commentary." },
+        { role: "user",   content: userPrompt },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.7,
+    });
+    const raw = response.choices[0]?.message?.content || '{}';
+    const parsed = JSON.parse(raw);
+
+    // Coerce / normalize. Defensive uppercase to fix common AI drift.
+    return {
+      type: req.type,
+      answer: String(parsed.answer ?? '').toUpperCase(),
+      payload: parsed.payload ?? {},
+      hints: Array.isArray(parsed.hints) && parsed.hints.length === 3
+        ? [String(parsed.hints[0]), String(parsed.hints[1]), String(parsed.hints[2])]
+        : ['', '', ''],
+    };
+  } catch (err) {
+    captureError(err as Error, { context: 'puzzle generation', type: req.type, difficulty: req.difficulty });
+    throw err;
+  }
 }
 
 export async function generatePuzzle(req: PuzzleRequest): Promise<GenerationResult> {

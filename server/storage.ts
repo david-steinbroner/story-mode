@@ -10,7 +10,12 @@ import {
   type StorySummary,
   type InsertStorySummary,
   type IssueReport,
-  type InsertIssueReport
+  type InsertIssueReport,
+  // v1.14.0 puzzles
+  type Puzzle,
+  type InsertPuzzle,
+  type PuzzleAttempt,
+  type InsertPuzzleAttempt,
 } from "@shared/schema";
 import { DbStorage } from "./dbStorage";
 
@@ -60,6 +65,26 @@ export interface IStorage {
   createIssueReport(report: InsertIssueReport): Promise<IssueReport>;
   getIssueReports(opts: { resolved?: boolean; limit?: number }): Promise<IssueReport[]>;
   markIssueReportResolved(id: string): Promise<IssueReport | null>;
+
+  // Puzzle CRUD (v1.14.0). See docs/specs/puzzles.md §Data model.
+  createPuzzle(puzzle: InsertPuzzle): Promise<Puzzle>;
+  getPuzzle(id: string): Promise<Puzzle | undefined>;
+  countPuzzlesForStory(storyId: string): Promise<number>;
+  recordPuzzleAttempt(attempt: InsertPuzzleAttempt): Promise<PuzzleAttempt>;
+  /** Returns puzzles resolved (correct OR skipped) since the last narration call.
+   *  Each puzzle appears at most once. Caller MUST follow with markResolutionConsumed. */
+  getUnconsumedResolutionsForStory(storyId: string): Promise<Array<{ puzzleId: string; type: string; correct: boolean; skipped: boolean }>>;
+  markResolutionConsumed(puzzleId: string, storyId: string): Promise<void>;
+  /** Returns whether this puzzle is already resolved (any attempt with correct=true OR skipped=true). */
+  isPuzzleResolved(puzzleId: string): Promise<{ correct: boolean; skipped: boolean } | null>;
+
+  // Observability (Approach 7c). Both windowed to `daysBack`.
+  getPuzzleFallbackRate(daysBack: number): Promise<{ total: number; fallback: number; rate: number }>;
+  getStuckPuzzles(daysBack: number, minAttempts: number): Promise<Array<{ puzzleId: string; type: string; attemptCount: number; firstSeen: Date }>>;
+
+  // Issue-report extension (Approach 7a): the existing createIssueReport already
+  // accepts InsertIssueReport which (after Chunk 1 schema add) includes optional
+  // puzzleId. No new method needed — flagged here for resolver review.
 }
 
 export const storage: IStorage = new DbStorage();

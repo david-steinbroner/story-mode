@@ -7,6 +7,7 @@ import { logEvent } from "./eventLog";
 import { runValidators, detectStallPattern, buildRetryHint } from "./aiValidators";
 import { resolveModel } from "./aiModel";
 import { spendTracker } from "./spendTracker";
+import { buildPuzzleContextForPrompt } from "./puzzleDispatch";
 
 // Constants for rolling story summary
 const SUMMARY_THRESHOLD = 10; // Trigger summarization when this many unsummarized messages exist
@@ -105,6 +106,14 @@ export interface AIResponse {
     updateCharacter?: { updates: Partial<Character> };
     updateGameState?: Partial<GameState>;
   };
+  // v1.14.0 — puzzle integration. Both are populated only when puzzles_enabled.
+  // puzzle_request: the AI's optional ask to dispatch a puzzle this turn.
+  //   Validated/parsed server-side via parsePuzzleRequest() in puzzleDispatch.ts.
+  // consumedSignals: resolution signals included in this turn's user prompt;
+  //   routes.ts marks these as consumed AFTER the narration message persists,
+  //   so a parse-failure retry doesn't burn signals.
+  puzzle_request?: { type: string; theme: string; difficulty: string } | null;
+  consumedSignals?: Array<{ puzzleId: string; storyId: string }>;
 }
 
 export class TTRPGAIService {
@@ -168,7 +177,7 @@ The peak. The protagonist makes their most important choice. Everything built up
 Present 2-3 choices that will determine how the story ends.`;
   }
 
-  private getSystemPrompt(gameState?: GameState): string {
+  private getSystemPrompt(gameState: GameState | undefined, puzzlesEnabled: boolean): string {
     // Use custom world if generated from character, otherwise use default fantasy
     const worldSetting = gameState?.worldSetting || "a classic dark fantasy realm";
     const worldTheme = gameState?.worldTheme || "Dark fantasy with mystery and adventure";
@@ -283,6 +292,33 @@ BANNED PATTERNS:
 - AVOID three-item lists as a default cadence ("X, Y, Z" every paragraph). Vary the rhythm.
 - AVOID hedge adverbs as filler: slightly, almost imperceptibly, softly, faintly, barely. Commit to the action.
 
+${puzzlesEnabled ? `
+---
+
+PUZZLES (occasional, optional):
+
+When a narrative beat naturally calls for the reader to figure something out — a cipher carved on a wall, an inscription on a found object, a torn document with a missing word — you MAY include an OPTIONAL "puzzle_request" object in your JSON response alongside "content".
+
+Shape:
+"puzzle_request": {
+  "type": "scramble" | "cryptogram" | "fill-in-the-blank",
+  "theme": "<short phrase tied to current scene>",
+  "difficulty": "easy" | "medium" | "hard"
+}
+
+Type selection (light bias — break it if the beat demands):
+- "cryptogram" for ciphers, coded messages, ancient writing.
+- "scramble" for engravings, inscriptions, jumbled letters.
+- "fill-in-the-blank" for torn parchment, burned documents, faded text.
+
+Hard rules:
+- You MAY include puzzle_request ONLY when "puzzle_count_so_far" < "puzzle_cap" (both injected in user-prompt context).
+- Aim toward "puzzle_target" across the whole story.
+- Difficulty derives from "current_progress": easy below 0.4, medium 0.4-0.7, hard at 0.7+.
+- Do NOT include puzzle_request if the beat does not naturally call for one. Forced puzzles ruin the moment.
+
+If you include a puzzle_request, the reader will see narration + a puzzle card. Continue writing narration as normal; the puzzle is a sidecar, not a replacement for the page.
+` : ''}
 CHOICE FORMAT (unless this is the final page):
 
 **What do you do?**
@@ -550,7 +586,14 @@ Use the • character exactly. No "Option A" labels.`;
       // no cache marker so it doesn't poison the cache key. OpenRouter
       // forwards this content-block shape to Anthropic verbatim; the
       // OpenAI SDK types don't model cache_control, hence the cast.
-      const stableSystemText = this.getSystemPrompt(context.gameState);
+      // Puzzle integration (v1.14.0). One DB read for the flag; the existing
+      // `aiModel.ts` cache pattern is overkill for a feature gate that flips
+      // rarely. Acceptable single-call overhead.
+      const puzzlesEnabled = (await storage.getConfig('puzzles_enabled'))?.value === 'true';
+      const { contextText: puzzleContextText, signalsToMark: consumedSignals } =
+        await buildPuzzleContextForPrompt(storyId, context.gameState, puzzlesEnabled);
+
+      const stableSystemText = this.getSystemPrompt(context.gameState, puzzlesEnabled);
       const variableSystemText = momentumDirective + retryHint;
       const systemContent: Array<{
         type: "text";
@@ -570,7 +613,7 @@ Use the • character exactly. No "Option A" labels.`;
         {
           role: "user",
           content: `${contextPrompt}
-
+${puzzleContextText}
 PLAYER ACTION: <reader_input>${playerMessage}</reader_input>
 
 RESPONSE REQUIREMENTS:
@@ -600,7 +643,11 @@ Format your response as JSON with this structure:
     "createQuest": { "title": "Quest Title", "description": "Clear objectives with specific steps", "status": "active", "priority": "high|normal|low", "progress": 0, "maxProgress": 3, "reward": "50 XP and Gold Pouch" },
     "updateCharacter": { "updates": { "experience": 50 } }, // Award XP for quest progress
     "updateGameState": { "currentScene": "Descriptive Location Name" }
-  }
+  }${puzzlesEnabled ? `,
+  "puzzle_request": null
+  // OR (only when budget allows AND the beat calls for it):
+  // { "type": "scramble"|"cryptogram"|"fill-in-the-blank", "theme": "<scene-tied phrase>", "difficulty": "easy"|"medium"|"hard" }
+` : ''}
 }
 
 QUEST TRACKING - CRITICAL:
@@ -757,7 +804,11 @@ Example Quest Actions:
             actions: undefined,
             tokenUsage,
             modelUsed,
-            error: 'parse_failure' // Flag for frontend to detect this is an error
+            error: 'parse_failure', // Flag for frontend to detect this is an error
+            // v1.14.0 — no narration persisted on this path, so no signals
+            // get consumed and no puzzle is dispatched.
+            puzzle_request: null,
+            consumedSignals: [],
           };
         }
       }
@@ -822,7 +873,12 @@ Example Quest Actions:
         storyTitle: aiResponse.storyTitle || undefined,
         tokenUsage,
         modelUsed,
-        actions: aiResponse.actions || undefined
+        actions: aiResponse.actions || undefined,
+        // v1.14.0 — puzzle integration surfaced to applyAIResponse in routes.ts.
+        // puzzle_request validated via parsePuzzleRequest there; consumedSignals
+        // marked AFTER the narration message persists.
+        puzzle_request: (aiResponse as any).puzzle_request ?? null,
+        consumedSignals,
       };
 
       // V2: Increment page count if this is a page-based story

@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, and, desc, asc, sql, isNull, isNotNull, lt } from "drizzle-orm";
+import { eq, and, desc, asc, sql, isNull, isNotNull, lt, gte } from "drizzle-orm";
 import { type IStorage } from "./storage";
 import {
   type Character,
@@ -14,6 +14,11 @@ import {
   type InsertStorySummary,
   type IssueReport,
   type InsertIssueReport,
+  // v1.14.0 puzzles
+  type Puzzle,
+  type InsertPuzzle,
+  type PuzzleAttempt,
+  type InsertPuzzleAttempt,
   characters,
   quests,
   // `items` table still referenced for story-deletion cleanup below; type-
@@ -24,6 +29,9 @@ import {
   storySummaries,
   appConfig,
   issueReports,
+  puzzles,
+  puzzleAttempts,
+  puzzleSignalsConsumed,
 } from "@shared/schema";
 
 /**
@@ -705,6 +713,124 @@ export class DbStorage implements IStorage {
     } catch (error) {
       throw new Error(`Failed to mark issue report resolved: ${error instanceof Error ? error.message : error}`);
     }
+  }
+
+  // ============================ PUZZLES (v1.14.0) =========================
+
+  async createPuzzle(puzzle: InsertPuzzle): Promise<Puzzle> {
+    const [created] = await db.insert(puzzles).values(puzzle).returning();
+    return created;
+  }
+
+  async getPuzzle(id: string): Promise<Puzzle | undefined> {
+    const [row] = await db.select().from(puzzles).where(eq(puzzles.id, id)).limit(1);
+    return row;
+  }
+
+  async countPuzzlesForStory(storyId: string): Promise<number> {
+    const [{ value }] = await db
+      .select({ value: sql<number>`COUNT(*)::int` })
+      .from(puzzles)
+      .where(eq(puzzles.storyId, storyId));
+    return value ?? 0;
+  }
+
+  async recordPuzzleAttempt(attempt: InsertPuzzleAttempt): Promise<PuzzleAttempt> {
+    const [created] = await db.insert(puzzleAttempts).values(attempt).returning();
+    return created;
+  }
+
+  async isPuzzleResolved(puzzleId: string): Promise<{ correct: boolean; skipped: boolean } | null> {
+    // A puzzle is resolved iff ANY attempt row has correct=true OR skipped=true.
+    const rows = await db
+      .select({ correct: puzzleAttempts.correct, skipped: puzzleAttempts.skipped })
+      .from(puzzleAttempts)
+      .where(eq(puzzleAttempts.puzzleId, puzzleId));
+    if (rows.length === 0) return null;
+    const anyCorrect = rows.some(r => r.correct);
+    const anySkipped = rows.some(r => r.skipped);
+    if (!anyCorrect && !anySkipped) return null;
+    return { correct: anyCorrect, skipped: anySkipped };
+  }
+
+  async getUnconsumedResolutionsForStory(
+    storyId: string,
+  ): Promise<Array<{ puzzleId: string; type: string; correct: boolean; skipped: boolean }>> {
+    // Pull every puzzle for this story whose row in puzzle_signals_consumed
+    // does NOT yet exist AND that has at least one resolved attempt.
+    const rows = await db.execute(sql`
+      SELECT
+        p.id   AS "puzzleId",
+        p.type AS "type",
+        BOOL_OR(a.correct) AS "correct",
+        BOOL_OR(a.skipped) AS "skipped"
+      FROM puzzles p
+      JOIN puzzle_attempts a ON a.puzzle_id = p.id
+      WHERE p.story_id = ${storyId}
+        AND (a.correct = TRUE OR a.skipped = TRUE)
+        AND NOT EXISTS (
+          SELECT 1 FROM puzzle_signals_consumed psc WHERE psc.puzzle_id = p.id
+        )
+      GROUP BY p.id, p.type
+      ORDER BY MIN(a.attempted_at) ASC
+    `);
+    // Drizzle `execute()` returns a Result with `.rows` on postgres-js.
+    return (rows as any).map((r: any) => ({
+      puzzleId: r.puzzleId,
+      type: r.type,
+      correct: r.correct,
+      skipped: r.skipped,
+    }));
+  }
+
+  async markResolutionConsumed(puzzleId: string, storyId: string): Promise<void> {
+    await db
+      .insert(puzzleSignalsConsumed)
+      .values({ puzzleId, storyId })
+      .onConflictDoNothing();
+  }
+
+  async getPuzzleFallbackRate(daysBack: number): Promise<{ total: number; fallback: number; rate: number }> {
+    const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+    const [row] = await db
+      .select({
+        total: sql<number>`COUNT(*)::int`,
+        fallback: sql<number>`COUNT(*) FILTER (WHERE ${puzzles.isFallback})::int`,
+      })
+      .from(puzzles)
+      .where(gte(puzzles.createdAt, since));
+    const total = row?.total ?? 0;
+    const fallback = row?.fallback ?? 0;
+    return { total, fallback, rate: total === 0 ? 0 : fallback / total };
+  }
+
+  async getStuckPuzzles(
+    daysBack: number,
+    minAttempts: number,
+  ): Promise<Array<{ puzzleId: string; type: string; attemptCount: number; firstSeen: Date }>> {
+    const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+    const rows = await db.execute(sql`
+      SELECT
+        p.id     AS "puzzleId",
+        p.type   AS "type",
+        COUNT(a.*)::int AS "attemptCount",
+        MIN(a.attempted_at) AS "firstSeen"
+      FROM puzzles p
+      JOIN puzzle_attempts a ON a.puzzle_id = p.id
+      WHERE p.created_at >= ${since}
+      GROUP BY p.id, p.type
+      HAVING
+        COUNT(a.*) >= ${minAttempts}
+        AND BOOL_OR(a.correct) = FALSE
+        AND BOOL_OR(a.skipped) = FALSE
+      ORDER BY COUNT(a.*) DESC
+    `);
+    return (rows as any).map((r: any) => ({
+      puzzleId: r.puzzleId,
+      type: r.type,
+      attemptCount: r.attemptCount,
+      firstSeen: new Date(r.firstSeen),
+    }));
   }
 }
 
