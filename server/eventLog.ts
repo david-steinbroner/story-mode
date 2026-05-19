@@ -25,9 +25,11 @@ export type ServerEventType =
   | "admin_model_override_set"
   // v1.14.1: a narration AI emitted puzzle_request was dropped before any
   // puzzle row was created. Properties: { reason: 'cap' | 'parse_fail' |
-  // 'gen_fail', requested_type?, requested_theme?, requested_difficulty?,
-  // current_count?, cap? }. Surfaced on the admin dashboard alongside
-  // fallback-rate so we can see WHY puzzles fail to fire.
+  // 'gen_fail' | 'serialization_fail', requested_type?, requested_theme?,
+  // requested_difficulty?, current_count?, cap? }. Surfaced on the admin
+  // dashboard alongside fallback-rate so we can see WHY puzzles fail to fire.
+  // 'serialization_fail' added post-/ultrareview (bug_006) for cap-check
+  // transactions rolled back under contention.
   | "puzzle_dropped";
 
 export async function logEvent(

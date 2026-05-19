@@ -212,6 +212,19 @@ export async function dispatchPuzzleFromResponse(
       return persisted.id;
     }, { isolationLevel: 'serializable' });
   } catch (err) {
+    // Serializable transaction rolled back (concurrent dispatch hit the
+    // same row → Postgres SQLSTATE 40001), or persist failed for another
+    // reason. /ultrareview bug_006: the cap-drop inside the txn correctly
+    // emits puzzle_dropped via the global db handle, but this path was
+    // silent. logEvent uses the module-level `db`, not the rolled-back
+    // tx, so it commits independently after rollback (same pattern as
+    // the cap-drop path above).
+    await logEvent(sessionId, 'puzzle_dropped', {
+      reason: 'serialization_fail',
+      requested_type: req.type,
+      requested_theme: req.theme,
+      requested_difficulty: req.difficulty,
+    }, storyId);
     captureError(err as Error, { context: 'dispatchPuzzleFromResponse:persist', storyId });
     return null;
   }
