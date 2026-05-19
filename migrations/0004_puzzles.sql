@@ -76,7 +76,7 @@ ALTER TABLE issue_reports ADD COLUMN IF NOT EXISTS puzzle_id VARCHAR;
 -- FALSE so this migration is inert until rollout (Chunk 6).
 INSERT INTO app_config (key, value, updated_at) VALUES
   ('puzzle_budgets',
-   '{"25":{"target":2,"cap":2},"50":{"target":2,"cap":3},"100":{"target":4,"cap":5},"200":{"target":6,"cap":8}}',
+   '{"25":{"target":2,"cap":2},"50":{"target":2,"cap":3},"100":{"target":4,"cap":5},"250":{"target":7,"cap":10}}',
    NOW()),
   ('puzzles_enabled', 'false', NOW())
 ON CONFLICT (key) DO NOTHING;

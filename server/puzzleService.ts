@@ -23,6 +23,11 @@ import type { PuzzleType, PuzzleDifficulty } from "../shared/types/puzzles";
 import { resolveModel } from "./aiModel";
 import { captureError } from "./sentry";
 
+// spendTracker + extractTokenUsage are imported lazily inside defaultGenerator
+// so unit tests that stub the generator can load this module without a live
+// DB connection (spendTracker → db throws at module load when DATABASE_URL
+// is unset — that's intentional for prod, awkward for tests).
+
 // ESM-safe base directory. Works under tsx (dev/tests) and under the
 // esbuild ESM bundle in production. Both place puzzles/ as a sibling.
 const __thisDir = path.dirname(fileURLToPath(import.meta.url));
@@ -172,6 +177,39 @@ export function validatePuzzle(p: RawPuzzle): ValidationResult {
 }
 
 // ---------------------------------------------------------------------------
+// Attempt-time submission validation (v1.14.1 synonym tolerance).
+// These functions are called from routes.ts /api/puzzle/attempt, NOT during
+// puzzle generation. Scramble accepts any valid anagram of the puzzle's
+// letter-set; fill-in-blank accepts any member of acceptedAnswers (falling
+// back to [answer] for legacy rows).
+// ---------------------------------------------------------------------------
+
+/**
+ * v1.14.1 scramble submission check: submission is correct if it's
+ * (a) a permutation of payload.letters, (b) in the wordlist, (c) right length.
+ * Replaces strict-equal against the canonical answer so NOEST accepts STONE,
+ * TONES, NOTES, ONSET — any wordlist anagram.
+ */
+export function isValidScrambleSubmission(submission: string, letters: string, answerLength: number): boolean {
+  const submitted = submission.trim().toUpperCase();
+  if (submitted.length !== answerLength) return false;
+  const sortedSub = submitted.split('').sort().join('');
+  const sortedLet = letters.toUpperCase().split('').sort().join('');
+  if (sortedSub !== sortedLet) return false;
+  return getWordlist().has(submitted.toLowerCase());
+}
+
+/**
+ * v1.14.1 fill-in-blank submission check: submission is correct if it
+ * matches any member of acceptedAnswers (case-folded). Falls back to
+ * [answer] for legacy rows that lack the field.
+ */
+export function isValidFillInBlankSubmission(submission: string, accepted: string[]): boolean {
+  const normalized = submission.trim().toUpperCase();
+  return accepted.some(a => a.trim().toUpperCase() === normalized);
+}
+
+// ---------------------------------------------------------------------------
 // Fallback pool (Approach 3 safety net)
 // ---------------------------------------------------------------------------
 
@@ -243,6 +281,10 @@ export interface PuzzleRequest {
   theme: string;
   difficulty: PuzzleDifficulty;
   stricterRetry?: string;  // populated on re-roll with the prior failure reason
+  // v1.14.1: prior puzzle answers in this story, surfaced to the generator as
+  // "avoid these" so the same word doesn't repeat across the session
+  // (STONE×4 from v1.14.0 smoke). Capped/uppercased by the caller.
+  recentAnswers?: string[];
 }
 
 export interface GenerationResult {
@@ -279,11 +321,18 @@ function getOpenAI(): OpenAI {
   return _openai;
 }
 
+function avoidClause(req: PuzzleRequest): string {
+  // v1.14.1 anti-repetition. Inject the story's recent answers so the
+  // generator picks a different word. Capped to keep the prompt small.
+  if (!req.recentAnswers || req.recentAnswers.length === 0) return '';
+  return `\nAVOID these recently-used answers from this story (pick something different): ${req.recentAnswers.join(', ')}`;
+}
+
 const PROMPTS: Record<PuzzleType, (req: PuzzleRequest) => string> = {
   'scramble': (req) => `Generate a scramble puzzle.
 THEME: ${req.theme}
 DIFFICULTY: ${req.difficulty}
-${req.stricterRetry ? `RETRY: prior attempt failed (${req.stricterRetry}). Pick a more common, shorter answer.` : ''}
+${req.stricterRetry ? `RETRY: prior attempt failed (${req.stricterRetry}). Pick a more common, shorter answer.` : ''}${avoidClause(req)}
 
 REQUIREMENTS:
 - "answer": one common English noun, 4–9 letters, uppercase. Must fit the theme.
@@ -298,7 +347,7 @@ Return JSON only. Schema:
   'cryptogram': (req) => `Generate a cryptogram puzzle.
 THEME: ${req.theme}
 DIFFICULTY: ${req.difficulty}
-${req.stricterRetry ? `RETRY: prior attempt failed (${req.stricterRetry}).` : ''}
+${req.stricterRetry ? `RETRY: prior attempt failed (${req.stricterRetry}).` : ''}${avoidClause(req)}
 
 REQUIREMENTS:
 - "answer": a short phrase fitting the theme, 8–40 chars, uppercase, ASCII A-Z + spaces only.
@@ -311,12 +360,13 @@ Return JSON only.`,
   'fill-in-the-blank': (req) => `Generate a fill-in-the-blank puzzle.
 THEME: ${req.theme}
 DIFFICULTY: ${req.difficulty}
-${req.stricterRetry ? `RETRY: prior attempt failed (${req.stricterRetry}).` : ''}
+${req.stricterRetry ? `RETRY: prior attempt failed (${req.stricterRetry}).` : ''}${avoidClause(req)}
 
 REQUIREMENTS:
-- "answer": one word, 3+ letters, uppercase, fits the theme.
+- "answer": one word, 3+ letters, uppercase, fits the theme. This is the PRIMARY accepted answer.
 - "payload.sentence": a single sentence with the answer replaced by exactly one "___" slot.
 - "payload.blankLengthHint": { "min": <answer.length>, "max": <answer.length> }.
+- "payload.acceptedAnswers": array of 3–5 valid completions, uppercase. The FIRST entry is the primary "answer" above. Each alternate must (a) fit the sentence semantically (a reasonable English speaker would write it there), (b) match the blankLengthHint range, (c) be a common word. Include near-synonyms and natural variants — e.g. for "send an immediate ___" with answer ALERT, also accept SIGNAL, ALARM, NOTICE. This boosts pass rate without changing the puzzle.
 - "hints": exactly 3 hints, decreasing difficulty.
 Return JSON only.`,
 };
@@ -337,15 +387,49 @@ async function defaultGenerator(req: PuzzleRequest): Promise<RawPuzzle> {
       ],
       response_format: { type: "json_object" },
       temperature: 0.7,
+      max_tokens: 2000,
     });
+
+    // Track spend BEFORE parsing — the API call has been billed regardless of
+    // whether we successfully use the response. sessionId is undefined here
+    // because puzzle generation isn't bound to a player session at this layer
+    // (the dispatch caller has it, but the daily cap is what matters for cost
+    // tracking and that's session-agnostic). Added in v1.14.1 to close the
+    // tracking gap that v1.9.9 didn't anticipate. Lazy import so test stubs
+    // of the generator never need to satisfy spendTracker/db at module load.
+    const [{ spendTracker }, { extractTokenUsage }] = await Promise.all([
+      import("./spendTracker"),
+      import("./aiService"),
+    ]);
+    await spendTracker.trackRequest(
+      undefined,
+      response.usage ? extractTokenUsage(response.usage) : undefined,
+      model,
+    );
+
     const raw = response.choices[0]?.message?.content || '{}';
     const parsed = JSON.parse(raw);
 
-    // Coerce / normalize. Defensive uppercase to fix common AI drift.
+    // Coerce / normalize. Uppercase answer + payload.letters to fix scramble
+    // case-inconsistency (v1.14.1 — if Haiku returned lowercase letters, the
+    // validator's sort-check would pass at gen but the client would render
+    // mixed case).
+    const payload: Record<string, unknown> = parsed.payload ?? {};
+    if (req.type === 'scramble' && typeof payload.letters === 'string') {
+      payload.letters = payload.letters.toUpperCase();
+    }
+    // v1.14.1 synonym tolerance for fill-in-blank: normalize acceptedAnswers
+    // to uppercase. Validator falls back to [answer] if missing, so old rows
+    // and AI responses that skip the field still work.
+    if (req.type === 'fill-in-the-blank' && Array.isArray(payload.acceptedAnswers)) {
+      payload.acceptedAnswers = (payload.acceptedAnswers as unknown[])
+        .filter((a): a is string => typeof a === 'string')
+        .map(a => a.toUpperCase());
+    }
     return {
       type: req.type,
       answer: String(parsed.answer ?? '').toUpperCase(),
-      payload: parsed.payload ?? {},
+      payload,
       hints: Array.isArray(parsed.hints) && parsed.hints.length === 3
         ? [String(parsed.hints[0]), String(parsed.hints[1]), String(parsed.hints[2])]
         : ['', '', ''],

@@ -14,7 +14,7 @@ describe('puzzleConfig', () => {
   beforeEach(() => setBudgets(null));  // reset cache
 
   test('loadBudgets uses DB value when present', async () => {
-    const stub = '{"25":{"target":1,"cap":1},"50":{"target":1,"cap":2},"100":{"target":2,"cap":3},"200":{"target":3,"cap":4}}';
+    const stub = '{"25":{"target":1,"cap":1},"50":{"target":1,"cap":2},"100":{"target":2,"cap":3},"250":{"target":3,"cap":4}}';
     await loadBudgets(makeStubStorage(stub));
     expect(getBudgets()?.['25']).toEqual({ target: 1, cap: 1 });
   });
@@ -34,7 +34,7 @@ describe('puzzleConfig', () => {
       "25": { target: 99, cap: 99 },
       "50": DEFAULT_BUDGETS["50"],
       "100": DEFAULT_BUDGETS["100"],
-      "200": DEFAULT_BUDGETS["200"],
+      "250": DEFAULT_BUDGETS["250"],
     };
     setBudgets(next);
     expect(getBudgets()?.['25'].target).toBe(99);

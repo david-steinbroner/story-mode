@@ -105,10 +105,17 @@ class SpendTracker {
     );
   }
 
-  private async getDailyTotals(): Promise<DailyTotals> {
+  private async getDailyTotals(forUpdate = false): Promise<DailyTotals> {
     const date = todayKey();
     try {
-      const rows = await db.select().from(dailySpend).where(eq(dailySpend.date, date)).limit(1);
+      // v1.14.1: optional FOR UPDATE so canMakeRequest can serialize concurrent
+      // gate checks on the same day's row. Doesn't eliminate the read-check-
+      // write race (the AI call still happens between canMakeRequest and
+      // trackRequest, outside the lock) but it prevents simultaneous gate
+      // reads from both passing when the daily total is right at the cap.
+      // Full reservation pattern is deferred to v1.15.
+      const baseQuery = db.select().from(dailySpend).where(eq(dailySpend.date, date)).limit(1);
+      const rows = forUpdate ? await baseQuery.for('update') : await baseQuery;
       if (rows.length === 0) {
         return { date, totalCost: 0, requestCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, totalCacheWriteTokens: 0 };
       }
@@ -158,7 +165,10 @@ class SpendTracker {
   }
 
   async canMakeRequest(): Promise<{ allowed: boolean; reason?: string; remaining?: number }> {
-    const today = await this.getDailyTotals();
+    // v1.14.1: read the day's spend row with FOR UPDATE so two concurrent
+    // gate checks serialize. Partial mitigation for the read-check-write
+    // race; full reservation pattern deferred to v1.15.
+    const today = await this.getDailyTotals(true);
 
     if (today.totalCost >= DAILY_LIMIT_USD) {
       const resetTime = new Date();

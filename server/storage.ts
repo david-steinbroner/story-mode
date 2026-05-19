@@ -70,6 +70,10 @@ export interface IStorage {
   createPuzzle(puzzle: InsertPuzzle): Promise<Puzzle>;
   getPuzzle(id: string): Promise<Puzzle | undefined>;
   countPuzzlesForStory(storyId: string): Promise<number>;
+  /** v1.14.1: last-N puzzle answers for a story, newest first. Feeds the
+   *  anti-repetition hint into the generation prompt so the same word doesn't
+   *  surface 4× in one session (STONE×4 problem from the v1.14.0 smoke). */
+  getRecentPuzzleAnswers(storyId: string, limit: number): Promise<string[]>;
   recordPuzzleAttempt(attempt: InsertPuzzleAttempt): Promise<PuzzleAttempt>;
   /** Returns puzzles resolved (correct OR skipped) since the last narration call.
    *  Each puzzle appears at most once. Caller MUST follow with markResolutionConsumed. */
@@ -81,6 +85,10 @@ export interface IStorage {
   // Observability (Approach 7c). Both windowed to `daysBack`.
   getPuzzleFallbackRate(daysBack: number): Promise<{ total: number; fallback: number; rate: number }>;
   getStuckPuzzles(daysBack: number, minAttempts: number): Promise<Array<{ puzzleId: string; type: string; attemptCount: number; firstSeen: Date }>>;
+  /** v1.14.1: puzzle_request was emitted by AI but no puzzle row was created.
+   *  Breakdown by reason ('cap' / 'parse_fail' / 'gen_fail'). Surfaced on the
+   *  admin dashboard to diagnose "prose sets up puzzle that doesn't fire". */
+  getPuzzleDroppedSummary(daysBack: number): Promise<{ total: number; byReason: Record<string, number> }>;
 
   // Issue-report extension (Approach 7a): the existing createIssueReport already
   // accepts InsertIssueReport which (after Chunk 1 schema add) includes optional

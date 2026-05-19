@@ -422,7 +422,12 @@ export class DbStorage implements IStorage {
 
   async getGameState(sessionId: string, storyId?: string): Promise<GameState | undefined> {
     try {
-      const conditions = [eq(gameState.sessionId, sessionId)];
+      // v1.14.1: hide soft-deleted stories from getGameState. Without this,
+      // routes that fetch the game state for a deleted story (e.g. via a
+      // direct API call with a known storyId) would serve content the user
+      // had asked us to delete. Bookshelf reads via getStories already
+      // filter this; this closes the parallel direct-read path.
+      const conditions = [eq(gameState.sessionId, sessionId), isNull(gameState.deletedAt)];
       if (storyId) conditions.push(eq(gameState.storyId, storyId));
       const result = await db
         .select()
@@ -735,6 +740,16 @@ export class DbStorage implements IStorage {
     return value ?? 0;
   }
 
+  async getRecentPuzzleAnswers(storyId: string, limit: number): Promise<string[]> {
+    const rows = await db
+      .select({ answer: puzzles.answer })
+      .from(puzzles)
+      .where(eq(puzzles.storyId, storyId))
+      .orderBy(desc(puzzles.createdAt))
+      .limit(limit);
+    return rows.map(r => r.answer);
+  }
+
   async recordPuzzleAttempt(attempt: InsertPuzzleAttempt): Promise<PuzzleAttempt> {
     const [created] = await db.insert(puzzleAttempts).values(attempt).returning();
     return created;
@@ -802,6 +817,26 @@ export class DbStorage implements IStorage {
     const total = row?.total ?? 0;
     const fallback = row?.fallback ?? 0;
     return { total, fallback, rate: total === 0 ? 0 : fallback / total };
+  }
+
+  async getPuzzleDroppedSummary(daysBack: number): Promise<{ total: number; byReason: Record<string, number> }> {
+    const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+    const rows = await db.execute(sql`
+      SELECT
+        COALESCE(properties->>'reason', 'unknown') AS reason,
+        COUNT(*)::int AS count
+      FROM event_log
+      WHERE event_type = 'puzzle_dropped'
+        AND created_at >= ${since}
+      GROUP BY reason
+    `);
+    const byReason: Record<string, number> = {};
+    let total = 0;
+    for (const r of rows as any) {
+      byReason[r.reason] = Number(r.count);
+      total += Number(r.count);
+    }
+    return { total, byReason };
   }
 
   async getStuckPuzzles(

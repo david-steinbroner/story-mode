@@ -82,6 +82,9 @@ interface PuzzleHealth {
   daysBack: number;
   fallback: { total: number; fallback: number; rate: number };
   stuck: Array<{ puzzleId: string; type: string; attemptCount: number; firstSeen: string }>;
+  // v1.14.1: puzzle_dropped event counts by reason. Surfaces why narration
+  // sets up puzzles that never fire (cap hit, parse failure, gen failure).
+  dropped?: { total: number; byReason: Record<string, number> };
 }
 
 const ISSUE_CATEGORY_LABELS: Record<string, string> = {
@@ -522,6 +525,15 @@ export default function AdminDashboard() {
               title="Total puzzles"
               value={puzzleHealth ? String(puzzleHealth.fallback.total) : '—'}
               subtitle="generated this week"
+            />
+            <Card
+              title="Puzzles dropped"
+              value={puzzleHealth?.dropped ? String(puzzleHealth.dropped.total) : '—'}
+              subtitle={puzzleHealth?.dropped && puzzleHealth.dropped.total > 0
+                ? Object.entries(puzzleHealth.dropped.byReason)
+                    .map(([r, n]) => `${r}: ${n}`)
+                    .join(' · ')
+                : 'requested but not fired'}
             />
           </div>
 

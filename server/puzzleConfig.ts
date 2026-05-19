@@ -4,7 +4,7 @@
  * No TTL — instant propagation when admin edits the config.
  *
  * Stored in app_config under key 'puzzle_budgets' as a JSON string keyed by
- * story length (25/50/100/200), each value `{ target, cap }`. `target` is the
+ * story length (25/50/100/250), each value `{ target, cap }`. `target` is the
  * narration prompt's soft goal; `cap` is the hard ceiling enforced server-side.
  */
 
@@ -21,7 +21,7 @@ export const DEFAULT_BUDGETS: PuzzleBudgets = {
   "25":  { target: 2, cap: 2 },
   "50":  { target: 2, cap: 3 },
   "100": { target: 4, cap: 5 },
-  "200": { target: 6, cap: 8 },
+  "250": { target: 7, cap: 10 },
 };
 
 let _budgets: PuzzleBudgets | null = null;
@@ -48,7 +48,7 @@ export async function loadBudgets(storage: IStorage): Promise<void> {
     try {
       const parsed = JSON.parse(row.value);
       // Light shape check — every length key present with target+cap.
-      const lengths = ["25", "50", "100", "200"];
+      const lengths = ["25", "50", "100", "250"];
       const valid = lengths.every(l =>
         parsed[l] && typeof parsed[l].target === 'number' && typeof parsed[l].cap === 'number'
       );

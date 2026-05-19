@@ -22,7 +22,13 @@ export type ServerEventType =
   // endpoint, durationMs?, promptTokens?, completionTokens? }.
   | "ai_call"
   // v1.9.0: admin flipped the runtime model override. Properties: { from, to }.
-  | "admin_model_override_set";
+  | "admin_model_override_set"
+  // v1.14.1: a narration AI emitted puzzle_request was dropped before any
+  // puzzle row was created. Properties: { reason: 'cap' | 'parse_fail' |
+  // 'gen_fail', requested_type?, requested_theme?, requested_difficulty?,
+  // current_count?, cap? }. Surfaced on the admin dashboard alongside
+  // fallback-rate so we can see WHY puzzles fail to fire.
+  | "puzzle_dropped";
 
 export async function logEvent(
   sessionId: string,

@@ -13,11 +13,19 @@
  */
 
 import type { GameState } from "@shared/schema";
+import { puzzles } from "@shared/schema";
+import { db } from "./db";
+import { eq, sql } from "drizzle-orm";
 import { storage } from "./storage";
 import { generatePuzzle } from "./puzzleService";
 import { getBudgetContext } from "./puzzleConfig";
 import { captureError } from "./sentry";
+import { logEvent } from "./eventLog";
 import type { PuzzleType, PuzzleDifficulty } from "../shared/types/puzzles";
+
+// v1.14.1: how many of the story's recent puzzle answers we feed back to the
+// generator as "AVOID these" to prevent answer repetition (STONE×4 problem).
+const RECENT_ANSWER_LOOKBACK = 5;
 
 export interface UnconsumedSignal {
   puzzleId: string;
@@ -130,31 +138,81 @@ export async function dispatchPuzzleFromResponse(
   sessionId: string,
   gameState: GameState | undefined,
 ): Promise<string | null> {
-  try {
-    const soFar = await storage.countPuzzlesForStory(storyId);
-    const total = gameState?.totalPages ?? 25;
-    const { canEmit } = getBudgetContext(total, soFar);
-    if (!canEmit) {
-      // AI ignored its budget instructions; silently drop.
-      return null;
-    }
+  const total = gameState?.totalPages ?? 25;
 
-    const gen = await generatePuzzle(req);
-    const persisted = await storage.createPuzzle({
-      storyId,
-      sessionId,
-      type: gen.puzzle.type,
-      theme: req.theme,
-      difficulty: req.difficulty,
-      // Payload as stored mirrors the discriminated union shape (with `type`).
-      payload: { type: gen.puzzle.type, ...gen.puzzle.payload } as any,
-      answer: gen.puzzle.answer,
-      hints: gen.puzzle.hints as [string, string, string],
-      isFallback: gen.isFallback,
-    });
-    return persisted.id;
+  // v1.14.1 anti-repetition: pull the story's recent answers so the generator
+  // can avoid duplicating them. Best-effort — failure to fetch is logged but
+  // doesn't block generation.
+  let recentAnswers: string[] = [];
+  try {
+    recentAnswers = await storage.getRecentPuzzleAnswers(storyId, RECENT_ANSWER_LOOKBACK);
   } catch (err) {
-    captureError(err as Error, { context: 'dispatchPuzzleFromResponse', storyId });
+    captureError(err as Error, { context: 'getRecentPuzzleAnswers', storyId });
+  }
+
+  // Generate FIRST, outside any transaction. The puzzle-gen API call is slow
+  // (1–3s) so we don't want to hold a row lock across it. The cap check +
+  // insert runs in a short serializable transaction after.
+  let gen;
+  try {
+    gen = await generatePuzzle({ ...req, recentAnswers });
+  } catch (err) {
+    captureError(err as Error, { context: 'dispatchPuzzleFromResponse:generate', storyId });
+    await logEvent(sessionId, 'puzzle_dropped', {
+      reason: 'gen_fail',
+      requested_type: req.type,
+      requested_theme: req.theme,
+      requested_difficulty: req.difficulty,
+    }, storyId);
+    return null;
+  }
+
+  // Serializable transaction wraps the cap check + insert so two concurrent
+  // dispatches can't both pass a cap=2 gate when soFar=2 (v1.14.0 audit:
+  // Musical Teeth got 3 puzzles for a 25-page story). Drizzle auto-rolls
+  // serialization failures back; the freshly-generated puzzle is dropped
+  // on the floor in that case (telemetry logs it).
+  try {
+    return await db.transaction(async (tx) => {
+      const [row] = await tx
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(puzzles)
+        .where(eq(puzzles.storyId, storyId));
+      const soFar = row?.count ?? 0;
+      const { canEmit, cap } = getBudgetContext(total, soFar);
+      if (!canEmit) {
+        // AI ignored its budget instructions OR a concurrent dispatch already
+        // committed the last allowed puzzle. Either way, drop + log.
+        await logEvent(sessionId, 'puzzle_dropped', {
+          reason: 'cap',
+          requested_type: req.type,
+          requested_theme: req.theme,
+          requested_difficulty: req.difficulty,
+          current_count: soFar,
+          cap,
+        }, storyId);
+        return null;
+      }
+
+      const [persisted] = await tx
+        .insert(puzzles)
+        .values({
+          storyId,
+          sessionId,
+          type: gen.puzzle.type,
+          theme: req.theme,
+          difficulty: req.difficulty,
+          // Payload as stored mirrors the discriminated union shape (with `type`).
+          payload: { type: gen.puzzle.type, ...gen.puzzle.payload } as any,
+          answer: gen.puzzle.answer,
+          hints: gen.puzzle.hints as [string, string, string],
+          isFallback: gen.isFallback,
+        })
+        .returning();
+      return persisted.id;
+    }, { isolationLevel: 'serializable' });
+  } catch (err) {
+    captureError(err as Error, { context: 'dispatchPuzzleFromResponse:persist', storyId });
     return null;
   }
 }

@@ -18,6 +18,11 @@ export interface CryptogramPayload {
 export interface FillInBlankPayload {
   sentence: string;       // contains exactly one '___' slot
   blankLengthHint?: { min: number; max: number };
+  // v1.14.1 — synonym tolerance. Generator emits 3–5 acceptable answers
+  // (first is primary); validator accepts any member case-folded. Optional
+  // for backward compat with v1.14.0 rows that lack it (validator falls
+  // back to [answer]).
+  acceptedAnswers?: string[];
 }
 
 export type PuzzlePayload =

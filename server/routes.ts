@@ -23,7 +23,9 @@ import {
   parsePuzzleRequest,
   markConsumedSignals,
 } from "./puzzleDispatch";
+import { isValidScrambleSubmission, isValidFillInBlankSubmission } from "./puzzleService";
 import { logEvent } from "./eventLog";
+import { captureError } from "./sentry";
 import { sendIssueReportEmail } from "./emailService";
 import { resolveModel, getAdminModelOverride, setAdminModelOverride, MODEL_ALIASES } from "./aiModel";
 import { eventLog as eventLogTable } from "@shared/schema";
@@ -152,6 +154,15 @@ async function applyAIResponse(
           puzzleId,
         });
       }
+      // dispatchPuzzleFromResponse logs cap/gen_fail itself; parse_fail
+      // (validReq exists but dispatch dropped) is covered by that path too.
+    } else {
+      // v1.14.1: AI emitted a puzzle_request but its shape failed validation.
+      // Surface to event_log so we can see the rate on the admin dashboard.
+      await logEvent(sessionId, 'puzzle_dropped', {
+        reason: 'parse_fail',
+        raw: aiResponseData.puzzle_request,
+      }, storyId);
     }
   }
 
@@ -177,8 +188,11 @@ async function applyAIResponse(
         // Generate follow-up quest if main story quest was just completed
         if (updatedQuest && (updatedQuest as any).wasJustCompleted && updatedQuest.isMainStory) {
           try {
-            const character = await storage.getCharacter(sessionId);
-            const gameState = await storage.getGameState(sessionId);
+            // v1.14.1: scope character/gameState reads by storyId. Without
+            // this, a session with multiple parallel stories crosses state
+            // (audit finding — applyAIResponse cross-story leak).
+            const character = await storage.getCharacter(sessionId, storyId);
+            const gameState = await storage.getGameState(sessionId, storyId);
             const followUpQuest = await aiService.generateFollowUpQuest(sessionId, updatedQuest, { character, gameState }, modelOverride);
 
             if (followUpQuest) {
@@ -187,10 +201,12 @@ async function applyAIResponse(
                 await storage.updateQuest(updatedQuest.id, sessionId, { chainId: updatedQuest.id });
               }
 
-              // Validate and create follow-up quest
+              // Validate and create follow-up quest. v1.14.1: include storyId
+              // so the quest is scoped to the active story, not session-wide.
               const followUpValidation = insertQuestSchema.safeParse({
                 ...followUpQuest,
                 sessionId,
+                storyId: storyId ?? null,
                 parentQuestId: updatedQuest.id,
                 chainId: updatedQuest.chainId || updatedQuest.id,
                 isMainStory: true
@@ -203,6 +219,9 @@ async function applyAIResponse(
               }
             }
           } catch (error) {
+            // v1.14.1: surface to Sentry so silent follow-up failures don't
+            // hide AI-infrastructure issues from production.
+            captureError(error as Error, { context: "applyAIResponse:followUpQuest", storyId });
             console.warn('Error generating follow-up quest:', error);
           }
         }
@@ -213,7 +232,7 @@ async function applyAIResponse(
 
     // Create new quest if specified
     if (actions.createQuest) {
-      const questValidation = insertQuestSchema.safeParse({ ...actions.createQuest, sessionId });
+      const questValidation = insertQuestSchema.safeParse({ ...actions.createQuest, sessionId, storyId: storyId ?? null });
       if (questValidation.success) {
         await storage.createQuest(questValidation.data);
       } else {
@@ -223,7 +242,7 @@ async function applyAIResponse(
 
     // Update character if specified
     if (actions.updateCharacter) {
-      const character = await storage.getCharacter(sessionId);
+      const character = await storage.getCharacter(sessionId, storyId);
       if (character) {
         const charValidation = insertCharacterSchema.partial().safeParse(actions.updateCharacter.updates);
         if (charValidation.success) {
@@ -238,7 +257,7 @@ async function applyAIResponse(
     if (actions.updateGameState) {
       const gameStateValidation = insertGameStateSchema.partial().safeParse(actions.updateGameState);
       if (gameStateValidation.success) {
-        await storage.updateGameState(sessionId, gameStateValidation.data);
+        await storage.updateGameState(sessionId, gameStateValidation.data, storyId);
       } else {
         console.warn('Invalid AI game state update:', gameStateValidation.error.errors);
       }
@@ -246,12 +265,12 @@ async function applyAIResponse(
 
   }
 
-  // Detect side quest opportunities
+  // Detect side quest opportunities. v1.14.1: all reads scope by storyId.
   try {
-    const character = await storage.getCharacter(sessionId);
-    const quests = await storage.getQuests(sessionId);
-    const recentMessages = await storage.getRecentMessages(sessionId, 10);
-    const gameState = await storage.getGameState(sessionId);
+    const character = await storage.getCharacter(sessionId, storyId);
+    const quests = await storage.getQuests(sessionId, storyId);
+    const recentMessages = await storage.getRecentMessages(sessionId, 10, storyId);
+    const gameState = await storage.getGameState(sessionId, storyId);
 
     const shouldGenerateSideQuest = await aiService.detectSideQuestOpportunity(playerMessage, {
       character,
@@ -268,7 +287,9 @@ async function applyAIResponse(
       }, modelOverride);
 
       if (sideQuest) {
-        const questValidation = insertQuestSchema.safeParse(sideQuest);
+        // v1.14.1: include storyId so side quests are scoped to the active
+        // story instead of leaking session-wide.
+        const questValidation = insertQuestSchema.safeParse({ ...sideQuest, storyId: storyId ?? null });
         if (questValidation.success) {
           await storage.createQuest(questValidation.data);
         } else {
@@ -332,7 +353,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/character", async (req, res) => {
+  app.post("/api/character", aiLimiter, async (req, res) => {
     try {
       const sessionId = getSessionId(req);
       const result = insertCharacterSchema.safeParse({ ...req.body, sessionId });
@@ -495,6 +516,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // has already expired. Replaces an earlier in-memory Map that was lost on
     // every Render restart.
     const expiresAt = new Date(Date.now() + STORY_CREATION_LOCK_MS);
+    // v1.14.1 lazy purge: clear any stale rows BEFORE the conflict-aware
+    // insert. Doesn't change concurrency semantics (the UPSERT's setWhere
+    // already handles same-session re-acquire after expiry) — keeps the
+    // table from accumulating dead rows for sessions that never come back.
+    await db.delete(storyCreationLocksTable)
+      .where(lt(storyCreationLocksTable.expiresAt, new Date()));
     const claimed = await db
       .insert(storyCreationLocksTable)
       .values({ sessionId, expiresAt })
@@ -773,6 +800,7 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
 
       res.json({ success: true, descriptions });
     } catch (error) {
+      captureError(error as Error, { context: "surprise-me" });
       console.error("Error generating surprise character:", error);
       res.status(500).json({ error: "Failed to generate character description" });
     }
@@ -1020,6 +1048,10 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
     // Atomic Postgres UPSERT — claims the lock if none exists or the existing
     // one has already expired, otherwise returns nothing and we 429.
     const expiresAt = new Date(Date.now() + CHAT_LOCK_MS);
+    // v1.14.1 lazy purge: same pattern as storyCreationLocks above —
+    // sweep stale rows for inactive keys so the table stays small.
+    await db.delete(chatLocksTable)
+      .where(lt(chatLocksTable.expiresAt, new Date()));
     const claimed = await db
       .insert(chatLocksTable)
       .values({ key: lockKey, expiresAt })
@@ -1234,8 +1266,12 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
         appVersion: report.appVersion,
         userAgent: report.userAgent,
         puzzleId: report.puzzleId,
-      }).catch((err) => console.error("[issue-report] email send failed", err));
+      }).catch((err) => {
+        captureError(err as Error, { context: "issue-report:email", reportId: report.id });
+        console.error("[issue-report] email send failed", err);
+      });
     } catch (err) {
+      captureError(err as Error, { context: "issue-report:dbInsert" });
       console.error("[issue-report] DB insert failed", err);
       res.status(500).json({ error: "Failed to save issue report" });
     }
@@ -1303,11 +1339,35 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
         return res.json({ correct: false, skipped: true });
       }
 
-      // Submission path — case-insensitive, whitespace-trimmed compare.
-      // Stored answer is uppercase; normalize submission the same way.
-      const submitted = (body.submission ?? '').trim().toUpperCase();
-      const expected = puzzle.answer.trim().toUpperCase();
-      const correct = submitted === expected;
+      // Submission path. v1.14.1 synonym tolerance — validation differs by
+      // puzzle type (see docs/specs/puzzles-v1.14.1.md §1).
+      //  - scramble: any wordlist anagram of payload.letters (TONES OK for NOEST→STONE)
+      //  - fill-in-blank: any member of payload.acceptedAnswers
+      //  - cryptogram: strict-equal (single decoding by mechanic)
+      // Legacy fill-in-blank rows lack acceptedAnswers → fall back to [answer].
+      const submission = body.submission ?? '';
+      const payload = (puzzle.payload ?? {}) as Record<string, unknown>;
+      let correct: boolean;
+      switch (puzzle.type) {
+        case 'scramble':
+          correct = isValidScrambleSubmission(
+            submission,
+            (payload.letters as string) ?? '',
+            puzzle.answer.length,
+          );
+          break;
+        case 'fill-in-the-blank': {
+          const accepted = Array.isArray(payload.acceptedAnswers) && payload.acceptedAnswers.length > 0
+            ? (payload.acceptedAnswers as string[])
+            : [puzzle.answer];
+          correct = isValidFillInBlankSubmission(submission, accepted);
+          break;
+        }
+        case 'cryptogram':
+        default:
+          correct = submission.trim().toUpperCase() === puzzle.answer.trim().toUpperCase();
+          break;
+      }
 
       await storage.recordPuzzleAttempt({
         puzzleId: body.puzzleId,
@@ -1320,6 +1380,7 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
 
       return res.json({ correct, skipped: false });
     } catch (err) {
+      captureError(err as Error, { context: "puzzle-attempt", puzzleId: body.puzzleId, sessionId });
       console.error("[puzzle-attempt] DB failure", err);
       return res.status(500).json({ error: "Failed to record puzzle attempt" });
     }
@@ -1372,6 +1433,10 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
     }
 
     if (result.reason === 'not-configured') {
+      // v1.14.1: misconfigured admin auth in prod is a deployment defect that
+      // should page someone — captureError gets it into Sentry where it can
+      // alert, rather than hiding in stdout.
+      captureError(new Error("Admin auth not configured (ADMIN_KEY or ADMIN_TOTP_SECRET missing)"), { context: "adminAuth:notConfigured" });
       console.warn('[Admin] ADMIN_KEY or ADMIN_TOTP_SECRET not configured in environment');
       return res.status(503).json({ error: 'Admin auth not configured on server' });
     }
@@ -1419,13 +1484,14 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
   app.get("/api/admin/puzzle-health", adminAuth, async (req, res) => {
     const daysBack = Number(req.query.daysBack ?? 7);
     try {
-      const [fallback, stuck] = await Promise.all([
+      const [fallback, stuck, dropped] = await Promise.all([
         storage.getPuzzleFallbackRate(daysBack),
         storage.getStuckPuzzles(daysBack, 5),
+        storage.getPuzzleDroppedSummary(daysBack),
       ]);
-      res.json({ daysBack, fallback, stuck });
+      res.json({ daysBack, fallback, stuck, dropped });
     } catch (err) {
-      console.error("[admin/puzzle-health] DB failure", err);
+      captureError(err as Error, { context: "admin/puzzle-health" });
       res.status(500).json({ error: "Failed to fetch puzzle health" });
     }
   });

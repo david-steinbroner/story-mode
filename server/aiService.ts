@@ -1098,6 +1098,7 @@ Example Quest Actions:
           }
         ],
         response_format: { type: "json_object" },
+        max_tokens: 2000,
       });
 
       // Track spend before parsing — the API call has already been billed
@@ -1225,6 +1226,7 @@ Format as JSON:
           }
         ],
         response_format: { type: "json_object" },
+        max_tokens: 2000,
       });
 
       await spendTracker.trackRequest(
@@ -1316,6 +1318,7 @@ Respond in this EXACT JSON format (no other text):
           }
         ],
         temperature: 0.9, // Higher creativity for world generation
+        max_tokens: 2000,
       });
 
       await spendTracker.trackRequest(
