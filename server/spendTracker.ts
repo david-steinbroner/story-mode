@@ -105,17 +105,10 @@ class SpendTracker {
     );
   }
 
-  private async getDailyTotals(forUpdate = false): Promise<DailyTotals> {
+  private async getDailyTotals(): Promise<DailyTotals> {
     const date = todayKey();
     try {
-      // v1.14.1: optional FOR UPDATE so canMakeRequest can serialize concurrent
-      // gate checks on the same day's row. Doesn't eliminate the read-check-
-      // write race (the AI call still happens between canMakeRequest and
-      // trackRequest, outside the lock) but it prevents simultaneous gate
-      // reads from both passing when the daily total is right at the cap.
-      // Full reservation pattern is deferred to v1.15.
-      const baseQuery = db.select().from(dailySpend).where(eq(dailySpend.date, date)).limit(1);
-      const rows = forUpdate ? await baseQuery.for('update') : await baseQuery;
+      const rows = await db.select().from(dailySpend).where(eq(dailySpend.date, date)).limit(1);
       if (rows.length === 0) {
         return { date, totalCost: 0, requestCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, totalCacheWriteTokens: 0 };
       }
@@ -165,10 +158,18 @@ class SpendTracker {
   }
 
   async canMakeRequest(): Promise<{ allowed: boolean; reason?: string; remaining?: number }> {
-    // v1.14.1: read the day's spend row with FOR UPDATE so two concurrent
-    // gate checks serialize. Partial mitigation for the read-check-write
-    // race; full reservation pattern deferred to v1.15.
-    const today = await this.getDailyTotals(true);
+    // KNOWN RACE: this is a read-check-write gate with the AI call between
+    // check and write. Two concurrent callers can both pass when daily total
+    // is right at the cap. v1.14.1 tried a FOR UPDATE here but reverted it
+    // after /ultrareview — postgres-js autocommit released the lock the
+    // moment the SELECT returned, so the "mitigation" did nothing. Even a
+    // proper transaction wouldn't help: there's no write inside the read
+    // path for serializable conflict detection to fire on, and we can't
+    // hold a lock across the AI call (long-running). Real fix is a v1.15
+    // reservation pattern: atomic UPDATE that increments by an estimated
+    // cost gated by WHERE clause, settled to actual cost on completion.
+    // For now: cap can briefly overshoot under concurrency.
+    const today = await this.getDailyTotals();
 
     if (today.totalCost >= DAILY_LIMIT_USD) {
       const resetTime = new Date();

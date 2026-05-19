@@ -422,11 +422,13 @@ export class DbStorage implements IStorage {
 
   async getGameState(sessionId: string, storyId?: string): Promise<GameState | undefined> {
     try {
-      // v1.14.1: hide soft-deleted stories from getGameState. Without this,
-      // routes that fetch the game state for a deleted story (e.g. via a
-      // direct API call with a known storyId) would serve content the user
-      // had asked us to delete. Bookshelf reads via getStories already
-      // filter this; this closes the parallel direct-read path.
+      // v1.14.1: hide soft-deleted stories from this read. Partial coverage —
+      // the sibling reads (getCharacter, getQuests, getMessages family,
+      // getActiveSummary) still serve content for soft-deleted stories
+      // because their tables don't carry a deletedAt column, so closing them
+      // requires a JOIN-back or a route-layer pre-flight. Tracked for v1.14.2.
+      // The /ultrareview flagged this as a half-deleted UX inconsistency —
+      // a stale tab on a deleted story can still fetch character/messages/quests.
       const conditions = [eq(gameState.sessionId, sessionId), isNull(gameState.deletedAt)];
       if (storyId) conditions.push(eq(gameState.storyId, storyId));
       const result = await db

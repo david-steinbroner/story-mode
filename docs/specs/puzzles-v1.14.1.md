@@ -75,9 +75,9 @@ return await db.transaction(async tx => {
 
 Same race shape: `canMakeRequest` reads total, gate passes, AI call happens, `trackRequest` writes. Two concurrent paths can both pass.
 
-**Approach (v1.14.1, cheap):** add `SELECT ... FOR UPDATE` on the daily_spend row inside `canMakeRequest`. Serializes concurrent reads. Crude but materially better than today.
+**Status post-/ultrareview:** the v1.14.1 attempt at a cheap fix (`SELECT FOR UPDATE` on the daily row) was reverted. In postgres-js autocommit, the row lock releases the instant the SELECT returns — the "mitigation" did nothing. Even wrapping in a proper transaction wouldn't help: the gate read has no write inside it for serializable conflict detection to fire on, and we can't hold a lock across the AI call. **The race is documented as a known gap; cap can briefly overshoot under concurrency.**
 
-**Deferred to v1.15 (if needed):** a true pre-reservation pattern with a separate `reserved_micros` column, settled on AI-call completion. Adds operational complexity — skip unless real load demands it.
+**Deferred to v1.15:** a true reservation pattern — atomic UPDATE that increments by an estimated cost gated by WHERE clause, settled to actual cost on completion. Adds operational complexity but is the only correct fix.
 
 ---
 
@@ -127,7 +127,7 @@ Same pattern in `chatLocks` acquisition.
 - **Fill-in-blank:** newly generated puzzles include `acceptedAnswers`; validator accepts any member case-folded. Backward compat verified on legacy rows. Unit test added.
 - **Cryptogram:** behavior unchanged. Regression check.
 - **Puzzle cap:** concurrent dispatch on same story cannot exceed cap. Unit test simulates concurrent calls.
-- **Daily spend:** `SELECT FOR UPDATE` serializes the read; concurrent unit test confirms no double-pass.
+- **Daily spend:** known race documented; FOR UPDATE attempt reverted (post-/ultrareview). Real fix is the v1.15 reservation pattern.
 - **Telemetry:** every dropped puzzle emits a `puzzle_dropped` event. Verify in `event_log` after a forced cap-hit.
 - **Stale locks:** a request soft-killed mid-flight leaves a lock that auto-clears on the next acquire (any session).
 
@@ -136,9 +136,10 @@ Same pattern in `chatLocks` acquisition.
 ## Out of scope (deferred)
 
 - **Letter-cohesion** (prose previewing specific puzzle letters): keep current `<never_preview_puzzle_content>` prompt rule, optionally add a Sentry breadcrumb. Revisit in v1.14.2 if still surfacing.
-- **Full spend-reservation pattern** with `reserved_micros` column: defer to v1.15 if load demands.
+- **Full spend-reservation pattern** with `reserved_micros` column: now confirmed as the real fix; deferred to v1.15.
 - **Cryptogram synonym tolerance:** declined by mechanic.
 - **Anti-repetition** (no STONE×4): Tier 1 mechanical — pass last-N session answers into gen prompt, executed without spec.
+- **Soft-delete sibling reads** (`getCharacter`, `getQuests`, `getMessages` family, `getActiveSummary`): v1.14.1 only closed `getGameState`. The sibling tables don't carry `deletedAt`, so closure requires a JOIN-back or a route-layer pre-flight. Flagged by /ultrareview as a half-deleted UX inconsistency; queued for v1.14.2.
 
 ---
 
