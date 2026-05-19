@@ -25,6 +25,7 @@ import TypingDots from "./TypingDots";
 import CenteredHeader from "./CenteredHeader";
 import ChoiceButton from "./ChoiceButton";
 import PlayerBubble from "./PlayerBubble";
+import PuzzleCard from "./PuzzleCard";
 import IssueReportSheet, { IN_STORY_CATEGORY_IDS } from "./IssueReportSheet";
 import type { Message, Character, Quest, GameState } from "@shared/schema";
 
@@ -157,6 +158,10 @@ export default function ChatInterface({
   };
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const [showIssueReport, setShowIssueReport] = useState(false);
+  // v1.14.0 — Track the most-recent puzzle's id so IssueReportSheet can
+  // attach it. Cleared when the puzzle resolves (via PuzzleCard.onResolve).
+  // Intentionally client-only / not persisted (per spec Approach 7d).
+  const [activePuzzleId, setActivePuzzleId] = useState<string | null>(null);
   // Per-message copy feedback. Set to the message id on copy, cleared
   // after 1.5s so the icon flips back to the copy state.
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
@@ -258,6 +263,19 @@ export default function ChatInterface({
   const scrollToTop = () => {
     scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  // v1.14.0 — Track the latest puzzle message so IssueReportSheet can
+  // attach its puzzleId. The simple heuristic doesn't distinguish
+  // unresolved-vs-resolved puzzles for v1; the resolver checks
+  // puzzle_attempts.correct on the backend to disambiguate.
+  useEffect(() => {
+    const lastPuzzle = [...messages].reverse().find(m => m.type === 'puzzle' && m.puzzleId);
+    if (lastPuzzle?.puzzleId) {
+      setActivePuzzleId(lastPuzzle.puzzleId);
+    } else {
+      setActivePuzzleId(null);
+    }
+  }, [messages]);
 
   // Close drawer when tapping outside
   useEffect(() => {
@@ -678,9 +696,27 @@ ${JSON.stringify(debugInfo, null, 2)}
             )}
             {messages.length > 0 && (
               messages.map((message, index) => {
+                const isLast = index === messages.length - 1;
+
+                // v1.14.0 — puzzle messages render a PuzzleCard instead of
+                // a text bubble. Branch BEFORE the sender dispatch so
+                // type='puzzle' rows skip the chat-prose render entirely.
+                if (message.type === 'puzzle' && message.puzzleId) {
+                  return (
+                    <div key={message.id} ref={isLast ? lastMessageRef : undefined} className="space-y-1">
+                      <PuzzleCard
+                        puzzleId={message.puzzleId}
+                        onResolve={() => setActivePuzzleId(null)}
+                      />
+                      <div className="text-xs text-muted-foreground">
+                        <span>{message.timestamp}</span>
+                      </div>
+                    </div>
+                  );
+                }
+
                 const { text } = parseMessageContent(message.content);
                 const isPlayer = message.sender === "player";
-                const isLast = index === messages.length - 1;
                 const canRegenerate = isLast && !isPlayer && !isLoading && !gameState?.storyComplete;
 
                 // Messenger layout. AI messages use the shared GuideBubble
@@ -1002,6 +1038,7 @@ ${JSON.stringify(debugInfo, null, 2)}
             .filter((m) => m.sender !== "player")
             .slice(-3)
             .map((m) => m.id),
+          puzzleId: activePuzzleId,
         }}
         appVersion={APP_VERSION}
         categoryIds={IN_STORY_CATEGORY_IDS}

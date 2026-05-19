@@ -1325,6 +1325,26 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
     }
   });
 
+  // GET /api/puzzle/:id — client-safe puzzle view (no answer field).
+  // Scoped to session+story like /api/puzzle/attempt. Defined AFTER the
+  // /attempt route so Express's first-match route order doesn't shadow the
+  // literal /attempt path with /:id.
+  app.get("/api/puzzle/:id", async (req, res) => {
+    const sessionId = getSessionId(req);
+    const storyId = getStoryId(req);
+    if (!storyId) return res.status(400).json({ error: "Missing x-story-id header" });
+
+    const puzzle = await storage.getPuzzle(req.params.id);
+    if (!puzzle || puzzle.sessionId !== sessionId || puzzle.storyId !== storyId) {
+      return res.status(404).json({ error: "Puzzle not found" });
+    }
+
+    // Strip server-only fields (answer + isFallback) before returning.
+    // Client gets the PuzzleClientView shape.
+    const { answer: _answer, isFallback: _isFallback, ...clientView } = puzzle;
+    return res.json(clientView);
+  });
+
   // ============================================
   // Admin API endpoints (protected by ADMIN_KEY)
   // ============================================
@@ -1383,6 +1403,23 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
     } catch (error) {
       console.error('Error fetching admin spend stats:', error);
       res.status(500).json({ error: 'Failed to fetch spend stats' });
+    }
+  });
+
+  // GET /api/admin/puzzle-health (v1.14.0). Two soft alarms:
+  //   - fallback: % of puzzles generated as fallbacks in the last N days
+  //   - stuck: puzzles with >= 5 unresolved attempts in the last N days
+  app.get("/api/admin/puzzle-health", adminAuth, async (req, res) => {
+    const daysBack = Number(req.query.daysBack ?? 7);
+    try {
+      const [fallback, stuck] = await Promise.all([
+        storage.getPuzzleFallbackRate(daysBack),
+        storage.getStuckPuzzles(daysBack, 5),
+      ]);
+      res.json({ daysBack, fallback, stuck });
+    } catch (err) {
+      console.error("[admin/puzzle-health] DB failure", err);
+      res.status(500).json({ error: "Failed to fetch puzzle health" });
     }
   });
 

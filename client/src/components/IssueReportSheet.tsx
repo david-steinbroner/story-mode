@@ -13,6 +13,7 @@ export const ALL_ISSUE_CATEGORIES = [
   { id: "guide_reply", label: "The Guide's reply is broken or off" },
   { id: "choices", label: "My choices didn't work" },
   { id: "stuck", label: "The story got stuck" },
+  { id: "puzzle", label: "A puzzle is broken or unsolvable" },     // v1.14.0
   { id: "story_load", label: "A story didn't open or load" },
   { id: "story_missing", label: "A story is missing or in the wrong tab" },
   { id: "story_manage", label: "Can't archive, restore, or delete a story" },
@@ -21,13 +22,17 @@ export const ALL_ISSUE_CATEGORIES = [
 
 type CategoryId = (typeof ALL_ISSUE_CATEGORIES)[number]["id"];
 
-export const IN_STORY_CATEGORY_IDS: CategoryId[] = ["guide_reply", "choices", "stuck", "other"];
+export const IN_STORY_CATEGORY_IDS: CategoryId[] = ["guide_reply", "choices", "stuck", "puzzle", "other"];
 export const BOOKSHELF_CATEGORY_IDS: CategoryId[] = ["story_load", "story_missing", "story_manage", "other"];
 
 interface IssueReportContext {
   currentPage?: number | null;
   lastMessageIds?: string[];
   storyId?: string | null;
+  // v1.14.0: when the sheet opens while a puzzle is active, the parent passes
+  // the puzzleId so the resolver email gets a direct link to puzzles +
+  // puzzle_attempts rows. Null when no puzzle is active.
+  puzzleId?: string | null;
 }
 
 interface IssueReportSheetProps {
@@ -105,6 +110,8 @@ export default function IssueReportSheet({
         currentPage: includeContext ? context.currentPage ?? null : null,
         lastMessageIds: includeContext ? context.lastMessageIds ?? [] : [],
         appVersion,
+        // v1.14.0 — only when the user opted to include context AND there is one.
+        puzzleId: includeContext ? context.puzzleId ?? null : null,
       });
       setIsSubmitted(true);
     } catch (err) {

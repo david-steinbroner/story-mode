@@ -76,10 +76,19 @@ interface IssueReport {
   createdAt: string;
 }
 
+// v1.14.0 — puzzle health stats. Wire of fallback rate + stuck-puzzle list,
+// surfaced as the two soft alarms in the admin dashboard.
+interface PuzzleHealth {
+  daysBack: number;
+  fallback: { total: number; fallback: number; rate: number };
+  stuck: Array<{ puzzleId: string; type: string; attemptCount: number; firstSeen: string }>;
+}
+
 const ISSUE_CATEGORY_LABELS: Record<string, string> = {
   guide_reply: "Guide reply",
   choices: "Choices",
   stuck: "Stuck",
+  puzzle: "Puzzle",
   story_load: "Story load",
   story_missing: "Story missing",
   story_manage: "Story manage",
@@ -109,6 +118,8 @@ export default function AdminDashboard() {
   const [issueReports, setIssueReports] = useState<IssueReport[]>([]);
   const [issueFilter, setIssueFilter] = useState<"unresolved" | "all">("unresolved");
   const [resolvingId, setResolvingId] = useState<string | null>(null);
+  // v1.14.0 — puzzle health (soft alarms: fallback rate + stuck puzzles).
+  const [puzzleHealth, setPuzzleHealth] = useState<PuzzleHealth | null>(null);
 
   const fetchStats = useCallback(async () => {
     if (!adminKey || !totpCode) return;
@@ -133,8 +144,9 @@ export default function AdminDashboard() {
         fetch("/api/admin/recent-activity", { headers }),
         fetch("/api/admin/model-override", { headers }),
         fetch(issuesUrl, { headers }),
+        fetch("/api/admin/puzzle-health?daysBack=7", { headers }),  // v1.14.0
       ]);
-      const [spendRes, sessionRes, qualityRes, activityRes, modelRes, issuesRes] = responses;
+      const [spendRes, sessionRes, qualityRes, activityRes, modelRes, issuesRes, puzzleHealthRes] = responses;
 
       // 401 on any response = wrong key or wrong TOTP (server collapses both
       // so the response doesn't leak which factor failed). Reset auth so the
@@ -167,13 +179,14 @@ export default function AdminDashboard() {
         return;
       }
 
-      const [spend, sessions, quality, activity, modelOv, issues] = await Promise.all([
+      const [spend, sessions, quality, activity, modelOv, issues, puzzleHealthData] = await Promise.all([
         spendRes.json(),
         sessionRes.json(),
         qualityRes.json(),
         activityRes.json(),
         modelRes.json(),
         issuesRes.json(),
+        puzzleHealthRes.json(),
       ]);
 
       setSpendStats(spend);
@@ -182,6 +195,7 @@ export default function AdminDashboard() {
       setRecentActivity(activity);
       setModelOverride({ stored: modelOv.stored ?? null, resolved: modelOv.resolved });
       setIssueReports(issues.reports ?? []);
+      setPuzzleHealth(puzzleHealthData);
       setIsAuthenticated(true);
       setLastUpdated(new Date());
     } catch (err) {
@@ -482,6 +496,48 @@ export default function AdminDashboard() {
             />
           </div>
         </div>
+
+        {/* Puzzles (v1.14.0). Soft alarms: fallback rate + frustration
+            signal. Backed by GET /api/admin/puzzle-health with daysBack=7. */}
+        <section className="bg-white rounded-lg shadow-md p-6 space-y-3">
+          <h2 className="text-lg font-semibold" style={{ color: "#5C5470" }}>
+            Puzzles (last 7 days)
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Card
+              title="Puzzle fallback rate"
+              value={puzzleHealth
+                ? `${(puzzleHealth.fallback.rate * 100).toFixed(1)}%`
+                : '—'}
+              subtitle={puzzleHealth
+                ? `${puzzleHealth.fallback.fallback} of ${puzzleHealth.fallback.total}`
+                : ''}
+            />
+            <Card
+              title="Stuck puzzles"
+              value={puzzleHealth ? String(puzzleHealth.stuck.length) : '—'}
+              subtitle="≥ 5 attempts, unresolved"
+            />
+            <Card
+              title="Total puzzles"
+              value={puzzleHealth ? String(puzzleHealth.fallback.total) : '—'}
+              subtitle="generated this week"
+            />
+          </div>
+
+          {puzzleHealth && puzzleHealth.stuck.length > 0 && (
+            <div className="border border-border rounded-md p-3 bg-card">
+              <p className="text-sm font-medium mb-2">Stuck puzzles needing review:</p>
+              <ul className="space-y-1 text-xs font-mono">
+                {puzzleHealth.stuck.map(s => (
+                  <li key={s.puzzleId}>
+                    {s.type} · {s.puzzleId.slice(0, 8)}… · {s.attemptCount} attempts · {new Date(s.firstSeen).toLocaleDateString()}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
 
         {/* Session Stats */}
         <div className="bg-white rounded-lg shadow-md p-6">
