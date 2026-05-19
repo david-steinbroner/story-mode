@@ -15,7 +15,7 @@ import {
   type Message
 } from "@shared/schema";
 import { z } from "zod";
-import { aiLimiter, generalLimiter, strictLimiter } from "./rateLimit";
+import { aiLimiter, generalLimiter, strictLimiter, puzzleAttemptLimiter } from "./rateLimit";
 import { spendTracker } from "./spendTracker";
 import { aiService, type AIResponse, extractTokenUsage } from "./aiService";
 import {
@@ -1182,6 +1182,7 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
     "story_load",
     "story_missing",
     "story_manage",
+    "puzzle",       // v1.14.0
     "other",
   ]);
   const issueReportBodySchema = z.object({
@@ -1191,6 +1192,10 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
     currentPage: z.number().int().nullable().optional(),
     lastMessageIds: z.array(z.string()).max(3).optional(),
     appVersion: z.string().max(32).nullable().optional(),
+    // v1.14.0: when the report is filed from a puzzle screen, the client
+    // optionally attaches the active puzzleId. Resolver-side, this links
+    // directly to the puzzles row + every puzzle_attempts row for diagnosis.
+    puzzleId: z.string().min(1).nullable().optional(),
   });
 
   app.post("/api/issue-report", strictLimiter, async (req, res) => {
@@ -1212,6 +1217,8 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
         lastMessageIds: body.includeContext ? body.lastMessageIds ?? [] : [],
         appVersion: body.appVersion ?? null,
         userAgent,
+        // v1.14.0 — only persist when context is opted in AND a puzzleId was sent.
+        puzzleId: body.includeContext ? body.puzzleId ?? null : null,
       });
       res.json({ id: report.id });
       // Fire-and-forget. Errors are logged inside emailService; DB save is the
@@ -1226,10 +1233,95 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
         lastMessageIds: report.lastMessageIds ?? [],
         appVersion: report.appVersion,
         userAgent: report.userAgent,
+        puzzleId: report.puzzleId,
       }).catch((err) => console.error("[issue-report] email send failed", err));
     } catch (err) {
       console.error("[issue-report] DB insert failed", err);
       res.status(500).json({ error: "Failed to save issue report" });
+    }
+  });
+
+  // ============================================
+  // Puzzle attempts (v1.14.0)
+  // ============================================
+
+  // Either submission OR skip — never both. hintsUsed tracked client-side for analytics.
+  const puzzleAttemptBodySchema = z.object({
+    // Loose string with a length cap. Defends against absurd puzzleIds bloating
+    // the rate_limit_buckets table (the limiter reads body.puzzleId BEFORE Zod runs).
+    puzzleId: z.string().min(1).max(64),
+    submission: z.string().min(1).max(200).optional(),
+    skip: z.boolean().optional(),
+    hintsUsed: z.number().int().min(0).max(3).default(0),
+  }).refine(b => !(b.submission && b.skip), {
+    message: "submission and skip are mutually exclusive",
+  }).refine(b => b.submission !== undefined || b.skip === true, {
+    message: "must include either submission or skip=true",
+  });
+
+  app.post("/api/puzzle/attempt", puzzleAttemptLimiter, async (req, res) => {
+    const parsed = puzzleAttemptBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid puzzle attempt body" });
+    }
+    const body = parsed.data;
+    const sessionId = getSessionId(req);
+    const storyId = getStoryId(req);
+    if (!storyId) {
+      return res.status(400).json({ error: "Missing x-story-id header" });
+    }
+
+    try {
+      // Cross-session safety: the puzzle must belong to this session + story.
+      const puzzle = await storage.getPuzzle(body.puzzleId);
+      if (!puzzle) {
+        return res.status(404).json({ error: "Puzzle not found" });
+      }
+      if (puzzle.sessionId !== sessionId || puzzle.storyId !== storyId) {
+        // Don't leak existence vs. ownership — return 404 either way.
+        return res.status(404).json({ error: "Puzzle not found" });
+      }
+
+      // Idempotency: if already resolved, return prior resolution state
+      // WITHOUT inserting a new attempt row. (Approach 6 §Edge: re-attempt
+      // after already resolved.)
+      const prior = await storage.isPuzzleResolved(body.puzzleId);
+      if (prior) {
+        return res.json({ correct: prior.correct, skipped: prior.skipped });
+      }
+
+      // Skip path
+      if (body.skip) {
+        await storage.recordPuzzleAttempt({
+          puzzleId: body.puzzleId,
+          sessionId,
+          submission: null,
+          correct: false,
+          skipped: true,
+          hintsUsed: body.hintsUsed,
+        });
+        return res.json({ correct: false, skipped: true });
+      }
+
+      // Submission path — case-insensitive, whitespace-trimmed compare.
+      // Stored answer is uppercase; normalize submission the same way.
+      const submitted = (body.submission ?? '').trim().toUpperCase();
+      const expected = puzzle.answer.trim().toUpperCase();
+      const correct = submitted === expected;
+
+      await storage.recordPuzzleAttempt({
+        puzzleId: body.puzzleId,
+        sessionId,
+        submission: body.submission ?? null,
+        correct,
+        skipped: false,
+        hintsUsed: body.hintsUsed,
+      });
+
+      return res.json({ correct, skipped: false });
+    } catch (err) {
+      console.error("[puzzle-attempt] DB failure", err);
+      return res.status(500).json({ error: "Failed to record puzzle attempt" });
     }
   });
 

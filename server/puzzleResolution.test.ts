@@ -113,3 +113,67 @@ describe.skipIf(SKIP)('puzzle resolution-signal threading', () => {
     expect(await storage.isPuzzleResolved(puzzle.id)).toEqual({ correct: true, skipped: false });
   });
 });
+
+/**
+ * Chunk 4 — storage-layer contract tests for /api/puzzle/attempt.
+ *
+ * The full 404/403/idempotency endpoint behavior gets smoke-tested in Chunk 6
+ * once the UI is wired. These tests only confirm the storage primitives that
+ * the route handler relies on:
+ *   - recordPuzzleAttempt accepts multiple submissions until resolution
+ *   - getPuzzle returns the row with sessionId/storyId so the route can ACL it
+ */
+describe.skipIf(SKIP)('endpoint contract — idempotency + cross-session', () => {
+  const storyId = `test-story-ep-${Date.now()}`;
+  const sessionId = `test-session-ep-${Date.now()}`;
+  const otherSession = `other-session-${Date.now()}`;
+
+  beforeAll(async () => {
+    ({ storage } = await import('./storage'));
+    ({ _testDb } = await import('./db'));
+  });
+
+  afterAll(async () => {
+    if (!_testDb) return;
+    await _testDb.execute(
+      sql`DELETE FROM puzzle_attempts WHERE session_id IN (${sessionId}, ${otherSession})`,
+    );
+    await _testDb.execute(sql`DELETE FROM puzzles WHERE story_id = ${storyId}`);
+  });
+
+  test('recordPuzzleAttempt allows multiple submissions until resolution', async () => {
+    const puzzle = await storage.createPuzzle({
+      storyId, sessionId, type: 'scramble', theme: 'test', difficulty: 'easy',
+      payload: { letters: 'AETRESUR' } as any, answer: 'TREASURE',
+      hints: ['x', 'y', 'z'] as any, isFallback: false,
+    });
+
+    await storage.recordPuzzleAttempt({
+      puzzleId: puzzle.id, sessionId, submission: 'WRONG1', correct: false, skipped: false, hintsUsed: 0,
+    });
+    await storage.recordPuzzleAttempt({
+      puzzleId: puzzle.id, sessionId, submission: 'WRONG2', correct: false, skipped: false, hintsUsed: 1,
+    });
+    expect(await storage.isPuzzleResolved(puzzle.id)).toBeNull();
+
+    await storage.recordPuzzleAttempt({
+      puzzleId: puzzle.id, sessionId, submission: 'TREASURE', correct: true, skipped: false, hintsUsed: 2,
+    });
+    const resolved = await storage.isPuzzleResolved(puzzle.id);
+    expect(resolved?.correct).toBe(true);
+  });
+
+  test('puzzle ownership: cross-session getPuzzle returns the same row (endpoint enforces ACL)', async () => {
+    const puzzle = await storage.createPuzzle({
+      storyId, sessionId, type: 'scramble', theme: 'test', difficulty: 'easy',
+      payload: { letters: 'X' } as any, answer: 'X',
+      hints: ['x', 'y', 'z'] as any, isFallback: false,
+    });
+    const fetched = await storage.getPuzzle(puzzle.id);
+    expect(fetched?.sessionId).toBe(sessionId);
+    // The session+story check happens in the route handler, not the storage
+    // layer — this test only confirms the storage returns the data needed
+    // for the route to make the decision. The 404 behavior is smoke-tested
+    // in Chunk 6.
+  });
+});

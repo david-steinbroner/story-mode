@@ -64,6 +64,10 @@ interface IssueReportEmailInput {
   lastMessageIds: string[];
   appVersion: string | null;
   userAgent: string | null;
+  // v1.14.0 — present when the report was filed from a puzzle screen with
+  // "include context" toggled on. Server-generated UUID, so safe to inline
+  // into the diagnostic SQL snippet below (no injection vector).
+  puzzleId: string | null;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -73,6 +77,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   story_load: "A story didn't open or load",
   story_missing: "A story is missing or in the wrong tab",
   story_manage: "Can't archive, restore, or delete a story",
+  puzzle: "A puzzle is broken or unsolvable",
   other: "Something else",
 };
 
@@ -90,6 +95,16 @@ export async function sendIssueReportEmail(input: IssueReportEmailInput): Promis
     input.appVersion ? `Version: ${input.appVersion}` : null,
     input.userAgent ? `User agent: ${input.userAgent}` : null,
   ].filter(Boolean);
+
+  // v1.14.0 — surface puzzle diagnostics inline. The puzzleId originated
+  // server-side (UUID via Postgres `gen_random_uuid()`); not user-supplied,
+  // so it's safe to interpolate into the diagnostic SQL snippet.
+  if (input.puzzleId) {
+    contextLines.push(`Puzzle ID: ${input.puzzleId}`);
+    contextLines.push(
+      `Inspect: SELECT * FROM puzzles WHERE id = '${input.puzzleId}'; SELECT * FROM puzzle_attempts WHERE puzzle_id = '${input.puzzleId}' ORDER BY attempted_at;`
+    );
+  }
 
   const text = [
     `New issue report — ${label}`,

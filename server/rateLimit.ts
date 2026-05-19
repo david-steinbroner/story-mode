@@ -100,3 +100,47 @@ export const strictLimiter = rateLimit({
     });
   },
 });
+
+// Puzzle attempt bucket (v1.14.0). Keyed by (session, puzzleId) so a single
+// reader can attempt many puzzles in a session, but no single puzzle can be
+// brute-forced beyond 30 submissions/hour. Submissions are cheap (string
+// compare); this limit exists to deter scripted brute force, not save cost.
+const PUZZLE_ATTEMPT_LIMIT = 30;
+
+const keyBySessionAndPuzzle = (req: Request) => {
+  const sessionId = req.headers['x-session-id'];
+  // express-rate-limit calls keyGenerator BEFORE Zod parses the body, so we
+  // read req.body.puzzleId loosely. Express's body-parser has already run
+  // (see server/index.ts), so JSON body is available. Truncate to 64 chars
+  // to match the Zod cap in routes.ts, so a malicious long body can't bloat
+  // the rate_limit_buckets table even though Zod hasn't run yet.
+  const rawPuzzleId = (req.body as { puzzleId?: unknown } | undefined)?.puzzleId;
+  const puzzleId = typeof rawPuzzleId === 'string' && rawPuzzleId.length > 0
+    ? rawPuzzleId.slice(0, 64)
+    : null;
+  const session = typeof sessionId === 'string' && sessionId.length > 0
+    ? `session:${sessionId}`
+    : `ip:${ipKeyGenerator(req.ip ?? '')}`;
+  const puzzle = puzzleId ? `puzzle:${puzzleId}` : 'puzzle:unknown';
+  return `${session}|${puzzle}`;
+};
+
+export const puzzleAttemptLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: PUZZLE_ATTEMPT_LIMIT,
+  keyGenerator: keyBySessionAndPuzzle,
+  store: new PostgresRateLimitStore('puzzle_attempt'),
+  message: { error: 'Too many attempts on this puzzle.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[RateLimit] Puzzle attempt limit exceeded for key: ${keyBySessionAndPuzzle(req)}`);
+    }
+    res.status(429).json({
+      error: 'Too many attempts on this puzzle in the last hour. Try again later.',
+      limit: PUZZLE_ATTEMPT_LIMIT,
+      window: '1 hour',
+    });
+  },
+});
