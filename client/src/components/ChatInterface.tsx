@@ -184,9 +184,11 @@ export default function ChatInterface({
   const lastMessageRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  // Extract choices from the latest AI message
+  // Extract choices from the latest AI CHAT message. Puzzle messages (v1.14.0)
+  // are inserted after narration and have empty content; skip them so the
+  // drawer always sources its choices from the narration row.
   const latestChoices = useMemo(() => {
-    const lastAiMessage = [...messages].reverse().find(m => m.sender !== 'player');
+    const lastAiMessage = [...messages].reverse().find(m => m.sender !== 'player' && m.type !== 'puzzle');
     if (!lastAiMessage) return [];
     const { options } = parseMessageContent(lastAiMessage.content);
     return options;
@@ -1035,7 +1037,7 @@ ${JSON.stringify(debugInfo, null, 2)}
           currentPage: gameState?.currentPage ?? null,
           storyId: gameState?.storyId ?? null,
           lastMessageIds: messages
-            .filter((m) => m.sender !== "player")
+            .filter((m) => m.sender !== "player" && m.type !== "puzzle")
             .slice(-3)
             .map((m) => m.id),
           puzzleId: activePuzzleId,

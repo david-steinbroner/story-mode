@@ -38,4 +38,8 @@ export interface PuzzleClientView {
   difficulty: PuzzleDifficulty;
   payload: PuzzlePayload;
   hints: Hints;
+  // v1.14.0 — non-null when the puzzle has already been resolved (correct or
+  // skipped). Lets the client render the terminal state on fresh mount, e.g.
+  // after a page reload. Null when there are no resolved attempts yet.
+  resolved: { correct: boolean; skipped: boolean } | null;
 }

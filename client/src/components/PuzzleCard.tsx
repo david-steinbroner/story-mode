@@ -42,6 +42,10 @@ export default function PuzzleCard({ puzzleId, onResolve }: PuzzleCardProps) {
   const [showHintButton, setShowHintButton] = useState(false);
   const [showSkipButton, setShowSkipButton] = useState(false);
   const [terminal, setTerminal] = useState<AttemptResponse | null>(null);
+  // Track wrong submissions so we can show inline feedback. Without this,
+  // submitting an incorrect answer is silently swallowed and the reader
+  // has no idea whether the form even fired. v1.14.0 UX baseline.
+  const [wrongAttempts, setWrongAttempts] = useState(0);
 
   // 30s timer → reveal hint button. 60s → reveal skip button.
   useEffect(() => {
@@ -57,6 +61,18 @@ export default function PuzzleCard({ puzzleId, onResolve }: PuzzleCardProps) {
   useEffect(() => {
     if (hintsRevealed >= 3) setShowSkipButton(true);
   }, [hintsRevealed]);
+
+  // v1.14.0 — Hydrate terminal state from the server when the puzzle has
+  // already been resolved (e.g., user reloads the page after solving). Without
+  // this, the input would render as active and any submission would hit the
+  // idempotent endpoint, which returns the prior `correct:true` state —
+  // making it look like ANY wrong submission resolves the puzzle. Setting
+  // terminal here disables the input and shows the resolved bubble.
+  useEffect(() => {
+    if (puzzle?.resolved && !terminal) {
+      setTerminal({ correct: puzzle.resolved.correct, skipped: puzzle.resolved.skipped });
+    }
+  }, [puzzle?.resolved, terminal]);
 
   // Hint button also surfaces immediately after any incorrect submit.
   function revealHintEarly() { setShowHintButton(true); }
@@ -79,6 +95,9 @@ export default function PuzzleCard({ puzzleId, onResolve }: PuzzleCardProps) {
         // puzzle's resolved state if needed.
         queryClient.invalidateQueries({ queryKey: ["messages"] });
       } else {
+        // Wrong submission: bump the counter (drives inline feedback below)
+        // and surface the hint button if it wasn't visible yet.
+        setWrongAttempts(n => n + 1);
         revealHintEarly();
       }
     },
@@ -165,6 +184,16 @@ export default function PuzzleCard({ puzzleId, onResolve }: PuzzleCardProps) {
             </Button>
           )}
         </div>
+
+        {/* Wrong-answer feedback (v1.14.0). Shown once at least one
+            incorrect attempt has been submitted, until the puzzle resolves.
+            Without this, a wrong submission silently clears the form and
+            the reader has no idea whether anything happened. */}
+        {wrongAttempts > 0 && !terminal && (
+          <p className="text-sm" style={{ color: "#B45309" }}>
+            Not quite. Try again{showHintButton && hintsRevealed < 3 ? ", or take a hint" : ""}.
+          </p>
+        )}
 
         {attemptMutation.isError && (
           <p className="text-sm text-destructive">Something went wrong submitting. Try again?</p>

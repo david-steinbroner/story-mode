@@ -1339,10 +1339,17 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
       return res.status(404).json({ error: "Puzzle not found" });
     }
 
+    // Surface resolution state so the client can render an already-solved
+    // puzzle correctly on page reload. Without this, a fresh client mount
+    // shows an active input even though the server treats any submission
+    // as idempotent-resolved (Approach 6 — first submit set the terminal
+    // state; subsequent submits return the prior result).
+    const resolved = await storage.isPuzzleResolved(req.params.id);
+
     // Strip server-only fields (answer + isFallback) before returning.
-    // Client gets the PuzzleClientView shape.
+    // Client gets the PuzzleClientView shape plus the resolved state.
     const { answer: _answer, isFallback: _isFallback, ...clientView } = puzzle;
-    return res.json(clientView);
+    return res.json({ ...clientView, resolved });
   });
 
   // ============================================

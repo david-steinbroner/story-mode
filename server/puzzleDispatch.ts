@@ -55,16 +55,18 @@ export async function buildPuzzleContextForPrompt(
   const progress = total > 0 ? cur / total : 0;
 
   const unconsumed = await storage.getUnconsumedResolutionsForStory(storyId);
+  // XML structure matches the <puzzle_state> reference in the system prompt's
+  // <when_to_emit> block — so the narration AI can read the named block back
+  // by tag rather than us re-stating rules every turn.
   const signalsBlock = unconsumed.length === 0
     ? ''
-    : '\n\nRECENT PUZZLE RESOLUTIONS (fold into narration naturally — do not announce):\n' +
-      unconsumed.map(u => `- reader ${u.correct ? 'solved' : 'skipped'} a ${u.type} puzzle`).join('\n');
+    : '\n  <recent_resolutions note="fold into narration naturally; do not announce explicitly">\n' +
+      unconsumed.map(u => `    <resolution outcome="${u.correct ? 'solved' : 'skipped'}" type="${u.type}" />`).join('\n') +
+      '\n  </recent_resolutions>';
 
-  const contextText = `\n\nPUZZLE BUDGET:
-- puzzle_count_so_far: ${soFar}
-- puzzle_target: ${target}
-- puzzle_cap: ${cap}
-- current_progress: ${progress.toFixed(2)}${signalsBlock}\n`;
+  const contextText = `\n\n<puzzle_state>
+  <budget puzzle_count_so_far="${soFar}" puzzle_target="${target}" puzzle_cap="${cap}" current_progress="${progress.toFixed(2)}" />${signalsBlock}
+</puzzle_state>\n`;
 
   return {
     contextText,

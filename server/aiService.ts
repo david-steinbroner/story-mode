@@ -295,29 +295,72 @@ BANNED PATTERNS:
 ${puzzlesEnabled ? `
 ---
 
-PUZZLES (occasional, optional):
+<puzzles>
 
-When a narrative beat naturally calls for the reader to figure something out — a cipher carved on a wall, an inscription on a found object, a torn document with a missing word — you MAY include an OPTIONAL "puzzle_request" object in your JSON response alongside "content".
+<what_puzzles_are>
+Some pages will feature inscribed, encoded, or fragmentary text that the protagonist is trying to read or decipher. When you write such a page, you may attach a \`puzzle_request\` to your JSON response. A separate system then generates an interactive puzzle card the reader solves below your narration. You do NOT generate the puzzle's content — only the *invitation* to one.
+</what_puzzles_are>
 
-Shape:
-"puzzle_request": {
-  "type": "scramble" | "cryptogram" | "fill-in-the-blank",
-  "theme": "<short phrase tied to current scene>",
-  "difficulty": "easy" | "medium" | "hard"
-}
+<when_to_emit>
+Emit a \`puzzle_request\` when ALL of the following are true:
+1. Your narration features the protagonist looking at, tracing, examining, or trying to read text that is jumbled, encoded, fragmentary, or otherwise not plainly legible.
+2. The reader's natural next action is "figure out what it says."
+3. Budget allows (see \`<puzzle_state>\` in the user message — \`puzzle_count_so_far\` must be less than \`puzzle_cap\`).
 
-Type selection (light bias — break it if the beat demands):
-- "cryptogram" for ciphers, coded messages, ancient writing.
-- "scramble" for engravings, inscriptions, jumbled letters.
-- "fill-in-the-blank" for torn parchment, burned documents, faded text.
+If those three are true, emit. Default to emitting. A scene with decodable text and no puzzle is a missed moment; a puzzle on a sword-fight page is a category error. The first is the more common failure.
 
-Hard rules:
-- You MAY include puzzle_request ONLY when "puzzle_count_so_far" < "puzzle_cap" (both injected in user-prompt context).
-- Aim toward "puzzle_target" across the whole story.
-- Difficulty derives from "current_progress": easy below 0.4, medium 0.4-0.7, hard at 0.7+.
-- Do NOT include puzzle_request if the beat does not naturally call for one. Forced puzzles ruin the moment.
+Do NOT emit on pages where the protagonist is fighting, fleeing, conversing, walking, deciding, or otherwise not interacting with decodable text. Do NOT emit just because earlier pages had puzzles. Do NOT emit to "use up" the budget.
+</when_to_emit>
 
-If you include a puzzle_request, the reader will see narration + a puzzle card. Continue writing narration as normal; the puzzle is a sidecar, not a replacement for the page.
+<type_selection>
+Choose by HOW the reader will solve, not by what the surface looks like. Walk this decision tree internally:
+
+- Does the text have letters that are PRESENT but in the wrong ORDER, and reading it means putting them back in order? → \`scramble\`
+- Does each letter STAND FOR a different letter, and reading it means working out the substitution? → \`cryptogram\`
+- Is part of a SENTENCE MISSING, and reading it means guessing the missing word? → \`fill-in-the-blank\`
+
+Common confusions to avoid:
+- "Letters carved in stone, jumbled together" is \`scramble\`. The letters are present; they need re-ordering. NOT cryptogram.
+- "A note written in code" is \`cryptogram\`. The letters present aren't the real letters. NOT scramble.
+- "A water-damaged page with a missing word" is \`fill-in-the-blank\`. NOT scramble (the surrounding words are fine; only one slot is gone).
+
+If two could fit, pick the one that matches the verb in your narration. "Re-arrange / un-jumble / re-order" → scramble. "Decode / decipher / crack" → cryptogram. "Fill in / guess the missing" → fill-in-the-blank.
+</type_selection>
+
+<how_to_write_the_narration_around_a_puzzle>
+A puzzle is a moment the reader is pulled toward, not ambient set dressing. When you emit a \`puzzle_request\`, end your narration leaning INTO the puzzle: give the reader a reason to care about what the text says. Curiosity is enough; stakes are better.
+
+Good:
+"You crouch by the headstone. Letters are carved deep into the granite, but whoever cut them shuffled the order. Your mother's name should be here. You think it still is, somewhere in the jumble."
+
+Good:
+"The note is in his hand, but every letter is the wrong letter. He meant for someone to crack this. The question is whether you're that someone."
+
+Ambient (avoid):
+"There are carved letters here. The wind blows. You consider what to do next."
+
+The puzzle card appears immediately after your narration. Your final sentence should make the reader want to engage with what comes next, not move on from it.
+</how_to_write_the_narration_around_a_puzzle>
+
+<never_preview_puzzle_content>
+The puzzle's actual letters, ciphertext, missing word, or character sequences DO NOT EXIST YET when you write your narration. They are generated by a separate AI call after your response. Your narration MUST refer to the decodable text only in generic terms.
+
+Permitted phrasings: "jumbled letters", "scrambled inscription", "a coded note", "letters in the wrong order", "a half-burned word", "writing you can't quite read", "an inscription that needs untangling", "a torn page with a gap".
+
+Forbidden in narration prose:
+- Specific letters or letter sequences in any format (sequences, dashes, brackets, parentheses, quotes — none of those)
+- Specific ciphertext substitutions or substring patterns
+- The specific word that fills the blank in a fill-in-the-blank
+- "It spells X" or "the letters are X" or "the missing word is X"
+
+If you find yourself about to write specific characters, stop — the puzzle card will show them, your narration should not. This is the single most important rule in this section.
+</never_preview_puzzle_content>
+
+<output_discipline>
+Make the emit / don't-emit decision and the type-selection decision INTERNALLY. Do not narrate your reasoning. Do not write a preamble. Do not wrap JSON in markdown code fences. The first character of your response is \`{\`. The last character is \`}\`. Nothing before, nothing after.
+</output_discipline>
+
+</puzzles>
 ` : ''}
 CHOICE FORMAT (unless this is the final page):
 
@@ -631,7 +674,15 @@ RESPONSE REQUIREMENTS:
    - Use \\t for tabs (not raw tab characters)
    - Escape all special characters properly
    - Do NOT include raw control characters
-
+${puzzlesEnabled ? `
+5. **Puzzle decision** — apply the rule from <when_to_emit> in the system prompt to this turn:
+   - Read \`<puzzle_state>\` above for budget numbers and recent resolutions.
+   - If your narration features decodable text AND \`puzzle_count_so_far\` < \`puzzle_cap\` → emit \`"puzzle_request": { type, theme, difficulty }\`.
+   - Otherwise → \`"puzzle_request": null\`.
+   - Pick \`difficulty\` from \`current_progress\`: easy below 0.4, medium 0.4 to 0.7, hard at 0.7 or above.
+   - Pick \`theme\` as a short phrase tied to THIS page's scene (3 to 8 words). Do not name specific letters or words.
+   - This decision happens silently. No reasoning in the response. No markdown fences. JSON only.
+` : ''}
 Format your response as JSON with this structure:
 {
   "content": "Your narrative prose here...\\n\\n**What do you do?**\\n• Take a bold action\\n• Try something different\\n• Do something unexpected",
@@ -645,8 +696,8 @@ Format your response as JSON with this structure:
     "updateGameState": { "currentScene": "Descriptive Location Name" }
   }${puzzlesEnabled ? `,
   "puzzle_request": null
-  // OR (only when budget allows AND the beat calls for it):
-  // { "type": "scramble"|"cryptogram"|"fill-in-the-blank", "theme": "<scene-tied phrase>", "difficulty": "easy"|"medium"|"hard" }
+  // OR an object: { "type": "scramble" | "cryptogram" | "fill-in-the-blank", "theme": "<3-8 word scene phrase>", "difficulty": "easy" | "medium" | "hard" }
+  // Set to null when the page has no decodable text. Set to the object when your narration features text the protagonist is trying to read/decode and puzzle_count_so_far < puzzle_cap.
 ` : ''}
 }
 

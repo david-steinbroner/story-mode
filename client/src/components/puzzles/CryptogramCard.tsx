@@ -23,6 +23,14 @@ export default function CryptogramCard({ payload, onSubmit, disabled }: Props) {
 
   return (
     <div className="space-y-2.5">
+      {/* First-time players don't know cryptogram mechanics. Surface the
+          rule + the role of the revealed letter inline so the puzzle is
+          discoverable without external instruction. */}
+      <p className="text-xs text-muted-foreground leading-relaxed">
+        Each cipher letter maps to one plaintext letter. The first letter is
+        revealed below — use it, the hints, and the word lengths to decode the
+        rest. Type the full decoded message.
+      </p>
       <div className="font-mono text-center py-3 px-2 bg-primary/10 rounded-md leading-relaxed">
         <div className="text-lg tracking-widest text-foreground">
           {rendered.map((r, i) => <span key={i}>{r.ch}</span>)}
