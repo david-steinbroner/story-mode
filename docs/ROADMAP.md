@@ -70,6 +70,12 @@ In rough priority order.
 - **Why deferred:** Too risky for a no-behavior-change cleanup pass without a visual regression test setup.
 - **Done when:** `grep -rn '#[0-9A-Fa-f]\{6\}' client/src/components` returns zero hits.
 
+### Dependency hygiene
+- **What:** `npm audit` surfaces 1 moderate advisory as of v1.14.1 push: `ws@8.0.0–8.20.0` uninitialized memory disclosure (GHSA-58qx-3vcg-4xpx). Fix available via `npm audit fix` — patch-version bump within `ws`'s semver range.
+- **Status:** Transitive dep, predates v1.14.1. Not blocking deploy (moderate, not high — per CLAUDE.md §11 rule).
+- **Why deferred:** Bundling a `package-lock.json` change into a milestone deploy adds noise. Standalone `chore(deps)` PR keeps the diff reviewable.
+- **Done when:** `npm audit --omit=dev` returns zero findings.
+
 ---
 
 ## Pillar: Story Mode beyond reading
