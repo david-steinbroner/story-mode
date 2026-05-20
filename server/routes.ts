@@ -1482,22 +1482,51 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
     }
   });
 
-  // GET /api/admin/puzzle-health (v1.14.0). Two soft alarms:
+  // GET /api/admin/puzzle-health (v1.14.0). Soft alarms:
   //   - fallback: % of puzzles generated as fallbacks in the last N days
   //   - stuck: puzzles with >= 5 unresolved attempts in the last N days
+  //   - dropped: puzzle_request events that never landed a row (cap/parse/gen/serialization)
+  //
+  // v1.14.2: switched to Promise.allSettled so one storage failure doesn't 500
+  // the whole endpoint (used to take down the admin dashboard entirely when
+  // any sub-call threw). Per-call failures land in console + Sentry with the
+  // actual error so we can diagnose without restoring the captured stack
+  // trace from Sentry — Render logs alone are enough.
   app.get("/api/admin/puzzle-health", adminAuth, async (req, res) => {
     const daysBack = Number(req.query.daysBack ?? 7);
-    try {
-      const [fallback, stuck, dropped] = await Promise.all([
-        storage.getPuzzleFallbackRate(daysBack),
-        storage.getStuckPuzzles(daysBack, 5),
-        storage.getPuzzleDroppedSummary(daysBack),
-      ]);
-      res.json({ daysBack, fallback, stuck, dropped });
-    } catch (err) {
-      captureError(err as Error, { context: "admin/puzzle-health" });
-      res.status(500).json({ error: "Failed to fetch puzzle health" });
+    const results = await Promise.allSettled([
+      storage.getPuzzleFallbackRate(daysBack),
+      storage.getStuckPuzzles(daysBack, 5),
+      storage.getPuzzleDroppedSummary(daysBack),
+    ]);
+    const [fallbackR, stuckR, droppedR] = results;
+
+    const failed: string[] = [];
+    if (fallbackR.status === 'rejected') {
+      console.error('[admin/puzzle-health] getPuzzleFallbackRate failed:', fallbackR.reason);
+      captureError(fallbackR.reason as Error, { context: 'admin/puzzle-health:fallback' });
+      failed.push('fallback');
     }
+    if (stuckR.status === 'rejected') {
+      console.error('[admin/puzzle-health] getStuckPuzzles failed:', stuckR.reason);
+      captureError(stuckR.reason as Error, { context: 'admin/puzzle-health:stuck' });
+      failed.push('stuck');
+    }
+    if (droppedR.status === 'rejected') {
+      console.error('[admin/puzzle-health] getPuzzleDroppedSummary failed:', droppedR.reason);
+      captureError(droppedR.reason as Error, { context: 'admin/puzzle-health:dropped' });
+      failed.push('dropped');
+    }
+
+    res.json({
+      daysBack,
+      fallback: fallbackR.status === 'fulfilled' ? fallbackR.value : { total: 0, fallback: 0, rate: 0 },
+      stuck:    stuckR.status === 'fulfilled' ? stuckR.value : [],
+      dropped:  droppedR.status === 'fulfilled' ? droppedR.value : { total: 0, byReason: {} },
+      // Surfaced on the response so the admin dashboard could later badge a
+      // "partial data" warning. Absent on full-success responses.
+      failed:   failed.length > 0 ? failed : undefined,
+    });
   });
 
   // GET /api/admin/sessions - Return session usage data
