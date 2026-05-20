@@ -491,11 +491,25 @@ export default function AdminDashboard() {
           <h1 className="text-2xl font-bold" style={{ color: "#5C5470" }}>
             Admin Dashboard
           </h1>
-          <div className="text-sm" style={{ color: "#5C5470" }}>
-            {lastUpdated && (
-              <span>Last updated: {lastUpdated.toLocaleTimeString()}</span>
-            )}
-            <span className="ml-2 text-xs opacity-60">(auto-refreshes every 30s)</span>
+          <div className="flex items-center gap-4 text-sm" style={{ color: "#5C5470" }}>
+            <div>
+              {lastUpdated && (
+                <span>Last updated: {lastUpdated.toLocaleTimeString()}</span>
+              )}
+              <span className="ml-2 text-xs opacity-60">(auto-refreshes every 30s)</span>
+            </div>
+            {/* v1.14.5 — explicit logout. Clears the localStorage session
+                token and returns to the login form. Replaces the implicit
+                "session expires every 30s" UX from the TOTP-per-request flow. */}
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="text-xs underline opacity-70 hover:opacity-100"
+              style={{ color: "#5C5470" }}
+              title="Log out and return to the login screen"
+            >
+              Log out
+            </button>
           </div>
         </div>
 
