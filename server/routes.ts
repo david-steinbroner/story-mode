@@ -26,6 +26,7 @@ import {
 import { isValidScrambleSubmission, isValidFillInBlankSubmission } from "./puzzleService";
 import { logEvent } from "./eventLog";
 import { captureError } from "./sentry";
+import { getOpenRouterBalance } from "./openrouterBalance";
 import { sendIssueReportEmail } from "./emailService";
 import { resolveModel, getAdminModelOverride, setAdminModelOverride, MODEL_ALIASES } from "./aiModel";
 import { eventLog as eventLogTable } from "@shared/schema";
@@ -1527,6 +1528,25 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
       // "partial data" warning. Absent on full-success responses.
       failed:   failed.length > 0 ? failed : undefined,
     });
+  });
+
+  // GET /api/admin/openrouter-balance (v1.14.5). Real prepaid credit balance
+  // from OpenRouter — not the synthetic $10/day cap shown by /spend. Cached
+  // 1h in memory to avoid hammering OR. See server/openrouterBalance.ts.
+  app.get("/api/admin/openrouter-balance", adminAuth, async (_req, res) => {
+    const result = await getOpenRouterBalance();
+    if (result.ok) {
+      return res.json(result.data);
+    }
+    // On failure: prefer the stale-but-cached value if present so the
+    // dashboard doesn't blank the card during a transient OR outage.
+    if (result.lastCached) {
+      return res.json({ ...result.lastCached, stale: true, reason: result.reason });
+    }
+    if (result.reason === "no-api-key") {
+      return res.status(503).json({ error: "OpenRouter API key not configured" });
+    }
+    return res.status(503).json({ error: "OpenRouter balance unavailable" });
   });
 
   // GET /api/admin/sessions - Return session usage data

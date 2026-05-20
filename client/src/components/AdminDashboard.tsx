@@ -87,6 +87,18 @@ interface PuzzleHealth {
   dropped?: { total: number; byReason: Record<string, number> };
 }
 
+// v1.14.5 — real OpenRouter prepaid balance (separate from our local $10/day
+// synthetic cap). Refreshed at most once per hour server-side. `stale` is
+// true when we're serving last-cached after an OR API outage.
+interface OpenRouterBalance {
+  totalCredits: number;
+  totalUsage: number;
+  remainingCredits: number;
+  cachedAt: string;
+  stale?: boolean;
+  reason?: string;
+}
+
 const ISSUE_CATEGORY_LABELS: Record<string, string> = {
   guide_reply: "Guide reply",
   choices: "Choices",
@@ -123,6 +135,9 @@ export default function AdminDashboard() {
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   // v1.14.0 — puzzle health (soft alarms: fallback rate + stuck puzzles).
   const [puzzleHealth, setPuzzleHealth] = useState<PuzzleHealth | null>(null);
+  // v1.14.5 — OpenRouter prepaid balance. Optional fetch (separate from main
+  // batch) so an OR API outage doesn't take down the rest of the dashboard.
+  const [openRouterBalance, setOpenRouterBalance] = useState<OpenRouterBalance | null>(null);
 
   const fetchStats = useCallback(async () => {
     if (!adminKey || !totpCode) return;
@@ -201,6 +216,19 @@ export default function AdminDashboard() {
       setPuzzleHealth(puzzleHealthData);
       setIsAuthenticated(true);
       setLastUpdated(new Date());
+
+      // v1.14.5 — optional OR balance fetch. Separate from the main batch
+      // because a 503 from OR shouldn't trigger the dashboard's "any non-OK
+      // means show error" path. If this fails, the card just shows `—`.
+      try {
+        const balanceRes = await fetch("/api/admin/openrouter-balance", { headers });
+        if (balanceRes.ok) {
+          const balance = (await balanceRes.json()) as OpenRouterBalance;
+          setOpenRouterBalance(balance);
+        }
+      } catch {
+        // ignore — card shows `—`
+      }
     } catch (err) {
       // fetch() throws on network failure (DNS, offline, CORS preflight reject).
       // A JSON parse failure on a successful response would also land here but
@@ -383,9 +411,18 @@ export default function AdminDashboard() {
           <Card title="Requests All-Time" value={formatNumber(spendStats?.requestsAllTime || 0)} />
           <Card title="Avg Cost/Request" value={formatCurrency(spendStats?.averageCostPerRequest || 0)} />
           <Card
-            title="Daily Budget Remaining"
+            title="Daily Spend Cap Remaining"
             value={formatCurrency(spendStats?.dailyBudgetRemaining || 0)}
-            subtitle={`of ${formatCurrency(spendStats?.dailyLimit || 10)} limit`}
+            subtitle={`of $${spendStats?.dailyLimit || 10} internal cap`}
+          />
+          <Card
+            title="OpenRouter Credits"
+            value={openRouterBalance
+              ? formatCurrency(openRouterBalance.remainingCredits)
+              : "—"}
+            subtitle={openRouterBalance
+              ? `of ${formatCurrency(openRouterBalance.totalCredits)} prepaid${openRouterBalance.stale ? " · stale" : " · 1h cache"}`
+              : "real OpenRouter balance"}
           />
         </div>
 
