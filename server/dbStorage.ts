@@ -823,13 +823,17 @@ export class DbStorage implements IStorage {
 
   async getPuzzleDroppedSummary(daysBack: number): Promise<{ total: number; byReason: Record<string, number> }> {
     const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+    // .toISOString() because Drizzle's raw sql template doesn't type-tag
+    // params — postgres-js's Bind serializer rejects a raw Date with
+    // ERR_INVALID_ARG_TYPE. Postgres casts the ISO string back to
+    // timestamptz for the comparison transparently.
     const rows = await db.execute(sql`
       SELECT
         COALESCE(properties->>'reason', 'unknown') AS reason,
         COUNT(*)::int AS count
       FROM event_log
       WHERE event_type = 'puzzle_dropped'
-        AND created_at >= ${since}
+        AND created_at >= ${since.toISOString()}
       GROUP BY reason
     `);
     const byReason: Record<string, number> = {};
@@ -846,6 +850,10 @@ export class DbStorage implements IStorage {
     minAttempts: number,
   ): Promise<Array<{ puzzleId: string; type: string; attemptCount: number; firstSeen: Date }>> {
     const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+    // .toISOString() because Drizzle's raw sql template doesn't type-tag
+    // Date params — postgres-js rejects a raw Date with ERR_INVALID_ARG_TYPE.
+    // This bug was latent since v1.14.0; the endpoint's try/catch swallowed
+    // it as a 500. v1.14.2's allSettled surfaced the actual TypeError.
     const rows = await db.execute(sql`
       SELECT
         p.id     AS "puzzleId",
@@ -854,7 +862,7 @@ export class DbStorage implements IStorage {
         MIN(a.attempted_at) AS "firstSeen"
       FROM puzzles p
       JOIN puzzle_attempts a ON a.puzzle_id = p.id
-      WHERE p.created_at >= ${since}
+      WHERE p.created_at >= ${since.toISOString()}
       GROUP BY p.id, p.type
       HAVING
         COUNT(a.*) >= ${minAttempts}
