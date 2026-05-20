@@ -110,13 +110,27 @@ const ISSUE_CATEGORY_LABELS: Record<string, string> = {
   other: "Other",
 };
 
+// v1.14.5 — localStorage key for the session token. Persists across browser
+// refreshes so the admin stays logged in until the token expires (8h) or
+// they explicitly log out.
+const SESSION_TOKEN_KEY = "admin_session_token";
+
 export default function AdminDashboard() {
   const [adminKey, setAdminKey] = useState("");
-  // 6-digit TOTP code from the admin's authenticator app (1Password, etc.).
-  // Sent on every admin request via the x-admin-totp header alongside the
-  // key. Verified server-side in server/adminAuth.ts.
+  // 6-digit TOTP code from the admin's authenticator app — only needed for
+  // the initial /login call; replaced by a session token afterward.
   const [totpCode, setTotpCode] = useState("");
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // v1.14.5 — session JWT issued by POST /api/admin/login. Sent as
+  // Authorization: Bearer on every subsequent admin request. Loaded from
+  // localStorage on mount so a page refresh doesn't kick the admin out.
+  const [sessionToken, setSessionToken] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(SESSION_TOKEN_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const [isAuthenticated, setIsAuthenticated] = useState(() => !!sessionToken);
   const [spendStats, setSpendStats] = useState<SpendStats | null>(null);
   const [sessionStats, setSessionStats] = useState<SessionStats | null>(null);
   const [aiQualityStats, setAiQualityStats] = useState<AIQualityStats | null>(null);
@@ -139,17 +153,32 @@ export default function AdminDashboard() {
   // batch) so an OR API outage doesn't take down the rest of the dashboard.
   const [openRouterBalance, setOpenRouterBalance] = useState<OpenRouterBalance | null>(null);
 
+  // v1.14.5 — build Authorization header from the in-memory session token.
+  // Returns an empty object when no token is set so callers can spread it
+  // unconditionally.
+  const authHeaders = useCallback((): Record<string, string> => {
+    if (!sessionToken) return {};
+    return { Authorization: `Bearer ${sessionToken}` };
+  }, [sessionToken]);
+
+  const clearSession = useCallback(() => {
+    setSessionToken(null);
+    setIsAuthenticated(false);
+    try {
+      localStorage.removeItem(SESSION_TOKEN_KEY);
+    } catch {
+      // localStorage write can fail in private-mode browsers; harmless.
+    }
+  }, []);
+
   const fetchStats = useCallback(async () => {
-    if (!adminKey || !totpCode) return;
+    if (!sessionToken) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      const headers = {
-        "x-admin-key": adminKey,
-        "x-admin-totp": totpCode.replace(/\s+/g, ""),
-      };
+      const headers = authHeaders();
 
       const issuesUrl =
         issueFilter === "unresolved"
@@ -166,16 +195,12 @@ export default function AdminDashboard() {
       ]);
       const [spendRes, sessionRes, qualityRes, activityRes, modelRes, issuesRes, puzzleHealthRes] = responses;
 
-      // 401 on any response = wrong key or wrong TOTP (server collapses both
-      // so the response doesn't leak which factor failed). Reset auth so the
-      // login screen reappears instead of leaving them on a half-loaded dash.
+      // 401 on any response = bad / expired session token. Clear the stored
+      // token and return to the login form. v1.14.5: TOTP is only needed at
+      // login, not on every poll, so the form re-prompt is rare (~once per 8h).
       if (responses.some((r) => r.status === 401)) {
-        setError("Invalid credentials");
-        setIsAuthenticated(false);
-        // Clear the TOTP code so a stale 6-digit doesn't sit in the field
-        // after its 30s window has expired. The key is usually right; the
-        // TOTP is what most often needs re-entering.
-        setTotpCode("");
+        setError("Session expired — please log in again");
+        clearSession();
         return;
       }
 
@@ -240,7 +265,7 @@ export default function AdminDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [adminKey, totpCode, issueFilter]);
+  }, [sessionToken, authHeaders, clearSession, issueFilter]);
 
   // v1.13.0 — flip a report to resolved. Optimistic update then refetch so
   // the list shape matches the active filter immediately.
@@ -251,10 +276,7 @@ export default function AdminDashboard() {
       try {
         const res = await fetch(`/api/admin/issue-reports/${id}/resolve`, {
           method: "POST",
-          headers: {
-            "x-admin-key": adminKey,
-            "x-admin-totp": totpCode.replace(/\s+/g, ""),
-          },
+          headers: authHeaders(),
         });
         if (!res.ok) throw new Error(`Resolve failed (${res.status})`);
         // Refetch so the unresolved-filter view drops the resolved row.
@@ -265,10 +287,11 @@ export default function AdminDashboard() {
         setResolvingId(null);
       }
     },
-    [adminKey, totpCode, resolvingId, fetchStats],
+    [authHeaders, resolvingId, fetchStats],
   );
 
-  // Auto-refresh every 30 seconds
+  // Auto-refresh every 30 seconds. Now safe to run for 8h continuously
+  // because the session token doesn't rotate like a TOTP code did (v1.14.5).
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -276,10 +299,90 @@ export default function AdminDashboard() {
     return () => clearInterval(interval);
   }, [isAuthenticated, fetchStats]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // v1.14.5 — on mount, if we restored a token from localStorage, do an
+  // immediate fetch to validate it. If the server 401s, the fetchStats
+  // 401-handler clears the token and shows the login form.
+  useEffect(() => {
+    if (sessionToken && !lastUpdated) {
+      fetchStats();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // v1.14.5 — login form submit. Exchanges key+TOTP for a session token via
+  // POST /api/admin/login, stores it in localStorage, and triggers an
+  // immediate stats fetch. Old flow re-verified TOTP on every poll; new flow
+  // only does it here.
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    fetchStats();
+    if (!adminKey || !totpCode) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey, totp: totpCode.replace(/\s+/g, "") }),
+      });
+
+      if (res.status === 401) {
+        setError("Invalid credentials");
+        setTotpCode("");
+        return;
+      }
+      if (!res.ok) {
+        let msg = `Server error (${res.status})`;
+        try {
+          const body = await res.json();
+          if (body?.error) msg = body.error;
+        } catch { /* keep status */ }
+        setError(msg);
+        return;
+      }
+
+      const body = (await res.json()) as { token: string; expiresAt: string };
+      try {
+        localStorage.setItem(SESSION_TOKEN_KEY, body.token);
+      } catch {
+        // Private-mode browsers may block localStorage; the session still
+        // works for the current tab via in-memory state, just won't survive
+        // a refresh. Acceptable degradation.
+      }
+      setSessionToken(body.token);
+      setIsAuthenticated(true);
+      // Clear the entry fields so a stale TOTP doesn't sit in the form;
+      // the key field can stay, it's behind a password input.
+      setAdminKey("");
+      setTotpCode("");
+    } catch (err) {
+      const isNetworkError =
+        err instanceof TypeError ||
+        (err instanceof Error && err.message.toLowerCase().includes("fetch"));
+      setError(isNetworkError ? "Couldn't reach the server" : err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setLoading(false);
+    }
   };
+
+  // v1.14.5 — logout. Stateless JWT means the server endpoint is a no-op
+  // (returns 204), but we call it best-effort so future denylist support
+  // doesn't require a client change. Then clear the local token + state.
+  const handleLogout = useCallback(async () => {
+    try {
+      await fetch("/api/admin/logout", {
+        method: "POST",
+        headers: authHeaders(),
+      });
+    } catch {
+      // best-effort — logout proceeds locally even if the server call fails
+    }
+    clearSession();
+    setAdminKey("");
+    setTotpCode("");
+    setError(null);
+  }, [authHeaders, clearSession]);
 
   // v1.9.0 — flip the runtime AI model between Haiku and Sonnet. The next
   // AI call uses the new value (server updates its in-memory cache inside
@@ -294,8 +397,7 @@ export default function AdminDashboard() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-admin-key": adminKey,
-          "x-admin-totp": totpCode.replace(/\s+/g, ""),
+          ...authHeaders(),
         },
         body: JSON.stringify({ model }),
       });

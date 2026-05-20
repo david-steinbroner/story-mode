@@ -1,7 +1,7 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { randomUUID } from "crypto";
-import { verifyAdminCredentials } from "./adminAuth";
+import { verifyAdminCredentials, verifyAdminSession, issueAdminSession, extractBearerToken } from "./adminAuth";
 import { storage } from "./storage";
 import {
   insertCharacterSchema,
@@ -1419,36 +1419,72 @@ Respond with ONLY valid JSON in this exact shape, no preamble:
   });
 
   // ============================================
-  // Admin API endpoints (protected by ADMIN_KEY)
+  // Admin API endpoints (protected by session token, v1.14.5)
   // ============================================
 
-  // Thin pass-through to the verification service in `server/adminAuth.ts`.
-  // All credential logic — env-var reads, timing-safe compare, TOTP verify —
-  // lives there, so the future multi-admin DB migration is a one-file change.
+  // v1.14.5 — session-token middleware. Verifies a bearer JWT issued by
+  // /api/admin/login. The TOTP-per-request flow it replaces was logging
+  // admins out every ~30s when the cached TOTP code expired.
+  //
+  // /api/admin/login is registered separately and uses verifyAdminCredentials
+  // directly (key+TOTP); all other admin endpoints go through this middleware.
   const adminAuth = (req: Request, res: any, next: any) => {
-    const key = req.headers['x-admin-key'];
-    const totp = req.headers['x-admin-totp'];
-    const result = verifyAdminCredentials(
-      typeof key === 'string' ? key : undefined,
-      typeof totp === 'string' ? totp : undefined,
-    );
+    const token = extractBearerToken(req.headers.authorization);
+    const result = verifyAdminSession(token);
 
     if (result.ok) {
       return next();
     }
 
     if (result.reason === 'not-configured') {
-      // v1.14.1: misconfigured admin auth in prod is a deployment defect that
-      // should page someone — captureError gets it into Sentry where it can
-      // alert, rather than hiding in stdout.
-      captureError(new Error("Admin auth not configured (ADMIN_KEY or ADMIN_TOTP_SECRET missing)"), { context: "adminAuth:notConfigured" });
-      console.warn('[Admin] ADMIN_KEY or ADMIN_TOTP_SECRET not configured in environment');
+      captureError(new Error("Admin auth not configured (ADMIN_JWT_SECRET missing)"), { context: "adminAuth:notConfigured" });
+      console.warn('[Admin] ADMIN_JWT_SECRET not configured in environment');
       return res.status(503).json({ error: 'Admin auth not configured on server' });
     }
 
-    // Collapsed message so the response doesn't leak which factor failed.
+    // Collapsed message so the response doesn't leak why (bad sig vs expired).
     return res.status(401).json({ error: 'Invalid credentials' });
   };
+
+  // POST /api/admin/login (v1.14.5) — exchange admin key + TOTP for a
+  // session token. Rate-limited via strictLimiter (5/hr per session) to
+  // slow brute-force attempts on the key+TOTP factor pair. Other admin
+  // endpoints stay on generalLimiter via the /api prefix.
+  app.post("/api/admin/login", strictLimiter, async (req, res) => {
+    const { adminKey, totp } = req.body ?? {};
+    const result = verifyAdminCredentials(
+      typeof adminKey === 'string' ? adminKey : undefined,
+      typeof totp === 'string' ? totp : undefined,
+    );
+
+    if (!result.ok) {
+      if (result.reason === 'not-configured') {
+        captureError(new Error("Admin login attempted but ADMIN_KEY or ADMIN_TOTP_SECRET missing"), { context: "adminLogin:notConfigured" });
+        return res.status(503).json({ error: 'Admin auth not configured on server' });
+      }
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (!process.env.ADMIN_JWT_SECRET) {
+      captureError(new Error("Admin login factors passed but ADMIN_JWT_SECRET missing — cannot issue session"), { context: "adminLogin:noJwtSecret" });
+      return res.status(503).json({ error: 'Admin auth not configured on server' });
+    }
+
+    try {
+      const session = issueAdminSession();
+      return res.json(session);
+    } catch (err) {
+      captureError(err as Error, { context: 'adminLogin:issueSession' });
+      return res.status(500).json({ error: 'Failed to issue session' });
+    }
+  });
+
+  // POST /api/admin/logout (v1.14.5) — no-op for stateless JWT sessions
+  // (the client just discards its token). Endpoint exists so the wire
+  // shape supports a future server-side denylist without a client change.
+  app.post("/api/admin/logout", (_req, res) => {
+    return res.status(204).end();
+  });
 
   // GET /api/admin/spend - Return spend metrics
   app.get("/api/admin/spend", adminAuth, async (_req, res) => {
