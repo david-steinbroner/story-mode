@@ -355,9 +355,9 @@ export default function AdminDashboard() {
   // view's fixed layout. Mirrors the fix applied to Bookshelf in v1.3.0.
   return (
     <div className="h-dvh overflow-y-auto p-4 md:p-8" style={{ backgroundColor: "#FAF9F6" }}>
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold" style={{ color: "#5C5470" }}>
             Admin Dashboard
           </h1>
