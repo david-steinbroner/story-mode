@@ -27,7 +27,8 @@ Required env vars (see `.env.example`):
 
 - `OPENROUTER_API_KEY` — AI responses
 - `DATABASE_URL` — Supabase connection string
-- `ADMIN_KEY`, `ADMIN_TOTP_SECRET` — protects `/api/admin/*` (key + 2FA TOTP)
+- `ADMIN_KEY`, `ADMIN_TOTP_SECRET` — protects `/api/admin/login` (key + 2FA TOTP). v1.14.5: TOTP only required at login, not on every request.
+- `ADMIN_JWT_SECRET` (v1.14.5) — signs admin session tokens. `openssl rand -hex 32`. Rotating this invalidates all in-flight sessions.
 - `RESEND_API_KEY`, `ISSUE_REPORT_FROM_EMAIL`, `ISSUE_REPORT_TO_EMAIL` — optional, forwards in-app bug reports by email (requires a verified Resend domain)
 - `SENTRY_DSN`, `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST` — optional, observability
 

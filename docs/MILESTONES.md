@@ -1,8 +1,8 @@
 # Story Mode — Milestone History
 
-> **TL;DR (read this first):** Live at mystorymode.com on **v1.14.0**. Milestones 1–5 shipped pre-launch. **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; AI-powered intent matcher + `POST /api/guide/chat` endpoint still TODO. **Latest (v1.14.0):** generative puzzles (scramble / cryptogram / fill-in-the-blank) shipped behind `puzzles_enabled='false'` master flag — first feature of the new "Story Mode beyond reading" pillar. Narration AI emits an optional `puzzle_request` when a beat features decodable text; a separate Haiku call generates the actual puzzle; deterministic validators + ≥20-entry fallback pool per type guard against bad puzzles. Vitest introduced as the project's first test runner (30 unit/integration tests). Three v1.14.1 UX iterations logged to ROADMAP from smoke testing. See the v1.14.0 entry below.
+> **TL;DR (read this first):** Live at mystorymode.com on **v1.14.5**. Milestones 1–5 shipped pre-launch. **Active milestone:** Milestone 6 (Guide chatbot) — partial via v1.8.1's hardcoded Q&A drawer; AI-powered intent matcher + `POST /api/guide/chat` endpoint still TODO. **Latest puzzles state:** v1.14.0 generative puzzles SHIPPED + ROLLED OUT (flag flipped 2026-05-19 post-audit). v1.14.1 hardened the surface (synonym tolerance, race fix, telemetry, cross-story leak fix, anti-repetition, 250-page budget). v1.14.2 made the admin puzzle-health endpoint tolerant of sub-call failures; v1.14.4 fixed the underlying Date-binding TypeError. v1.14.5 rewrote admin auth (key+TOTP → session-token JWT, 8h expiry) and added a real OpenRouter prepaid balance card. **Puzzle UX clunkiness** (pacing, choices re-baiting puzzles, difficulty stuck at easy) queued as v1.14.6 — see ROADMAP. See per-version entries below.
 >
-> *Last updated: 2026-05-19.*
+> *Last updated: 2026-05-20.*
 
 ---
 
@@ -39,6 +39,44 @@ The original Milestone 6 plan called for a slide-up `GuideChat.tsx` modal trigge
 ---
 
 ## Completed Milestones
+
+### Admin dashboard polish (2026-05-20) — v1.14.5 ✅
+
+**Shipped:**
+- **Real OpenRouter balance card.** New `GET /api/admin/openrouter-balance` proxies OR's `/credits` endpoint (API key never leaves the server), caches result for 1h. Existing "Daily Budget Remaining" renamed to "Daily Spend Cap Remaining" with subtitle clarifying it's the local $10/day internal cap, not the OR account balance.
+- **Session-token auth.** Replaces TOTP-per-request which was logging the admin out every ~30s. New `POST /api/admin/login` (rate-limited via `strictLimiter`) exchanges key+TOTP for an HS256 JWT with 8h expiry. Token stored in `localStorage`; sent as `Authorization: Bearer` on every admin request. `POST /api/admin/logout` is a no-op (stateless JWT) but reserves the endpoint for future denylist support.
+- **Logout button** in the dashboard header.
+- **New env var:** `ADMIN_JWT_SECRET` (required for admin login post-deploy). Rotating it acts as "log out all sessions."
+- **New file:** `server/openrouterBalance.ts` — module-level 1h cache.
+- **Auth helpers added** to `server/adminAuth.ts`: `issueAdminSession`, `verifyAdminSession`, `extractBearerToken`.
+- **18 new unit tests** covering JWT round-trip, expired tokens, bad signatures, malformed tokens, missing secret, and OR balance cache behavior.
+
+**Specced + reviewed:** `docs/specs/archive/admin-polish-v1.14.5.md`.
+
+### Puzzles v1.14.x hardening — audit fixes + admin endpoint resilience (2026-05-19 → 2026-05-20) — v1.14.1 through v1.14.4 ✅
+
+**v1.14.1 — audit fixes + synonym tolerance.** Post-v1.14.0 multi-agent audit (puzzle subsystem, cross-commit, security, cost/AI resilience, data integrity, code quality) surfaced ~25 items. Shipped:
+- **Synonym tolerance** for scramble (any wordlist anagram of `payload.letters`) and fill-in-blank (`payload.acceptedAnswers` array; backward-compat for legacy rows). Cryptogram unchanged (single decoding by mechanic). PM-decided 2026-05-19 — increases replay variance + pass rates.
+- **Length-250 budget** added (was missing — UI offered Epic but config had key `200`). Migration changed `ON CONFLICT DO NOTHING` → `DO UPDATE` for `puzzle_budgets` so re-applying lands the new JSON in prod.
+- **Anti-repetition.** Dispatch fetches last 5 puzzle answers and injects them into the gen prompt + fallback picker as "avoid these" (closes the v1.14.0 STONE×4 smoke issue).
+- **Puzzle cap race fix.** Generate outside any txn, then check+insert in a serializable transaction. Two concurrent dispatches can't both pass cap=N when soFar=N.
+- **Silent-drop telemetry.** New `puzzle_dropped` event with `reason` metadata (`cap` / `parse_fail` / `gen_fail` / `serialization_fail`) at every drop site. AdminDashboard "Puzzles dropped" card surfaces the breakdown.
+- **Cross-story leak in `applyAIResponse`.** All `getCharacter`/`getGameState`/`getQuests`/`getRecentMessages` calls now pass `storyId`. `createQuest` paths attach `storyId` too.
+- **Soft-delete filter** added to `getGameState` (partial; sibling reads deferred to v1.14.6 per spec out-of-scope).
+- **Lazy lock purge** on `storyCreationLocks` + `chatLocks` acquire.
+- **Cost tracking** wrap on puzzle generation. Closed the v1.14.0 regression v1.9.9's "close the tracking gap" pass didn't anticipate.
+- **`max_tokens: 2000`** added to 3 helper AI calls (followUp/sideQuest/worldGen).
+- **`aiLimiter`** applied to `POST /api/character` (triggers world generation — was unprotected).
+- **Sentry `captureError`** added to 5 ungated catches.
+- `/ultrareview` pass after the initial ship caught 5 more items (FOR UPDATE no-op on daily spend → reverted + documented as v1.15 work; fill-in-blank canonical answer could be silently rejected; serialization-fail telemetry was missing; pickFallback ignored recentAnswers; migration ON CONFLICT). All landed before merge.
+
+**v1.14.2 — tolerant admin puzzle-health endpoint.** Switched `/api/admin/puzzle-health` to `Promise.allSettled` so one storage sub-call failure no longer 500s the whole admin dashboard. Restored `console.error` per-failure for diagnostic visibility in Render logs (the v1.14.1 observability sweep had replaced it with `captureError`-only, masking stack traces).
+
+**v1.14.3 — admin dashboard spacing fix.** Added `space-y-6` to the dashboard wrapper so sections (Puzzles, Sessions, AI Quality, etc.) stop visually touching each other.
+
+**v1.14.4 — Date binding fix in raw SQL queries.** `getStuckPuzzles` and `getPuzzleDroppedSummary` were passing raw `Date` to drizzle's `sql\`...\`` template; postgres-js's Bind protocol rejects it with `ERR_INVALID_ARG_TYPE`. Fix: `.toISOString()` at the interpolation points. **`getStuckPuzzles` had been silently broken since v1.14.0** — the original `Promise.all` + try/catch swallowed the error, so the "Stuck puzzles: 0" card was always lying about real data.
+
+**Specced + reviewed:** `docs/specs/archive/puzzles-v1.14.1.md`.
 
 ### Generative puzzles — first feature of "Story Mode beyond reading" pillar (2026-05-19) — v1.14.0 ✅
 

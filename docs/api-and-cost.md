@@ -183,7 +183,15 @@ Primary API surface (server/routes.ts). All require `x-session-id` header except
 |---|---|---|
 | POST | `/api/issue-report` | In-app bug report. Body includes `category`, `description`, `includeContext`, and (v1.14.0) optional `puzzleId` when the report is filed mid-puzzle. Rate-limited via `strictLimiter`. Fire-and-forget email via Resend when configured; DB save is source of truth. |
 
-### Admin (require `x-admin-key` matching `ADMIN_KEY` env var + valid `x-admin-totp` per `ADMIN_TOTP_SECRET`)
+### Admin (v1.14.5: session-token auth)
+
+**Auth model (post-v1.14.5):** clients hit `POST /api/admin/login` once with `{ adminKey, totp }` in the JSON body and receive an HS256 JWT (8h expiry). All other admin endpoints expect `Authorization: Bearer <token>`. Old `x-admin-key` / `x-admin-totp` headers are no longer honored on protected endpoints. Rotating `ADMIN_JWT_SECRET` invalidates all in-flight tokens.
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/admin/login` | (v1.14.5) Exchange key+TOTP for a session token. Body: `{ adminKey, totp }`. Returns `{ token, expiresAt }`. Rate-limited via `strictLimiter` (5/hr per session) to slow brute-force. |
+| POST | `/api/admin/logout` | (v1.14.5) No-op (204) for the stateless JWT — client discards locally. Endpoint reserved for future denylist support. |
+| GET | `/api/admin/openrouter-balance` | (v1.14.5) Real OpenRouter prepaid balance proxied from OR's `/credits` endpoint. Cached server-side for 1h. On OR API outage, returns last-cached with `stale: true`. Different concern from the local $10/day cap shown by `/spend`. |
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/admin/spend` | Today + all-time spend stats. Response shape (v1.10.0) includes `todaysTokens` / `allTimeTokens` with `prompt`, `completion`, `cached`, `cacheWrite` fields, plus `cacheSavingsToday` and `cacheSavingsAllTime` (estimated $ saved vs. uncached billing at Sonnet 4 input rate). |
